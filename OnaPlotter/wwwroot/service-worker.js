@@ -1186,7 +1186,21 @@
 //                the rest of the in-app dialogs use, with
 //                :root.theme-effective-light and high-contrast
 //                overrides for the lighter themes.
-const CACHE_NAME = 'ona-plotter-v112';
+// v112 -> v113: Layers panel adjustments.
+//                - Charts section grows a "Show all" checkbox that
+//                  bypasses the viewport bbox filter so the helm can
+//                  find a distant chart without panning first.
+//                  Ephemeral (not persisted) - the viewport is the
+//                  natural relevance cue.
+//                - Marine services loses its master "Show" header
+//                  toggle. The overlay is now implicitly visible
+//                  whenever at least one category is ticked; untick
+//                  everything to hide. IMarinePoiSettings drops
+//                  MarinePoiOverlayVisible + setter; the persisted
+//                  "marinePoi.overlayVisible.v1" key is no longer
+//                  read (stale entries linger in storage but have
+//                  no effect).
+const CACHE_NAME = 'ona-plotter-v113';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

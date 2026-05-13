@@ -45,6 +45,8 @@
                    QuickBarCharts="QuickBarCharts"
                    OnToggleQuickBar="OnToggleChartQuickBar"
                    OnReorder="OnReorderChart"
+                   ShowAll="ChartsShowAll"
+                   OnToggleShowAll="OnToggleChartsShowAll"
                    ContrastPercent="ChartContrastPercent"
                    SaturationPercent="ChartSaturationPercent"
                    BrightnessPercent="ChartBrightnessPercent"
@@ -134,11 +136,10 @@
 
     @* OSM marine services overlay (Layers > Marine services). Off
        by default; helm opts in per-category. Cached responses keep
-       markers visible offline. The master "Show" toggle on the
-       header hides every marker without dropping the per-category
-       picks. *@
-    <MarineServicesSection OverlayVisible="MarinePoiOverlayVisible"
-                           FuelEnabled="MarinePoiFuelEnabled"
+       markers visible offline. With no master toggle, the layer is
+       implicitly "on" whenever at least one category is ticked -
+       untick every category to hide the overlay. *@
+    <MarineServicesSection FuelEnabled="MarinePoiFuelEnabled"
                            MarinaEnabled="MarinePoiMarinaEnabled"
                            HarbourEnabled="MarinePoiHarbourEnabled"
                            MooringEnabled="MarinePoiMooringEnabled"
@@ -147,7 +148,6 @@
                            ChandleryEnabled="MarinePoiChandleryEnabled"
                            DrinkingWaterEnabled="MarinePoiDrinkingWaterEnabled"
                            PumpOutEnabled="MarinePoiPumpOutEnabled"
-                           OnToggleOverlay="OnToggleMarinePoiOverlay"
                            OnToggleFuel="OnToggleMarinePoiFuel"
                            OnToggleMarina="OnToggleMarinePoiMarina"
                            OnToggleHarbour="OnToggleMarinePoiHarbour"
@@ -275,12 +275,9 @@
     // Marine-services category flags + callbacks. Threaded through to
     // MarineServicesSection. Each callback tells Map.razor.cs to flip
     // the persisted setting; the controller picks it up via the
-    // OnSettingsChanged fan-out and re-renders / refetches.
-    // The master overlay flag rides at the top of the section as a
-    // "Show" chip; flipping it off clears every marker without
-    // touching individual category state.
-    [Parameter] public bool MarinePoiOverlayVisible { get; set; } = true;
-    [Parameter] public EventCallback<bool> OnToggleMarinePoiOverlay { get; set; }
+    // OnSettingsChanged fan-out and re-renders / refetches. The
+    // overlay is implicitly visible when any category is enabled -
+    // no separate master flag.
     [Parameter] public bool MarinePoiFuelEnabled { get; set; }
     [Parameter] public bool MarinePoiMarinaEnabled { get; set; }
     [Parameter] public bool MarinePoiHarbourEnabled { get; set; }
@@ -325,6 +322,13 @@
     /// the parent can persist all three under a single
     /// OnSettingsChanged broadcast.</summary>
     [Parameter] public EventCallback OnChartFilterReset { get; set; }
+
+    /// <summary>When true, the parent stops applying the viewport
+    /// bbox filter to <see cref="FilteredCharts"/> so the helm sees
+    /// every chart in the catalogue. Ephemeral panel state held by
+    /// the parent (Map page); not persisted.</summary>
+    [Parameter] public bool ChartsShowAll { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleChartsShowAll { get; set; }
 
     private async Task OnFilterInput(ChangeEventArgs e)
     {

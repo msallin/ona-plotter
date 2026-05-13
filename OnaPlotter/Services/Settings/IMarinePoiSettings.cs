@@ -17,16 +17,6 @@ namespace OnaPlotter.Services.Settings;
 /// </summary>
 public interface IMarinePoiSettings
 {
-    /// <summary>Master visibility for the whole marine-services
-    /// overlay. When <c>false</c> the controller skips both the
-    /// cache-render and the Overpass fetch regardless of the per-
-    /// category flags - the helm gets a one-tap "hide everything"
-    /// without losing the categories they had ticked on. Defaults
-    /// to <c>true</c> so a fresh helm with a category enabled sees
-    /// markers immediately. Persisted under
-    /// <c>marinePoi.overlayVisible.v1</c>.</summary>
-    bool MarinePoiOverlayVisible { get; }
-
     /// <summary>Marine fuel docks (<c>amenity=fuel</c> +
     /// <c>boat=yes</c>).</summary>
     bool MarinePoiFuelEnabled { get; }
@@ -61,7 +51,6 @@ public interface IMarinePoiSettings
     /// (<c>waste_disposal=marine</c> / <c>pumpout=yes</c>).</summary>
     bool MarinePoiPumpOutEnabled { get; }
 
-    Task SetMarinePoiOverlayVisibleAsync(bool value);
     Task SetMarinePoiFuelEnabledAsync(bool value);
     Task SetMarinePoiMarinaEnabledAsync(bool value);
     Task SetMarinePoiHarbourEnabledAsync(bool value);

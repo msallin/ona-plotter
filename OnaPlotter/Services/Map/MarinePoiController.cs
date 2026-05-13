@@ -91,14 +91,11 @@ public sealed class MarinePoiController : IAsyncDisposable
     /// Master visible flag the JS layer carries. We always send the
     /// cache snapshot to JS regardless; the JS layer's visibility
     /// flag controls whether markers are added to the map.
-    /// <para>Two ANDed gates: the helm's master "Show" flag (the
-    /// section-header chip) and "at least one category enabled"
-    /// (zero categories = nothing to show even if the master flag
-    /// is on). Helm-tap on the master toggle hides every marker
-    /// without losing the per-category selections.</para>
+    /// <para>The overlay is on iff at least one category is enabled -
+    /// helm hides the layer by unticking every category, no separate
+    /// master toggle.</para>
     /// </summary>
-    public bool AnyCategoryEnabled =>
-        _settings.MarinePoiOverlayVisible && GetEnabledCategories().Count > 0;
+    public bool AnyCategoryEnabled => GetEnabledCategories().Count > 0;
 
     /// <summary>
     /// Map page reports a new viewport. Cache-render immediately,
@@ -163,14 +160,13 @@ public sealed class MarinePoiController : IAsyncDisposable
     // the in-flight fetch + re-scheduled on every fire, even when none
     // of the marine-POI flags had changed. Snapshot+compare gates the
     // expensive work on a real change.
-    private (bool Master, bool Fuel, bool Marina, bool Harbour, bool Mooring,
+    private (bool Fuel, bool Marina, bool Harbour, bool Mooring,
         bool Slipway, bool Pier, bool Chandlery, bool DrinkingWater, bool PumpOut)
         _cachedFlags;
 
-    private (bool Master, bool Fuel, bool Marina, bool Harbour, bool Mooring,
+    private (bool Fuel, bool Marina, bool Harbour, bool Mooring,
         bool Slipway, bool Pier, bool Chandlery, bool DrinkingWater, bool PumpOut)
         SnapshotFlags() => (
-            _settings.MarinePoiOverlayVisible,
             _settings.MarinePoiFuelEnabled,
             _settings.MarinePoiMarinaEnabled,
             _settings.MarinePoiHarbourEnabled,
@@ -287,14 +283,6 @@ public sealed class MarinePoiController : IAsyncDisposable
 
     private ImmutableHashSet<MarinePoiCategory> GetEnabledCategories()
     {
-        // Master visibility is the first gate so the cache-render +
-        // scheduled-fetch paths drop everything when the helm taps
-        // the section-header "Show" off, even if individual categories
-        // are still ticked. Returning an empty set here cascades
-        // through both call sites (RenderFromCacheAsync clears the
-        // markers; ScheduleFetch returns early).
-        if (!_settings.MarinePoiOverlayVisible)
-            return ImmutableHashSet<MarinePoiCategory>.Empty;
         var b = ImmutableHashSet.CreateBuilder<MarinePoiCategory>();
         if (_settings.MarinePoiFuelEnabled) b.Add(MarinePoiCategory.Fuel);
         if (_settings.MarinePoiMarinaEnabled) b.Add(MarinePoiCategory.Marina);

@@ -23,6 +23,19 @@
         show / hide the chart. Rendering charts get up/down arrows to
         order the draw stack (top of the stack = in front).
     </div>
+    @* Bbox-filter override. By default the list mirrors what's visible
+       in the current viewport so the helm only sees charts they could
+       actually swap to right now. Ticking this shows every chart in
+       the catalogue regardless of where it covers - useful when
+       hunting for a distant chart by name without panning the map
+       first. Not persisted: the viewport is the natural relevance
+       cue, so the next session re-defaults to filtered. *@
+    <label class="notes-visible-toggle"
+           title="Show every chart, including those outside the current view">
+        <input type="checkbox" checked="@ShowAll"
+               @onchange="e => OnToggleShowAll.InvokeAsync((bool)(e.Value ?? false))" />
+        <span>Show all</span>
+    </label>
     @* Row shape is the same for every chart - reorder arrows always
        present so the affordance is stable and the row doesn't
        jump width when rendering flips. Disabled state on an arrow
@@ -185,6 +198,13 @@
     /// SetXxxPercentAsync(100) calls so the parent can persist all
     /// three under one OnSettingsChanged broadcast.</summary>
     [Parameter] public EventCallback OnFilterReset { get; set; }
+
+    /// <summary>When true, the parent skips the
+    /// ChartIntersectsViewport filter and feeds the full catalogue
+    /// into <see cref="Charts"/>. Default false so the list stays
+    /// pinned to "what's near here".</summary>
+    [Parameter] public bool ShowAll { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleShowAll { get; set; }
 
     // Collapsed by default - the Layers panel opens compact, the user
     // expands only the sections they need. See agents.md "UX principles".

@@ -537,8 +537,6 @@
                      OnWeatherOpacityCommit="@(p => _weather?.CommitOpacityAsync(p) ?? Task.CompletedTask)"
                      OnToggleAtonsVisible="ToggleAtonsVisible"
                      OnToggleAisLabelsVisible="ToggleAisLabelsVisible"
-                     MarinePoiOverlayVisible="Settings.MarinePoiOverlayVisible"
-                     OnToggleMarinePoiOverlay="@(v => Settings.SetMarinePoiOverlayVisibleAsync(v))"
                      MarinePoiFuelEnabled="Settings.MarinePoiFuelEnabled"
                      MarinePoiMarinaEnabled="Settings.MarinePoiMarinaEnabled"
                      MarinePoiHarbourEnabled="Settings.MarinePoiHarbourEnabled"
@@ -572,7 +570,9 @@
                      OnChartSaturationCommit="@(p => Settings.SetChartSaturationPercentAsync(p))"
                      OnChartBrightnessPreview="@(p => PreviewChartFilterAsync(Settings.ChartContrastPercent, Settings.ChartSaturationPercent, p))"
                      OnChartBrightnessCommit="@(p => Settings.SetChartBrightnessPercentAsync(p))"
-                     OnChartFilterReset="ResetChartFilterAsync" />
+                     OnChartFilterReset="ResetChartFilterAsync"
+                     ChartsShowAll="chartsShowAll"
+                     OnToggleChartsShowAll="OnToggleChartsShowAll" />
     }
 </div>
 
@@ -782,6 +782,12 @@
     private readonly HashSet<string> enabledRoutes = [];
     private string layerFilter = "";
     private double? viewWest, viewSouth, viewEast, viewNorth;
+    // Helm-tunable override for the Charts list's bbox filter. When
+    // true the panel shows the full catalogue; default false keeps the
+    // list pinned to "near here". Ephemeral on purpose - the viewport
+    // is the natural relevance cue and the next session re-defaults to
+    // filtered.
+    private bool chartsShowAll;
 
     // Cached filtered lists, rebuilt only when inputs change.
     private SignalkChart[] cachedFilteredCharts = [];
@@ -794,7 +800,8 @@
     /// without allocating a key string per frame.</summary>
     private readonly record struct FilterCacheKey(
         string LayerFilter, double West, double South, double East, double North,
-        int CharCount, int RouteCount, int WaypointCount, int NoteCount);
+        int CharCount, int RouteCount, int WaypointCount, int NoteCount,
+        bool ChartsShowAll);
     private FilterCacheKey lastFilterKey;
 
     private SignalkChart[] FilteredCharts => cachedFilteredCharts;
@@ -829,6 +836,12 @@
     private void OnLayerFilterChanged(string v)
     {
         layerFilter = v;
+        RebuildFilteredLayers();
+    }
+
+    private void OnToggleChartsShowAll(bool value)
+    {
+        chartsShowAll = value;
         RebuildFilteredLayers();
     }
 
@@ -1326,13 +1339,14 @@
             layerFilter ?? "",
             R(viewWest), R(viewSouth), R(viewEast), R(viewNorth),
             availableCharts.Count, availableRoutes.Count,
-            loadedWaypoints.Count, loadedNotes.Count);
+            loadedWaypoints.Count, loadedNotes.Count,
+            chartsShowAll);
         if (key.Equals(lastFilterKey)) return;
         lastFilterKey = key;
 
         cachedFilteredCharts = availableCharts
             .Where(c => (string.IsNullOrEmpty(layerFilter) || c.Name.Contains(layerFilter, StringComparison.OrdinalIgnoreCase))
-                     && ChartIntersectsViewport(c))
+                     && (chartsShowAll || ChartIntersectsViewport(c)))
             .ToArray();
 
         cachedFilteredRoutes = availableRoutes
