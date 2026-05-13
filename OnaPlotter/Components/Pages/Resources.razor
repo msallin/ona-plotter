@@ -22,6 +22,7 @@
 @inject SignalkClient SignalkClient
 @inject OnaPlotter.Services.Resources.ResourceStore ResourceStore
 @inject Microsoft.JSInterop.IJSRuntime JS
+@inject OnaPlotter.Services.IAppSettings Settings
 @using OnaPlotter.Services.Json
 @using Microsoft.AspNetCore.Components.Forms
 @implements IAsyncDisposable
@@ -737,15 +738,38 @@
             // slow import (sat link / 4G blip) without losing the
             // already-saved entries on the server.
             _importProgressTotal = parsed.TotalCount;
-            int rOk = 0, wOk = 0, nOk = 0, gOk = 0, failed = 0;
+            int rOk = 0, wOk = 0, nOk = 0, gOk = 0, failed = 0, skipped = 0;
             bool cancelled = false;
+            // Capture per-route ids server-side so the imported routes
+            // can be flipped on in the Map layer set after the loop -
+            // helm expects to see what they just imported on the chart
+            // without an extra trip through Layers > Routes.
+            var newRouteIds = new List<string>();
             foreach (var route in parsed.Routes)
             {
                 if (ct.IsCancellationRequested) { cancelled = true; break; }
+                // Per-route rename prompt. Default is the GPX <name>
+                // (or the GeoJSON properties.name) the importer pulled
+                // out. Helm hits Enter to accept; Cancel skips just
+                // this route so the rest of the import continues.
+                // Empty-after-trim is treated the same as Cancel - a
+                // route with no usable name is degenerate data.
+                var chosen = await Confirmations.PromptAsync(
+                    $"Route name (from file: '{route.Name}')",
+                    initialValue: route.Name,
+                    confirmLabel: "Import");
+                if (chosen is null) { skipped++; _importProgressDone++; StateHasChanged(); continue; }
+                var name = chosen.Trim();
+                if (string.IsNullOrEmpty(name)) { skipped++; _importProgressDone++; StateHasChanged(); continue; }
                 try
                 {
-                    var r = await RouteApi.SaveAsync(route.Name, route.CoordsLatLon, ct);
-                    if (r.Success) rOk++; else failed++;
+                    var r = await RouteApi.SaveAsync(name, route.CoordsLatLon, ct);
+                    if (r.Success)
+                    {
+                        rOk++;
+                        if (!string.IsNullOrEmpty(r.Value)) newRouteIds.Add(r.Value);
+                    }
+                    else failed++;
                 }
                 catch (OperationCanceledException) { cancelled = true; break; }
                 catch { failed++; }
@@ -794,6 +818,19 @@
                 StateHasChanged();
             }
 
+            // Enable imported routes on the Map view by default. The
+            // helm just brought them in deliberately; expecting them
+            // to also re-open Layers > Routes to tick each one would
+            // be a foot-gun. Merge with the existing enabled set so
+            // routes that were already on stay on.
+            if (newRouteIds.Count > 0)
+            {
+                var merged = new HashSet<string>(Settings.EnabledRouteIds, StringComparer.Ordinal);
+                foreach (var id in newRouteIds) merged.Add(id);
+                try { await Settings.SetEnabledRoutesAsync(merged); }
+                catch (Exception ex) { Toasts.LogException(ex, "Enable imported routes"); }
+            }
+
             // Refresh lists so the new entries appear in their tabs.
             await LoadAllAsync();
 
@@ -808,6 +845,10 @@
             else if (failed > 0)
             {
                 Toasts.Error($"{summary}. {failed} failed (see browser console).");
+            }
+            else if (skipped > 0)
+            {
+                Toasts.Info($"{summary}. {skipped} route{Plural(skipped)} skipped by helm.");
             }
             else
             {
