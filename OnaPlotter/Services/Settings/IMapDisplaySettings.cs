@@ -218,6 +218,16 @@ public interface IMapDisplaySettings
     /// chart turns into a bullseye.</summary>
     int RadarRangeRingsCount { get; }
 
+    /// <summary>Helm-tunable trim in degrees, added to every spoke's
+    /// canvas index on top of the radar's own <c>bearingAlignment</c>
+    /// control. Default 0. Use to dial in any residual misalignment
+    /// the helm sees against the chart - e.g. when Mayara hasn't yet
+    /// shipped a fix for a known compensation gap, the helm can
+    /// compensate from the plotter side without poking the radar's
+    /// installation calibration. Clamped to -180..180; persisted as
+    /// <c>radarBearingCorrection.v1</c>.</summary>
+    double RadarBearingCorrectionDeg { get; }
+
     /// <summary>When true, the radar overlay trusts the wire spoke's
     /// optional <c>bearing</c> field as true-north-referenced and paints
     /// it directly. When false (default), the wire bearing is ignored
@@ -265,5 +275,6 @@ public interface IMapDisplaySettings
     Task SetRadarRangeRingsEnabledAsync(bool value);
     Task SetRadarRangeRingsCountAsync(int value);
     Task SetRadarUseWireBearingAsync(bool value);
+    Task SetRadarBearingCorrectionDegAsync(double value);
     Task SetTideVisibleAsync(bool value);
 }

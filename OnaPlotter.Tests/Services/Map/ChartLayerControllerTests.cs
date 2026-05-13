@@ -148,6 +148,7 @@ public class ChartLayerControllerTests
         public bool RadarRangeRingsEnabled => true;
         public int RadarRangeRingsCount => 4;
         public bool RadarUseWireBearing => false;
+        public double RadarBearingCorrectionDeg => 0.0;
         public bool TideVisible => true;
         public bool AtonsVisible => true;
         public bool AisLabelsVisible => true;
@@ -178,6 +179,7 @@ public class ChartLayerControllerTests
         public Task SetRadarRangeRingsEnabledAsync(bool v) => Task.CompletedTask;
         public Task SetRadarRangeRingsCountAsync(int v) => Task.CompletedTask;
         public Task SetRadarUseWireBearingAsync(bool v) => Task.CompletedTask;
+        public Task SetRadarBearingCorrectionDegAsync(double v) => Task.CompletedTask;
         public Task SetTideVisibleAsync(bool v) => Task.CompletedTask;
         public Task SetAtonsVisibleAsync(bool v) => Task.CompletedTask;
         public Task SetAisLabelsVisibleAsync(bool v) => Task.CompletedTask;

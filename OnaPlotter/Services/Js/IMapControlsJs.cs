@@ -58,6 +58,14 @@ public interface IMapControlsJs
     /// for what the flag does.</summary>
     Task SetRadarUseWireBearingAsync(bool value);
 
+    /// <summary>Push the helm's bearing-correction trim (degrees) to
+    /// every active radar overlay so the picture re-rotates on the
+    /// next sweep. Lets the helm tune visually against the chart with
+    /// immediate feedback. See
+    /// <see cref="IMapDisplaySettings.RadarBearingCorrectionDeg"/>
+    /// for the use case.</summary>
+    Task SetRadarBearingCorrectionAsync(double degrees);
+
     /// <summary>Apply night-mode CSS filter to map tiles + UI chrome.</summary>
     Task SetNightModeAsync(bool enabled);
 

@@ -98,6 +98,17 @@ let boatState = { lat: null, lon: null, headingRad: 0 };
 let ringsEnabled = true;
 let ringsCount = 4;
 
+// Helm-side bearing trim in degrees, added to every spoke's canvas
+// index on top of the radar's installation bearingAlignment. Default
+// 0. Workaround for residual misalignment when the radar provider
+// (e.g. Mayara) has a known compensation gap that's slated for an
+// upstream fix - the helm dials the picture into alignment from the
+// plotter Settings page rather than waiting for the fix. Module-
+// scoped because it's a per-helm preference applied to every active
+// overlay; setRadarBearingCorrection walks active overlays so a live
+// edit takes effect on the next sweep.
+let helmBearingCorrectionDeg = 0;
+
 /**
  * Update the global range-rings configuration. Refreshes every
  * active radar overlay so the helm sees the new rings (or their
@@ -219,6 +230,20 @@ export function setRadarUseWireBearing(value) {
     for (const rec of activeRadars.values()) rec.useWireBearing = v;
 }
 
+/**
+ * Helm dialled the bearing trim. In degrees, -180..180; clamped.
+ * Updates every active overlay so the picture re-rotates on the
+ * next sweep - lets the helm tune visually against the chart and
+ * see the result without an overlay teardown / rebuild. Newly-
+ * enabled overlays pick up the latest value via _updateTotalAlignment
+ * in their constructor.
+ */
+export function setRadarBearingCorrection(deg) {
+    const v = Number(deg);
+    helmBearingCorrectionDeg = Number.isFinite(v) ? Math.max(-180, Math.min(180, v)) : 0;
+    for (const rec of activeRadars.values()) rec._updateTotalAlignment();
+}
+
 /** Update the range value (metres) for a radar. Triggers a canvas
  *  reposition on the next animation frame. */
 export function setRadarRange(radarId, range) {
@@ -301,6 +326,13 @@ class RadarOverlay {
         // overlay off+on.
         const baRad = Number(cfg.bearingAlignmentRad) || 0;
         this.bearingAlignmentSpokes = Math.round(baRad * this.spokes / (2 * Math.PI));
+        // Combined offset = radar installation alignment + helm-side
+        // trim. Recomputed in _updateTotalAlignment whenever either
+        // input changes (setRadarBearingCorrection walks active
+        // overlays). _spokeIndex reads this single field per spoke
+        // so the painter avoids a per-spoke add+round.
+        this.totalAlignmentSpokes = 0;
+        this._updateTotalAlignment();
 
         // Canvas side = maxSpokeLen, two range cells per pixel. For
         // a typical maxSpokeLen=1024 that's a 1024x1024 buffer = 4 MB
@@ -661,6 +693,16 @@ class RadarOverlay {
         }
     }
 
+    /** Recompute the combined alignment offset. Called on construction
+     *  and whenever the helm-side trim changes via
+     *  setRadarBearingCorrection. The radar-side bearingAlignment is
+     *  immutable for the overlay's lifetime so it doesn't trigger this
+     *  path - only the helm trim does. */
+    _updateTotalAlignment() {
+        const helmSpokes = Math.round(helmBearingCorrectionDeg * this.spokes / 360);
+        this.totalAlignmentSpokes = this.bearingAlignmentSpokes + helmSpokes;
+    }
+
     /** Map a spoke's wire angle/bearing onto our canvas's north-up
      *  spoke index. Pure decision delegated to computeSpokeIndex
      *  so the policy can be unit-tested without a canvas/Leaflet
@@ -668,7 +710,7 @@ class RadarOverlay {
     _spokeIndex(spoke) {
         return computeSpokeIndex(
             spoke, boatState.headingRad, this.spokes,
-            this.useWireBearing, this.bearingAlignmentSpokes);
+            this.useWireBearing, this.totalAlignmentSpokes);
     }
 
     setRange(range) {

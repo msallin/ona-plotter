@@ -251,3 +251,4 @@ test('computeSpokeIndex: bearingAlignment default 0 reproduces unaligned behavio
     const spoke = { angle: 100 };
     assert.equal(computeSpokeIndex(spoke, 0, 2048, false), 100);
 });
+

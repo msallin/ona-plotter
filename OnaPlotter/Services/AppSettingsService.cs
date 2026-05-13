@@ -181,6 +181,11 @@ public sealed class AppSettingsService : IAppSettings
     /// (opt-in). Default false; see <see cref="IMapDisplaySettings.RadarUseWireBearing"/>
     /// for why most installs should leave it off.</summary>
     public bool RadarUseWireBearing { get; private set; } = false;
+    /// <summary>Helm-side bearing trim in degrees, added to every spoke's
+    /// canvas index on top of the radar's installation
+    /// <c>bearingAlignment</c>. Default 0; clamped to -180..180. See
+    /// <see cref="IMapDisplaySettings.RadarBearingCorrectionDeg"/>.</summary>
+    public double RadarBearingCorrectionDeg { get; private set; } = 0.0;
 
     public bool PreferMagneticHeading { get; private set; } = false;
 
@@ -428,6 +433,8 @@ public sealed class AppSettingsService : IAppSettings
             RadarRangeRingsCount = (int)Math.Clamp(
                 await LoadDouble("radarRangeRingsCount.v1", 4.0), 1.0, 8.0);
             RadarUseWireBearing = await LoadBool("radarUseWireBearing.v1", false);
+            RadarBearingCorrectionDeg = Math.Clamp(
+                await LoadDouble("radarBearingCorrection.v1", 0.0), -180.0, 180.0);
             PreferMagneticHeading = await LoadBool("preferMagneticHeading.v1", false);
             // CogReadoutSource replaces the legacy preferMagneticCourse.v1
             // boolean. On first load after the upgrade, migrate the old
@@ -991,6 +998,14 @@ public sealed class AppSettingsService : IAppSettings
     {
         RadarUseWireBearing = value;
         await Save("radarUseWireBearing.v1", value ? "true" : "false");
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetRadarBearingCorrectionDegAsync(double value)
+    {
+        RadarBearingCorrectionDeg = Math.Clamp(value, -180.0, 180.0);
+        await Save("radarBearingCorrection.v1",
+            RadarBearingCorrectionDeg.ToString(System.Globalization.CultureInfo.InvariantCulture));
         OnSettingsChanged?.Invoke();
     }
 

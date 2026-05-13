@@ -1817,6 +1817,10 @@
         // running overlay (e.g. on quick navigate-back) would stay on
         // whatever value its enable-time cfg captured.
         await _controlsJs.SetRadarUseWireBearingAsync(Settings.RadarUseWireBearing);
+        // Radar bearing trim: push the helm-side correction so any
+        // active overlay picks it up on its next sweep. Same lifecycle
+        // reason as the useWireBearing push above.
+        await _controlsJs.SetRadarBearingCorrectionAsync(Settings.RadarBearingCorrectionDeg);
         // Push the persisted chart-display CSS filter once at init so
         // every chart layer added below picks it up. addChartLayer
         // re-applies the current filter on each layer creation, so
@@ -2005,6 +2009,7 @@
     private (double OwnCog, double AisCog) _cachedCogVector;
     private (bool Enabled, int Count) _cachedRadarRangeRings;
     private bool _cachedRadarUseWireBearing;
+    private double _cachedRadarBearingCorrection;
     private bool _cachedAtonsVisible;
     private bool _cachedAisLabelsVisible;
     private bool _cachedGuardZoneWarningRingVisible;
@@ -2048,6 +2053,12 @@
             {
                 _cachedRadarUseWireBearing = Settings.RadarUseWireBearing;
                 _ = _controlsJs.SetRadarUseWireBearingAsync(Settings.RadarUseWireBearing);
+            }
+
+            if (Settings.RadarBearingCorrectionDeg != _cachedRadarBearingCorrection)
+            {
+                _cachedRadarBearingCorrection = Settings.RadarBearingCorrectionDeg;
+                _ = _controlsJs.SetRadarBearingCorrectionAsync(Settings.RadarBearingCorrectionDeg);
             }
         }
         // Wake-lock toggles are handled by MainLayout's OnSettingsChanged

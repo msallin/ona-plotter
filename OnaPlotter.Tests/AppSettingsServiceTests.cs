@@ -71,6 +71,32 @@ public class AppSettingsServiceTests
     }
 
     [Test]
+    public async Task RadarBearingCorrection_DefaultZero_RoundTripsAndClampsAtBothEnds()
+    {
+        // Helm-side trim that adds on top of the radar's installation
+        // bearingAlignment. Default 0 (no correction). Persistence must
+        // round-trip in invariant culture (a de-CH / fr-FR helm typing
+        // "5,5" still stores "5.5"). Clamped to -180..180 so a runaway
+        // value can't half-spin the picture - the canvas paints from
+        // a paint index modulo n anyway, but pinning the clamp here
+        // catches a future drift in the setter.
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        await Assert.That(svc.RadarBearingCorrectionDeg).IsEqualTo(0.0);
+
+        await svc.SetRadarBearingCorrectionDegAsync(5.5);
+        await Assert.That(svc.RadarBearingCorrectionDeg).IsEqualTo(5.5);
+        await Assert.That(await kv.GetAsync("radarBearingCorrection.v1")).IsEqualTo("5.5");
+
+        await svc.SetRadarBearingCorrectionDegAsync(720);
+        await Assert.That(svc.RadarBearingCorrectionDeg).IsEqualTo(180.0);
+
+        await svc.SetRadarBearingCorrectionDegAsync(-720);
+        await Assert.That(svc.RadarBearingCorrectionDeg).IsEqualTo(-180.0);
+    }
+
+    [Test]
     public async Task SetWeatherOverlayOpacity_BelowFloor_ClampsTo0_05()
     {
         var kv = new InMemoryKv();

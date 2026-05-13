@@ -32,6 +32,7 @@ internal sealed class FakeSettings : IAppSettings
     public bool RadarRangeRingsEnabled { get; set; } = true;
     public int RadarRangeRingsCount { get; set; } = 4;
     public bool RadarUseWireBearing { get; set; } = false;
+    public double RadarBearingCorrectionDeg { get; set; } = 0.0;
     public bool TideVisible { get; set; } = true;
     public bool AtonsVisible { get; set; } = true;
     public bool AisLabelsVisible { get; set; } = true;
@@ -153,6 +154,7 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetRadarRangeRingsEnabledAsync(bool v) { RadarRangeRingsEnabled = v; return Task.CompletedTask; }
     public Task SetRadarRangeRingsCountAsync(int v) { RadarRangeRingsCount = v; return Task.CompletedTask; }
     public Task SetRadarUseWireBearingAsync(bool v) { RadarUseWireBearing = v; return Task.CompletedTask; }
+    public Task SetRadarBearingCorrectionDegAsync(double v) { RadarBearingCorrectionDeg = v; return Task.CompletedTask; }
     public Task SetTideVisibleAsync(bool v) { TideVisible = v; return Task.CompletedTask; }
     public Task SetSidebarCollapsedAsync(bool v) { SidebarCollapsed = v; return Task.CompletedTask; }
     public Task SetAtonsVisibleAsync(bool v) { AtonsVisible = v; return Task.CompletedTask; }

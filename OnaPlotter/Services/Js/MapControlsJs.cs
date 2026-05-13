@@ -42,6 +42,9 @@ public sealed class MapControlsJs : IMapControlsJs
     public Task SetRadarUseWireBearingAsync(bool value)
         => InvokeSafe("setRadarUseWireBearing", value);
 
+    public Task SetRadarBearingCorrectionAsync(double degrees)
+        => InvokeSafe("setRadarBearingCorrection", degrees);
+
     public Task SetNightModeAsync(bool enabled)
         => InvokeSafe("setNightMode", enabled);
 

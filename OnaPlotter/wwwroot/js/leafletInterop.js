@@ -10,6 +10,7 @@ import { enableRadarOverlay, disableRadarOverlay,
          setRadarRange, setBoatState as setRadarBoatState,
          setRangeRingsConfig as setRadarRangeRingsConfig,
          setRadarUseWireBearing as setRadarUseWireBearingMod,
+         setRadarBearingCorrection as setRadarBearingCorrectionMod,
          tearDownAllRadarOverlays } from './radarLayer.js';
 import * as weatherLayerMod from './weatherLayer.js';
 import * as anchorLayerMod from './anchorLayer.js';
@@ -1369,6 +1370,18 @@ export function startRadarOverlay(cfg) {
  */
 export function setRadarUseWireBearing(value) {
     setRadarUseWireBearingMod(!!value);
+}
+
+/**
+ * Helm dialled the radar bearing-trim slider in Settings. Degrees
+ * (-180..180); forwarded as-is to the radar layer which clamps + walks
+ * active overlays so the picture re-rotates immediately. Use case:
+ * residual misalignment when the radar provider hasn't yet shipped a
+ * fix for a known compensation gap - the helm tunes visually here
+ * without touching the radar's installation calibration.
+ */
+export function setRadarBearingCorrection(deg) {
+    setRadarBearingCorrectionMod(deg);
 }
 
 export function stopRadarOverlay(radarId) {
