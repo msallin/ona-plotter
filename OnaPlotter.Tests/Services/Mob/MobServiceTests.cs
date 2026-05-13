@@ -541,6 +541,151 @@ public class MobServiceTests
     }
 
     [Test]
+    public async Task ClearAsync_Offline_Applies_Local_Waypoint_Deactivate_Before_Server_Catches_Up()
+    {
+        // Helm-flagged scenario (companion of the offline-raise fix):
+        // when the helm clears MOB while offline the chart pin must
+        // visually deactivate IMMEDIATELY, not after the network
+        // returns. The contract is mirror of the raise side - apply
+        // a deactivated clone to the resource cache synchronously in
+        // ClearAsync; let the retry loop converge the server. Without
+        // this, an offline clear leaves the helm staring at a still-
+        // pulsing red marker while the alarm banner has already gone.
+        var (f, waypoints, reader) = NewFixtureWithWaypointsAndReader();
+        using (f)
+        {
+            // Get a real MOB into the cache via RaiseAsync first.
+            // SuspendRaise pins the notification side; the waypoint
+            // create still lands so we have a wp in the reader.
+            f.Api.SuspendRaise = true;
+            var localId = await f.Service.RaiseAsync("MOB", 47.5, 8.5);
+            await WaitForWaypointCreateAsync(waypoints, target: 1);
+            int appliedAfterRaise = reader.AppliedLocal.Count;
+
+            // Park the deactivate PUT so the test observes the cache
+            // before the server's WS echo could possibly arrive.
+            waypoints.CreateGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var cleared = await f.Service.ClearAsync(localId);
+
+            await Assert.That(cleared).IsTrue();
+            // Local deactivate landed on the reader as a fresh
+            // ApplyLocal call. The waypoint instance carries the new
+            // IsMobActive=false flag - that's what the chart layer
+            // reads to switch from pulsing to solid icon.
+            await Assert.That(reader.AppliedLocal.Count).IsGreaterThan(appliedAfterRaise);
+            var deactivated = reader.AppliedLocal[^1];
+            await Assert.That(deactivated.IsMob).IsTrue();
+            await Assert.That(deactivated.IsMobActive).IsFalse();
+            await Assert.That(deactivated.MobAlarmId).IsEqualTo(localId);
+
+            waypoints.CreateGate.TrySetResult();
+        }
+    }
+
+    [Test]
+    public async Task ClearAsync_Offline_DELETE_Persists_And_Retries_Until_Server_Reachable()
+    {
+        // Full offline-clear contract: helm clears MOB while offline,
+        // the local UX confirms instantly, the retry loop persists
+        // the pending DELETE so a reload mid-retry continues the
+        // convergence, and once the server is reachable the loop
+        // drains and removes the pending entry. FailClearCount=2
+        // simulates two failed attempts (first immediate, second
+        // after 1s backoff), the third lands.
+        using var f = NewFixture();
+        f.Api.FailClearCount = 2;
+        f.Store.Apply("notifications.mob.bar", "emergency", "MOB",
+            id: "bar",
+            status: new NotificationStatus(false, false, false, true, true));
+
+        var ok = await f.Service.ClearAsync("bar");
+        await Assert.That(ok).IsTrue();
+
+        // First attempt fires immediately and fails.
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(2);
+        while (f.Api.ClearCalls.Count < 1 && DateTime.UtcNow < deadline)
+            await Task.Delay(10);
+        // Pending entry is persisted to KV between attempts so a
+        // reload mid-retry would replay it.
+        var stored = await f.Kv.GetAsync("mob.pendingClear.v1");
+        await Assert.That(stored).IsNotNull();
+        await Assert.That(stored!).Contains("bar");
+
+        // Drain the backoff schedule until both failures are spent
+        // + the third succeeds. The clear loop reads the latest
+        // pending state each iteration so dropping the entry is the
+        // signal that everything converged.
+        f.Clock.Advance(TimeSpan.FromSeconds(2));
+        deadline = DateTime.UtcNow + TimeSpan.FromSeconds(3);
+        while (f.Service.GetPendingClearForTest("bar") is not null
+            && DateTime.UtcNow < deadline)
+        {
+            f.Clock.Advance(TimeSpan.FromSeconds(2));
+            await Task.Delay(10);
+        }
+        await Assert.That(f.Service.GetPendingClearForTest("bar")).IsNull();
+        // Storage key was wiped on the final drop.
+        var storedAfter = await f.Kv.GetAsync("mob.pendingClear.v1");
+        await Assert.That(storedAfter).IsNull();
+        await Assert.That(f.Api.ClearCalls.Count).IsGreaterThanOrEqualTo(3);
+    }
+
+    [Test]
+    public async Task ClearAsync_Treats_DELETE_404_As_Success_Not_Infinite_Retry()
+    {
+        // 404 on the DELETE means the server already forgot about
+        // this notification (cross-plotter clear, server restart, or
+        // never reached us). The clear loop must treat it as success
+        // so it doesn't spin forever on a phantom id - otherwise a
+        // disconnected-then-reconnected plotter would keep retrying
+        // a notification that's been gone for hours.
+        using var f = NewFixture();
+        f.Api.NextClearStatusCode = 404;   // server says "not found"
+        f.Store.Apply("notifications.mob.ghost", "emergency", "MOB",
+            id: "ghost",
+            status: new NotificationStatus(false, false, false, true, true));
+
+        await f.Service.ClearAsync("ghost");
+        var loop = f.Service.GetClearLoopForTest("ghost");
+        if (loop is not null) await loop;
+
+        // Loop exited after the 404 - pending entry is gone.
+        await Assert.That(f.Service.GetPendingClearForTest("ghost")).IsNull();
+        await Assert.That(f.Api.ClearCalls.Count).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task LoadSessionState_Replays_Persisted_PendingClear_And_Drains_On_Server_Reachable()
+    {
+        // Reload contract for offline clear: a PendingClear written
+        // in a previous session must be replayed at startup so the
+        // server-side convergence resumes without the helm having to
+        // re-tap clear. Simulates the helm clearing MOB offline,
+        // closing the app, reopening hours later with the server
+        // back online.
+        using var f = NewFixture();
+        // Pre-seed the KV as if the previous session left a pending
+        // clear behind. Shape matches PendingClear's JSON.
+        var json = "[{\"NotificationId\":\"persisted-id\",\"NotificationDeletePending\":true," +
+                   "\"WaypointId\":null,\"WaypointDeactivatePending\":false," +
+                   "\"WaypointName\":null,\"WaypointLat\":null,\"WaypointLon\":null," +
+                   "\"WaypointMobAlarmId\":null,\"WaypointCreatedAt\":null,\"AttemptCount\":0}]";
+        await f.Kv.SetAsync("mob.pendingClear.v1", json);
+
+        await f.Service.InitializeAsync();
+
+        // The replay spawns a retry loop that fires DELETE on first
+        // iteration.
+        var loop = f.Service.GetClearLoopForTest("persisted-id");
+        if (loop is not null) await loop;
+
+        await Assert.That(f.Api.ClearCalls).Contains("persisted-id");
+        // The persisted entry is drained from KV after the DELETE
+        // landed so a future reload doesn't re-fire.
+        await Assert.That(f.Service.GetPendingClearForTest("persisted-id")).IsNull();
+    }
+
+    [Test]
     public async Task RaiseAsync_With_Distinct_ServerId_Updates_Mob_Waypoint_AlarmId()
     {
         // TEST-002: cross-plotter correlation contract. After the
@@ -612,9 +757,9 @@ public class MobServiceTests
     {
         // TEST-001 (BLOCKER from the safety contract): cleared MOBs
         // MUST NOT be deleted - they stay on the chart as a permanent
-        // history. A regression that swapped UpdateAsync(isActive=false)
-        // for DeleteAsync would silently erase casualty fixes from
-        // the chart and pass every other test in this suite.
+        // history. A regression that swapped the deactivate PUT for
+        // a DELETE would silently erase casualty fixes from the chart
+        // and pass every other test in this suite.
         var (f, waypoints) = NewFixtureWithWaypoints();
         using (f)
         {
@@ -623,20 +768,21 @@ public class MobServiceTests
             var localId = await f.Service.RaiseAsync("MOB", 47.5, 8.5);
             await WaitForWaypointCreateAsync(waypoints, target: 1);
             await AwaitRaiseLoopAsync(f.Service, localId);
-            // Drop any UpdateMobAlarmId calls that fire during
-            // serverId reconcile so the assertion isolates the
-            // deactivate PUT.
-            int updatesBeforeClear = waypoints.UpdateCalls.Count;
+            // Capture the post-create PutCalls baseline so the
+            // assertion isolates the deactivate PUT from the create
+            // one (both go through PutWithIdAsync).
+            int putsBeforeClear = waypoints.PutCalls.Count;
 
             var cleared = await f.Service.ClearAsync(localId);
-            // Spin briefly for the fire-and-forget SetMobInactive PUT.
-            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(1);
-            while (waypoints.UpdateCalls.Count == updatesBeforeClear && DateTime.UtcNow < deadline)
-                await Task.Delay(10);
+            // Await the clear loop's first attempt (no backoff on
+            // attempt 0) so the deactivate PUT lands deterministically.
+            var clearLoop = f.Service.GetClearLoopForTest(localId);
+            if (clearLoop is not null) await clearLoop;
 
             await Assert.That(cleared).IsTrue();
-            await Assert.That(waypoints.UpdateCalls.Count).IsGreaterThan(updatesBeforeClear);
-            var deactivate = waypoints.UpdateCalls[^1];   // last call
+            await Assert.That(waypoints.PutCalls.Count).IsGreaterThan(putsBeforeClear);
+            // The last PUT is the deactivate; assert on its fields.
+            var deactivate = waypoints.PutCalls[^1];
             await Assert.That(deactivate.IsMob).IsTrue();
             await Assert.That(deactivate.IsActive).IsFalse();   // <-- safety contract
             // Hard guarantee: NO delete call ever fires for MOB
@@ -646,12 +792,14 @@ public class MobServiceTests
     }
 
     [Test]
-    public async Task ClearAsync_Survives_Update_Throw_On_Deactivate()
+    public async Task ClearAsync_Survives_Put_Throw_On_Deactivate()
     {
         // TEST-007: deactivate PUT failure must NOT abort the
         // notification-side clear. Helm-critical: a stuck PUT cannot
         // keep the audible alarm armed; ClearAsync still returns
-        // success and the alarm pipeline still tears down.
+        // success and the alarm pipeline still tears down. The clear-
+        // retry loop catches the throw, logs at warning, and the next
+        // iteration succeeds - so the deactivate eventually lands too.
         var (f, waypoints) = NewFixtureWithWaypoints();
         using (f)
         {
@@ -660,8 +808,9 @@ public class MobServiceTests
             var localId = await f.Service.RaiseAsync("MOB", 47.5, 8.5);
             await WaitForWaypointCreateAsync(waypoints, target: 1);
             await AwaitRaiseLoopAsync(f.Service, localId);
-            // Arm the next update to throw (the deactivate PUT).
-            waypoints.NextUpdateThrow = new InvalidOperationException("simulated PUT crash");
+            // Arm the next PutWithIdAsync to throw (the deactivate PUT
+            // goes through this verb now).
+            waypoints.NextPutThrow = new InvalidOperationException("simulated PUT crash");
 
             var cleared = await f.Service.ClearAsync(localId);
 
@@ -716,17 +865,19 @@ public class MobServiceTests
                 latitude: 47.5, longitude: 8.5);
 
             var cleared = await f.Service.ClearAsync("previous-session-id");
-            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(1);
-            while (waypoints.UpdateCalls.Count == 0 && DateTime.UtcNow < deadline)
-                await Task.Delay(10);
+            // The deactivate PUT fires from the clear-retry loop's
+            // first iteration. Await the loop directly so the test
+            // is deterministic across CI runners.
+            var clearLoop = f.Service.GetClearLoopForTest("previous-session-id");
+            if (clearLoop is not null) await clearLoop;
 
             await Assert.That(cleared).IsTrue();
-            await Assert.That(waypoints.UpdateCalls.Count).IsEqualTo(1);
+            await Assert.That(waypoints.PutCalls.Count).IsEqualTo(1);
             // Scan picked the right waypoint - the MOB one, not the
             // decoy. Pinning by Id catches a regression where the
             // !IsMob guard inverts.
-            await Assert.That(waypoints.UpdateCalls[0].Waypoint.Id).IsEqualTo("wp-cached");
-            await Assert.That(waypoints.UpdateCalls[0].IsActive).IsFalse();
+            await Assert.That(waypoints.PutCalls[0].Id).IsEqualTo("wp-cached");
+            await Assert.That(waypoints.PutCalls[0].IsActive).IsFalse();
         }
     }
 
@@ -1327,7 +1478,11 @@ public class MobServiceTests
     public async Task ClearAsync_Drops_Server_Side_Entry_And_Posts_Action_Verb()
     {
         // Server-twin entry (id known, no pending raise) clears via
-        // POST /{id}/clear.
+        // DELETE /notifications/{id}. ClearAsync returns immediately
+        // after the local synthetic is dropped; the DELETE is
+        // dispatched from the clear-retry loop's first iteration
+        // (no backoff on attempt 0), so the test awaits the loop
+        // to observe the call.
         using var f = NewFixture();
         f.Store.Apply("notifications.mob.bar", "emergency", "MOB",
             id: "bar",
@@ -1337,14 +1492,27 @@ public class MobServiceTests
 
         await Assert.That(ok).IsTrue();
         await Assert.That(f.Store.Active.Any(n => n.Path == "notifications.mob.bar")).IsFalse();
+        // First DELETE attempt fires immediately; spin briefly until
+        // it lands. Production path: NotificationsApi.ClearAsync.
+        var clearLoop = f.Service.GetClearLoopForTest("bar");
+        if (clearLoop is not null) await clearLoop;
         await Assert.That(f.Api.ClearCalls).Contains("bar");
     }
 
     [Test]
-    public async Task ClearAsync_Returns_False_On_Api_Failure()
+    public async Task ClearAsync_Retries_DELETE_When_First_Attempt_Fails()
     {
-        // TEST-003: the failure path on ClearAsync is part of the
-        // contract - callers may want to surface a toast.
+        // The clear is local-first: even when the DELETE fails on the
+        // first try, ClearAsync returns true (the helm's local clear
+        // has already taken effect) and a PendingClear retry loop
+        // keeps trying. This is the inverse of the raise side's
+        // resilience and the reason offline clears propagate to the
+        // server once the link returns.
+        //
+        // FailClearCount=1 makes the first attempt fail; the second
+        // succeeds. The retry loop's first attempt is immediate (no
+        // backoff) and the second attempt comes after a 1s backoff
+        // tick which the FakeTimeProvider advances inline.
         using var f = NewFixture();
         f.Api.FailClearCount = 1;
         f.Store.Apply("notifications.mob.bar", "emergency", "MOB",
@@ -1352,8 +1520,30 @@ public class MobServiceTests
             status: new NotificationStatus(false, false, false, true, true));
 
         var ok = await f.Service.ClearAsync("bar");
+        await Assert.That(ok).IsTrue();
 
-        await Assert.That(ok).IsFalse();
+        // First attempt fires immediately and fails; spin until it
+        // records.
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(2);
+        while (f.Api.ClearCalls.Count < 1 && DateTime.UtcNow < deadline)
+            await Task.Delay(10);
+        await Assert.That(f.Api.ClearCalls.Count).IsGreaterThanOrEqualTo(1);
+
+        // Advance past the first backoff slot so the second attempt
+        // fires; spin until the loop has retired the pending-clear
+        // entry (both bits cleared).
+        f.Clock.Advance(TimeSpan.FromSeconds(2));
+        deadline = DateTime.UtcNow + TimeSpan.FromSeconds(3);
+        while (f.Service.GetPendingClearForTest("bar") is not null
+            && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(10);
+        }
+
+        await Assert.That(f.Service.GetPendingClearForTest("bar")).IsNull();
+        // Both calls hit the server-side DELETE - the loop retried.
+        await Assert.That(f.Api.ClearCalls.Count).IsGreaterThanOrEqualTo(2);
+        await Assert.That(f.Api.ClearCalls.All(c => c == "bar")).IsTrue();
     }
 
     [Test]
@@ -1396,7 +1586,10 @@ public class MobServiceTests
     public async Task ClearAllAsync_Tears_Down_Pending_And_Server_Mobs()
     {
         // The bar-button two-tap path. Pending + server entries
-        // both cleared in one call.
+        // both cleared in one call. The pending one has no serverId,
+        // so its DELETE is skipped (NotificationDeletePending=false
+        // on the queued PendingClear); the server-twin entry's DELETE
+        // is dispatched from the clear-retry loop.
         using var f = NewFixture();
         f.Api.SuspendRaise = true;
         var localId = await f.Service.RaiseAsync("MOB pending", 47.5, 8.5);
@@ -1410,8 +1603,11 @@ public class MobServiceTests
             .Where(n => n.Path.StartsWith(MobPathPrefix, StringComparison.Ordinal))
             .ToList();
         await Assert.That(mobPaths.Count).IsEqualTo(0);
-        // The server entry was cleared via REST; the pending one
-        // wasn't (no serverId).
+
+        // The server entry's DELETE fires from the clear-retry loop's
+        // first iteration; await the loop to observe the call.
+        var serverLoop = f.Service.GetClearLoopForTest("server-foo");
+        if (serverLoop is not null) await serverLoop;
         await Assert.That(f.Api.ClearCalls).Contains("server-foo");
         await Assert.That(f.Api.ClearCalls.Count).IsEqualTo(1);
     }
@@ -1583,9 +1779,20 @@ public class MobServiceTests
         // pipeline calls. Records the id and fails N times when
         // FailClearCount is set, so tests pin both the verb and the
         // surface for "POST returned 4xx" recovery.
+        /// <summary>When non-null, ClearAsync returns a one-shot
+        /// failure carrying this status code. Lets the 404-as-success
+        /// path on the clear-retry loop be exercised explicitly.
+        /// Drains after firing once.</summary>
+        public int? NextClearStatusCode { get; set; }
+
         public Task<ApiResult> ClearAsync(string id, CancellationToken ct = default)
         {
             ClearCalls.Add(id);
+            if (NextClearStatusCode is { } code)
+            {
+                NextClearStatusCode = null;
+                return Task.FromResult(ApiResult.Fail("not found", code));
+            }
             if (FailClearCount > 0)
             {
                 FailClearCount--;
@@ -1668,6 +1875,12 @@ public class MobServiceTests
         /// "PUT throws" failure path without leaving the fake in a
         /// permanently-throwing state.</summary>
         public Exception? NextUpdateThrow { get; set; }
+
+        /// <summary>One-shot exception arming for the next
+        /// <see cref="PutWithIdAsync"/> call. Drains after firing
+        /// once. Used by clear-retry-loop tests to verify the loop
+        /// continues across transient throws on the deactivate PUT.</summary>
+        public Exception? NextPutThrow { get; set; }
 
         /// <summary>Optional gate on CreateAsync. When set, the call
         /// records itself in <see cref="CreateCalls"/>, then awaits
@@ -1757,6 +1970,11 @@ public class MobServiceTests
             {
                 try { await gate.Task.WaitAsync(ct); }
                 catch (OperationCanceledException) { return ApiResult.Fail("cancelled"); }
+            }
+            if (NextPutThrow is { } putEx)
+            {
+                NextPutThrow = null;
+                throw putEx;
             }
             if (NextCreateResult is { } result)
             {

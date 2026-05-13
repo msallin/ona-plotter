@@ -62,6 +62,7 @@ namespace OnaPlotter.Services.Json;
 [JsonSerializable(typeof(RouteDraft))]
 [JsonSerializable(typeof(SnoozedTarget[]))]
 [JsonSerializable(typeof(OnaPlotter.Services.Mob.PendingRaise[]))]
+[JsonSerializable(typeof(OnaPlotter.Services.Mob.PendingClear[]))]
 [JsonSerializable(typeof(OnaPlotter.Services.Mob.ResolvedMobPosition[]))]
 [JsonSerializable(typeof(SignalkSubscribeRequest))]
 [JsonSerializable(typeof(SignalkUnsubscribeRequest))]

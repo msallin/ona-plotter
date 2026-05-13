@@ -56,6 +56,7 @@ namespace OnaPlotter.Services.Mob;
 public sealed class MobService : IMobService, IDisposable
 {
     private const string StorageKey = "mob.pendingRaise.v1";
+    private const string ClearStorageKey = "mob.pendingClear.v1";
     private const string MobPathPrefix = "notifications.mob.";
 
     /// <summary>Default banner copy when the helm doesn't pass an
@@ -124,6 +125,19 @@ public sealed class MobService : IMobService, IDisposable
     /// inside survives reload via localStorage; the cancel handle
     /// + loop task are session-scoped.</summary>
     private readonly Dictionary<string, LivePending> _pending =
+        new(StringComparer.Ordinal);
+
+    /// <summary>Live pending clears keyed by notification id. Mirror
+    /// of <see cref="_pending"/> for the helm-cleared side: when a
+    /// clear (or its post-deferred-raise DELETE) can't reach the
+    /// server, the work parks here so the retry loop drains both the
+    /// notification DELETE and the waypoint deactivate PUT
+    /// independently. Persisted via <see cref="ClearStorageKey"/>;
+    /// the local-side cleanup (drop synthetic, deactivate cached
+    /// waypoint) is done synchronously in <see cref="ClearAsync"/>
+    /// so the helm sees an instantaneous clear regardless of what
+    /// this loop is doing in the background.</summary>
+    private readonly Dictionary<string, LivePendingClear> _pendingClears =
         new(StringComparer.Ordinal);
 
     private bool _disposed;
@@ -502,8 +516,9 @@ public sealed class MobService : IMobService, IDisposable
                 return;
             }
             // Mirror the new id on the in-memory copy so a subsequent
-            // SetMobInactiveAsync (helm clears immediately) PUTs the
-            // correct mobAlarmId.
+            // clear (helm clears immediately) snapshots the correct
+            // mobAlarmId into its <see cref="PendingClear"/> record
+            // and the PUT-deactivate retry carries the server-side id.
             wp.MobAlarmId = newAlarmId;
             _logger.LogInformation(
                 "[mob] waypoint mobAlarmId updated {WpId} -> {ServerId}",
@@ -513,38 +528,6 @@ public sealed class MobService : IMobService, IDisposable
         {
             _logger.LogWarning(ex, "[mob] waypoint mobAlarmId update threw for {WpId}", wp.Id);
             _toastWarning?.Invoke($"MOB cross-plotter correlation failed: {ex.Message}");
-        }
-    }
-
-    /// <summary>Flip the MOB waypoint's <c>isActive</c> to false
-    /// without deleting it. Called from <see cref="ClearAsync"/> so
-    /// the waypoint stays on the chart (and in the Resources list)
-    /// as a persistent history of past MOBs - the helm can revisit
-    /// where a casualty was raised even after the alarm cleared.</summary>
-    private async Task SetMobInactiveAsync(SignalkWaypoint wp)
-    {
-        if (_waypoints is null) return;
-        try
-        {
-            var result = await _waypoints.UpdateAsync(
-                wp, wp.Name ?? "", wp.Description,
-                isMob: true, isActive: false, mobAlarmId: wp.MobAlarmId);
-            if (!result.Success)
-            {
-                _logger.LogWarning(
-                    "[mob] waypoint deactivate failed for {WpId}: {Error}",
-                    wp.Id, result.Error ?? "(no body)");
-                _toastWarning?.Invoke($"MOB cleared but chart marker still active - server unreachable");
-                return;
-            }
-            _logger.LogInformation(
-                "[mob] waypoint deactivated {WpId}",
-                wp.Id);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "[mob] waypoint deactivate threw for {WpId}", wp.Id);
-            _toastWarning?.Invoke($"MOB cleared but chart marker still active: {ex.Message}");
         }
     }
 
@@ -641,17 +624,13 @@ public sealed class MobService : IMobService, IDisposable
         // flips back to TRUE after the helm thought they cleared it).
         // Mitigation: stamp ClearRequested on the pending raise + let
         // the loop run. The loop's success branch sees the flag,
-        // fires DELETE on the just-assigned serverId, and exits. We
-        // still drop the local synthetic + the chart waypoint NOW so
-        // the helm's UX is "clear was instantaneous"; the server-side
-        // cleanup happens in the background.
+        // upgrades the pending-clear entry with the assigned serverId,
+        // and exits; the clear-retry loop fires DELETE in the next
+        // tick. Local synthetic + chart waypoint are dropped / flipped
+        // NOW so the helm's UX is "clear was instantaneous".
         bool deferredClear = matchedLocalId is not null && !hasServerSide;
         if (deferredClear)
         {
-            // Stamp the flag in-place; the loop reads it after each
-            // RaiseMobAsync call. Persist so a reload mid-race
-            // resumes the cleanup. DON'T CancelAndDropPending here -
-            // that would kill the loop before it can DELETE.
             if (_pending.TryGetValue(matchedLocalId!, out var liveDeferred))
             {
                 liveDeferred.Raise = liveDeferred.Raise with { ClearRequested = true };
@@ -683,38 +662,127 @@ public sealed class MobService : IMobService, IDisposable
         // fix from a long-resolved casualty.
         _resolvedPositions.Forget(id);
 
-        // Flip the paired MOB waypoint to isActive=false so the
-        // chart stops pulsing but the waypoint stays as a
-        // persistent MOB history entry. Best-effort - a failed
-        // PUT logs + toasts but doesn't abort the notification clear
-        // (a server outage or a stale resource cache shouldn't keep
-        // the audible alarm armed).
-        if (mobWp is not null)
+        // Local-first waypoint deactivate: flip a clone of the cached
+        // MOB waypoint to isActive=false and apply it back through the
+        // resource cache so the chart marker stops pulsing IMMEDIATELY,
+        // independent of any server round-trip. Mirror of the local-
+        // first seed on the raise side. Eventual server reconciliation
+        // happens in the clear-retry loop below. Skipped when there's
+        // no waypoint (legacy 5-arg ctor, or no _resources DI) - the
+        // chart will simply not have a marker to update.
+        if (mobWp is not null && _resources is not null)
         {
-            _ = SetMobInactiveAsync(mobWp);
+            _resources.ApplyLocal(CloneWaypointDeactivated(mobWp));
         }
 
-        // Skip the REST call when we know there's no server-side
-        // entry to clear. Calling DELETE /<localId> would 404 (the
-        // server never saw that id) and the call wastes a round-
-        // trip + can confuse a future observer in the server log.
-        // Also skip in the deferred-clear case: the retry loop's
-        // success branch will issue DELETE on the assigned serverId
-        // once the in-flight POST returns.
-        if (matchedLocalId is not null && !hasServerSide)
+        // Compose the server-side work. The notification DELETE is
+        // skipped for two cases:
+        //   1. Pending local with no serverId yet (deferred-clear) -
+        //      the raise loop owns the DELETE handoff once it discovers
+        //      the serverId; we set NotificationDeletePending=false now
+        //      and the raise loop flips it true with the right id.
+        //   2. No serverSide work at all: the rare path where ClearAsync
+        //      is invoked on a id that never had a server twin AND no
+        //      matching pending - basically a no-op (the local synthetic
+        //      drop above is sufficient).
+        // The waypoint deactivate is queued whenever there's a paired
+        // MOB waypoint with a known id - PUT-with-id is idempotent so a
+        // retry that lands after another plotter already deactivated is
+        // a no-op.
+        bool needNotificationDelete = !deferredClear
+            && !(matchedLocalId is not null && !hasServerSide);
+        bool needWaypointDeactivate = mobWp is not null
+            && _waypoints is not null
+            && !string.IsNullOrEmpty(mobWp.Id);
+
+        if (needNotificationDelete || needWaypointDeactivate
+            || (deferredClear && needWaypointDeactivate))
         {
-            return true;
+            // Use matchedLocalId as the key in the deferred-clear case
+            // so the raise loop can locate this pending-clear when its
+            // POST returns with the serverId; otherwise use the helm-
+            // passed id (server twin path or cross-plotter clear).
+            var clearKey = deferredClear ? matchedLocalId! : id;
+            var pendingClear = new PendingClear(
+                NotificationId: id,
+                NotificationDeletePending: needNotificationDelete,
+                WaypointId: needWaypointDeactivate ? mobWp!.Id : null,
+                WaypointDeactivatePending: needWaypointDeactivate,
+                WaypointName: mobWp?.Name,
+                WaypointLat: mobWp?.Latitude,
+                WaypointLon: mobWp?.Longitude,
+                WaypointMobAlarmId: mobWp?.MobAlarmId,
+                WaypointCreatedAt: mobWp?.CreatedAt,
+                AttemptCount: 0);
+            await QueuePendingClearAsync(clearKey, pendingClear, ct).ConfigureAwait(false);
         }
 
-        // DELETE /signalk/v2/api/notifications/<id> - the actual
-        // clear path on signalk-server. The previous POST .../clear
-        // endpoint returned 404 (it isn't routed), so the local
-        // plotter cleared its own banner but no WS delta ever
-        // broadcast and other plotters' banners stayed up. The
-        // server's DELETE handler emits the "normal"/"cleared"
-        // notifications delta we rely on for cross-plotter sync.
-        var result = await _api.ClearAsync(id, ct).ConfigureAwait(false);
-        return result.Success;
+        // ClearAsync's contract is "local clear succeeded"; the server-
+        // side convergence happens in the retry loop. Mirrors the raise
+        // side's "return localId once local state is in place" model -
+        // the helm sees an instant clear and the network catches up in
+        // the background.
+        return true;
+    }
+
+    /// <summary>Builds a snapshot of <paramref name="src"/> with
+    /// <c>IsMobActive</c> flipped to <c>false</c>. Used by
+    /// <see cref="ClearAsync"/>'s local-first deactivate path so the
+    /// cached MOB waypoint instance isn't mutated in place - the
+    /// content-equality dedup on <see cref="OnaPlotter.Services.Resources.ResourceTypeCache{T}.Apply"/>
+    /// compares fields, and mutating + re-applying the same reference
+    /// would no-op silently (cache + incoming are reference-equal).
+    /// All non-active fields are copied verbatim so the eventual server
+    /// echo's content-equality check has a deterministic snapshot to
+    /// compare against.</summary>
+    private static SignalkWaypoint CloneWaypointDeactivated(SignalkWaypoint src) => new()
+    {
+        Id = src.Id,
+        Name = src.Name,
+        Description = src.Description,
+        Latitude = src.Latitude,
+        Longitude = src.Longitude,
+        CreatedAt = src.CreatedAt,
+        IsMob = src.IsMob,
+        IsMobActive = false,
+        MobAlarmId = src.MobAlarmId,
+        Feature = src.Feature,
+    };
+
+    /// <summary>Queue (or upsert) a pending-clear entry and spawn the
+    /// retry loop. Idempotent: when a clear-key already exists, the
+    /// existing entry's pending bits are OR-merged with the new ones
+    /// so a second ClearAsync against the same MOB doesn't lose
+    /// in-flight progress (e.g. waypoint deactivate already succeeded
+    /// from a previous attempt, only the notification DELETE is left).
+    /// Cancels and respawns the loop when the bits change so the new
+    /// state is read on the next iteration.</summary>
+    private async Task QueuePendingClearAsync(string clearKey, PendingClear pending, CancellationToken ct)
+    {
+        if (_pendingClears.TryGetValue(clearKey, out var existing))
+        {
+            // Merge: OR the pending bits; prefer the new NotificationId
+            // (covers the deferred-clear upgrade where the raise loop
+            // discovers the serverId and rewrites the placeholder id).
+            existing.Clear = existing.Clear with
+            {
+                NotificationId = pending.NotificationId,
+                NotificationDeletePending = existing.Clear.NotificationDeletePending || pending.NotificationDeletePending,
+                WaypointId = pending.WaypointId ?? existing.Clear.WaypointId,
+                WaypointDeactivatePending = existing.Clear.WaypointDeactivatePending || pending.WaypointDeactivatePending,
+                WaypointName = pending.WaypointName ?? existing.Clear.WaypointName,
+                WaypointLat = pending.WaypointLat ?? existing.Clear.WaypointLat,
+                WaypointLon = pending.WaypointLon ?? existing.Clear.WaypointLon,
+                WaypointMobAlarmId = pending.WaypointMobAlarmId ?? existing.Clear.WaypointMobAlarmId,
+                WaypointCreatedAt = pending.WaypointCreatedAt ?? existing.Clear.WaypointCreatedAt,
+            };
+            await PersistPendingClearsAsync(ct).ConfigureAwait(false);
+            return;
+        }
+        var live = new LivePendingClear(pending, new CancellationTokenSource());
+        _pendingClears[clearKey] = live;
+        await PersistPendingClearsAsync(ct).ConfigureAwait(false);
+        live.Loop = Task.Run(() => RunClearLoopAsync(clearKey, live.Cts.Token));
     }
 
     /// <inheritdoc/>
@@ -811,6 +879,29 @@ public sealed class MobService : IMobService, IDisposable
         // Each Apply above fires OnPathChanged; the alarm pipeline
         // subscriber wakes itself N times (cheap; coalesced at the
         // next render tick).
+
+        // Recover persisted pending clears. A reload mid-clear-retry
+        // (helm cleared MOB while offline, closed app, reopened later)
+        // continues the convergence loop from where it left off. The
+        // local-side cleanup (synthetic dropped, chart waypoint
+        // deactivated) was already persistent because the synthetic
+        // didn't get re-applied during this reload's raise replay -
+        // a cleared MOB has no PendingRaise entry by the time the
+        // helm sees the toast.
+        var persistedClears = await LoadPendingClearsAsync(ct).ConfigureAwait(false);
+        foreach (var pc in persistedClears)
+        {
+            // Keying: replay uses NotificationId as the key. For
+            // entries written before the raise loop's serverId-discovery
+            // upgrade ran, this is the localId; after the upgrade, it's
+            // the serverId. Either way the retry loop reads the latest
+            // bits + ids off the live entry, so the key just has to be
+            // stable for the lifetime of the loop.
+            var clearKey = pc.NotificationId;
+            var live = new LivePendingClear(pc, new CancellationTokenSource());
+            _pendingClears[clearKey] = live;
+            live.Loop = Task.Run(() => RunClearLoopAsync(clearKey, live.Cts.Token));
+        }
     }
 
     /// <summary>Repeatable reconcile: pull the server's active
@@ -1052,17 +1143,29 @@ public sealed class MobService : IMobService, IDisposable
                     // we need to DELETE before its WS echo lands and
                     // re-arms the alarm. Local synthetic + chart
                     // waypoint were already deactivated by ClearAsync
-                    // (deferred-clear branch); only the server-side
-                    // cleanup is left. Best-effort: a failed DELETE
-                    // logs but the local UX has already cleared.
+                    // (deferred-clear branch); the server-side cleanup
+                    // hands off to the clear-retry loop so a failed
+                    // DELETE survives reload + retries until it lands.
+                    // Pre-clear-loop this was fire-and-forget on the
+                    // raise loop's thread - any failure dissolved into
+                    // the WASM console and the server's WS echo
+                    // resurrected the alarm.
                     if (live.Raise.ClearRequested)
                     {
-                        try { _ = _api.ClearAsync(result.Value, CancellationToken.None); }
-                        catch (Exception ex)
-                        {
-                            _logger.LogWarning(ex,
-                                "[mob] deferred-clear DELETE for {ServerId} threw", result.Value);
-                        }
+                        await QueuePendingClearAsync(
+                            pending.LocalId,
+                            new PendingClear(
+                                NotificationId: result.Value,
+                                NotificationDeletePending: true,
+                                WaypointId: null,
+                                WaypointDeactivatePending: false,
+                                WaypointName: null,
+                                WaypointLat: null,
+                                WaypointLon: null,
+                                WaypointMobAlarmId: null,
+                                WaypointCreatedAt: null,
+                                AttemptCount: 0),
+                            CancellationToken.None).ConfigureAwait(false);
                         CancelAndDropPending(pending.LocalId);
                         return;
                     }
@@ -1149,6 +1252,175 @@ public sealed class MobService : IMobService, IDisposable
         _ = PersistPendingAsync(CancellationToken.None);
     }
 
+    private void CancelAndDropPendingClear(string clearKey)
+    {
+        if (_pendingClears.Remove(clearKey, out var live))
+        {
+            try { live.Cts.Cancel(); } catch { /* already cancelled */ }
+            live.Cts.Dispose();
+        }
+        _ = PersistPendingClearsAsync(CancellationToken.None);
+    }
+
+    private async Task RunClearLoopAsync(string clearKey, CancellationToken ct)
+    {
+        // Top-level guard mirrors RunRaiseLoopAsync: any unexpected
+        // throw out of the body would fault the Task.Run loop and the
+        // pending clear would stay queued forever. Inner per-attempt
+        // catches handle known failure types; this catches the unknowns
+        // so a clear that's already been UX-confirmed to the helm still
+        // makes it to the server, eventually.
+        try
+        {
+            await RunClearLoopCoreAsync(clearKey, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // Disposal or coalesced cancel - expected.
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "[mob] clear retry loop crashed for clearKey={ClearKey}; pending state stays in localStorage and will be replayed on the next session",
+                clearKey);
+        }
+    }
+
+    private async Task RunClearLoopCoreAsync(string clearKey, CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            // Snapshot the current state. The deferred-clear path
+            // (raise loop discovers serverId mid-retry) mutates this
+            // entry in place via QueuePendingClearAsync's upsert path,
+            // so each iteration reads the freshest pending bits.
+            if (!_pendingClears.TryGetValue(clearKey, out var liveTop))
+            {
+                return;
+            }
+            var pending = liveTop.Clear;
+            int attempt = pending.AttemptCount;
+
+            // Both flags false means everything landed - drop the
+            // entry and exit. (Reachable when an in-flight iteration
+            // cleared one bit and the next iteration finds the other
+            // already false because the deferred-clear path queued
+            // only the DELETE half.)
+            if (!pending.NotificationDeletePending && !pending.WaypointDeactivatePending)
+            {
+                CancelAndDropPendingClear(clearKey);
+                return;
+            }
+
+            // Backoff schedule mirror of the raise side. First attempt
+            // is immediate so the helm sees the request go out on a
+            // good network; retries are paced 1/2/5/10/30/60s.
+            if (attempt > 0)
+            {
+                int idx = Math.Min(attempt - 1, BackoffSchedule.Length - 1);
+                try { await Task.Delay(BackoffSchedule[idx], _time, ct).ConfigureAwait(false); }
+                catch (OperationCanceledException) { return; }
+            }
+
+            bool notificationDone = !pending.NotificationDeletePending;
+            bool waypointDone = !pending.WaypointDeactivatePending;
+
+            // Notification DELETE. 404 means the server already
+            // forgot about this id (cross-plotter clear, or never
+            // existed) - treat as success so the loop doesn't spin
+            // forever on a phantom.
+            if (pending.NotificationDeletePending
+                && !string.IsNullOrEmpty(pending.NotificationId))
+            {
+                ApiResult result;
+                try
+                {
+                    result = await _api.ClearAsync(pending.NotificationId, ct).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { return; }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "[mob] clear DELETE threw on attempt={Attempt} for {Id}",
+                        attempt, pending.NotificationId);
+                    result = ApiResult.Fail(ex.Message);
+                }
+                if (result.Success || result.StatusCode == 404)
+                {
+                    notificationDone = true;
+                    _logger.LogInformation(
+                        "[mob] notification cleared on server for {Id} (attempt {Attempt}, status={Status})",
+                        pending.NotificationId, attempt, result.StatusCode);
+                }
+            }
+
+            // Waypoint deactivate PUT. PUT-with-id is idempotent on
+            // both create + update paths; a 404 is impossible here
+            // (PUT on a new id creates the resource) so no special
+            // status code handling is needed.
+            if (pending.WaypointDeactivatePending
+                && _waypoints is not null
+                && !string.IsNullOrEmpty(pending.WaypointId)
+                && pending.WaypointLat is double lat
+                && pending.WaypointLon is double lon)
+            {
+                ApiResult result;
+                try
+                {
+                    result = await _waypoints.PutWithIdAsync(
+                        pending.WaypointId, pending.WaypointName ?? "", lat, lon,
+                        description: null,
+                        isMob: true, isActive: false,
+                        mobAlarmId: pending.WaypointMobAlarmId,
+                        ct: ct).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { return; }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "[mob] clear PUT-deactivate threw on attempt={Attempt} for {WpId}",
+                        attempt, pending.WaypointId);
+                    result = ApiResult.Fail(ex.Message);
+                }
+                if (result.Success)
+                {
+                    waypointDone = true;
+                    _logger.LogInformation(
+                        "[mob] waypoint deactivated on server for {WpId} (attempt {Attempt})",
+                        pending.WaypointId, attempt);
+                }
+            }
+            else if (pending.WaypointDeactivatePending)
+            {
+                // No PUT possible (no API DI, or no coords) - the
+                // local deactivate is the best we can offer. Clear
+                // the bit so the loop exits.
+                waypointDone = true;
+            }
+
+            attempt++;
+
+            // Update the pending state with progress + attempt
+            // counter and persist. If both bits are now cleared,
+            // drop the entry; otherwise keep iterating.
+            if (_pendingClears.TryGetValue(clearKey, out var liveNow))
+            {
+                liveNow.Clear = liveNow.Clear with
+                {
+                    NotificationDeletePending = !notificationDone && liveNow.Clear.NotificationDeletePending,
+                    WaypointDeactivatePending = !waypointDone && liveNow.Clear.WaypointDeactivatePending,
+                    AttemptCount = attempt,
+                };
+                if (!liveNow.Clear.NotificationDeletePending && !liveNow.Clear.WaypointDeactivatePending)
+                {
+                    CancelAndDropPendingClear(clearKey);
+                    return;
+                }
+                await PersistPendingClearsAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
     private Task PersistPendingAsync(CancellationToken ct)
     {
         // Empty queue -> remove the storage key so a stale entry
@@ -1182,6 +1454,37 @@ public sealed class MobService : IMobService, IDisposable
         }
     }
 
+    private Task PersistPendingClearsAsync(CancellationToken ct)
+    {
+        // Same shape + rationale as PersistPendingAsync; written under
+        // a sibling KV key so a corruption on one queue can't poison
+        // the other on the next reload.
+        if (_pendingClears.Count == 0)
+        {
+            return _kv.RemoveAsync(ClearStorageKey, ct);
+        }
+        var json = JsonSerializer.Serialize(
+            _pendingClears.Values.Select(l => l.Clear).ToArray(),
+            OnaPlotter.Services.Json.OnaJsonContext.Default.PendingClearArray);
+        return _kv.SetAsync(ClearStorageKey, json, ct);
+    }
+
+    private async Task<List<PendingClear>> LoadPendingClearsAsync(CancellationToken ct)
+    {
+        var json = await _kv.GetAsync(ClearStorageKey, ct).ConfigureAwait(false);
+        if (string.IsNullOrEmpty(json)) return [];
+        try
+        {
+            var arr = JsonSerializer.Deserialize(json,
+                OnaPlotter.Services.Json.OnaJsonContext.Default.PendingClearArray);
+            return arr is null ? [] : [.. arr];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
@@ -1197,6 +1500,12 @@ public sealed class MobService : IMobService, IDisposable
             live.Cts.Dispose();
         }
         _pending.Clear();
+        foreach (var liveClear in _pendingClears.Values)
+        {
+            try { liveClear.Cts.Cancel(); } catch { /* best-effort */ }
+            liveClear.Cts.Dispose();
+        }
+        _pendingClears.Clear();
     }
 
     /// <summary>Test seam: returns the running retry-loop Task for
@@ -1213,6 +1522,17 @@ public sealed class MobService : IMobService, IDisposable
     /// through localStorage.</summary>
     internal PendingRaise? GetPendingForTest(string localId) =>
         _pending.TryGetValue(localId, out var l) ? l.Raise : null;
+
+    /// <summary>Test seam: returns the running clear-retry-loop Task
+    /// for the given clear key. Tests await this to observe the
+    /// background DELETE / PUT-deactivate landing, replacing wall-
+    /// clock Task.Delay waits.</summary>
+    internal Task? GetClearLoopForTest(string clearKey) =>
+        _pendingClears.TryGetValue(clearKey, out var l) ? l.Loop : null;
+
+    /// <summary>Test-only inspection of the pending-clear record.</summary>
+    internal PendingClear? GetPendingClearForTest(string clearKey) =>
+        _pendingClears.TryGetValue(clearKey, out var l) ? l.Clear : null;
 
     /// <summary>WGS-84 envelope check. Both null is fine (no fix yet
     /// is a real state for a MOB raised without GPS); a non-null pair
@@ -1237,10 +1557,11 @@ public sealed class MobService : IMobService, IDisposable
         public Task Loop { get; set; } = Task.CompletedTask;
         /// <summary>Reference to the freshly-created MOB waypoint
         /// instance, stamped right after <see cref="MobService.CreateMobWaypointAsync"/>'s
-        /// POST returns. Used by <see cref="MobService.SetMobInactiveAsync"/>
+        /// POST returns. Used by <see cref="MobService.ClearAsync"/>
         /// (via the synchronous <see cref="MobService.FindMobWaypoint"/>
-        /// fast path in <c>ClearAsync</c>) so the deactivate PUT goes
-        /// against a known-good <see cref="SignalkWaypoint"/> without
+        /// fast path) so the clone-and-deactivate snapshot composed
+        /// into the <see cref="PendingClear"/> record goes against a
+        /// known-good <see cref="SignalkWaypoint"/> without
         /// round-tripping through <c>ResourceStore.GetWaypoint</c>.
         /// The cache lookup was racy: the WS echo of the just-created
         /// waypoint can lag the local POST response, so a same-tick
@@ -1266,6 +1587,25 @@ public sealed class MobService : IMobService, IDisposable
         public LivePending(PendingRaise raise, CancellationTokenSource cts)
         {
             Raise = raise;
+            Cts = cts;
+        }
+    }
+
+    /// <summary>Mirror of <see cref="LivePending"/> for the cleared
+    /// side. Bundles the persistable record, the cancel handle, and
+    /// the retry-loop task so add/remove is atomic and no CTS or task
+    /// is ever orphaned. The persistable <see cref="PendingClear"/>
+    /// survives reload; the cancel handle + loop task are session-
+    /// scoped.</summary>
+    private sealed class LivePendingClear
+    {
+        public PendingClear Clear { get; set; }
+        public CancellationTokenSource Cts { get; }
+        public Task Loop { get; set; } = Task.CompletedTask;
+
+        public LivePendingClear(PendingClear clear, CancellationTokenSource cts)
+        {
+            Clear = clear;
             Cts = cts;
         }
     }
@@ -1298,3 +1638,31 @@ public sealed record PendingRaise(
     bool ClearRequested = false,
     bool WaypointPostPending = false,
     string? WaypointName = null);
+
+/// <summary>Persistable pending-clear record. Mirror of <see cref="PendingRaise"/>
+/// for the helm-cleared side: when an offline (or otherwise failed) clear
+/// leaves work for the server - DELETE the notification, PUT the paired
+/// MOB waypoint to <c>isActive: false</c> - the work hangs off this
+/// record so the retry loop can resume across reloads.
+/// <para>Local state (notification dropped, chart pin deactivated)
+/// happens synchronously in <c>ClearAsync</c> so the helm sees an
+/// instantaneous clear; this record just tracks the server-side
+/// convergence. Both pending bits start true and are flipped to false
+/// individually as each call lands - so a successful DELETE that's
+/// followed by a failed PUT only retries the PUT.</para>
+/// <para>Each <see cref="WaypointXxx"/> field is a snapshot of the
+/// waypoint state at clear time. The retry loop's PUT rebuilds the
+/// resource body from these fields verbatim (idempotent on
+/// <see cref="WaypointId"/>) so a reload mid-retry doesn't need access
+/// to the live resource cache.</para></summary>
+public sealed record PendingClear(
+    string NotificationId,
+    bool NotificationDeletePending,
+    string? WaypointId,
+    bool WaypointDeactivatePending,
+    string? WaypointName,
+    double? WaypointLat,
+    double? WaypointLon,
+    string? WaypointMobAlarmId,
+    DateTime? WaypointCreatedAt,
+    int AttemptCount);

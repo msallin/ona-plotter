@@ -71,8 +71,13 @@ internal static class ResourceHttp
         {
             using var response = await http.DeleteAsync(url, ct);
             if (response.IsSuccessStatusCode) return ApiResult.Ok;
-            return ApiResult.Fail(await ReadErrorAsync(response, ct)
-                ?? $"HTTP {(int)response.StatusCode}");
+            // Pass StatusCode through (matches PutAsync / PostAsync) so
+            // retry loops can treat 404 as "already gone, success" rather
+            // than spinning forever on a notification or waypoint the
+            // server has already cleaned up.
+            return ApiResult.Fail(
+                await ReadErrorAsync(response, ct) ?? $"HTTP {(int)response.StatusCode}",
+                (int)response.StatusCode);
         }
         catch (HttpRequestException ex) { return ApiResult.Fail(ex.Message); }
         // Caller-initiated cancellation rethrows so a deliberate cancel
