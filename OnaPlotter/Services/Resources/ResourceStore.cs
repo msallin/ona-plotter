@@ -138,6 +138,21 @@ public sealed class ResourceStore : IAsyncDisposable, IWaypointReader
 
     public SignalkRegion? GetRegion(string id) => _regionCache.Get(id);
 
+    /// <inheritdoc/>
+    public void ApplyLocal(SignalkWaypoint wp)
+    {
+        if (wp is null || string.IsNullOrEmpty(wp.Id)) return;
+        // Goes through the same cache primitive the WS-delta path uses
+        // so subscribers (chart, Resources list) see one Changed event
+        // and redraw exactly as they would for a server-pushed update.
+        // Content-equality dedup means the eventual server WS echo of
+        // the same resource is a no-op when fields are byte-identical;
+        // when they differ (e.g. the server stamped a later CreatedAt
+        // because the offline retry took a while to land), the echo
+        // fires a redraw with the server's canonical version.
+        _waypointCache.Apply(wp.Id, wp);
+    }
+
     // --- Change events (per type) ------------------------------------
     //
     // Subscribers must handle thread-affinity themselves (Blazor

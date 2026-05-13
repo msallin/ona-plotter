@@ -468,6 +468,79 @@ public class MobServiceTests
     }
 
     [Test]
+    public async Task RaiseAsync_Offline_Seeds_Waypoint_Into_Resource_Cache_Before_First_Put()
+    {
+        // Helm-flagged scenario: when MOB is raised offline the chart
+        // pin must be visible IMMEDIATELY - the helm can't wait for the
+        // network to come back to see where the casualty went over.
+        // The contract is "local-first" symmetric with the notification
+        // side: the waypoint lands in the resource cache before the
+        // first PUT goes out, so the chart's OnWaypointChanged
+        // subscriber draws the marker regardless of network state.
+        // CreateGate parks the PUT so we can observe the cache mid-
+        // flight - a successful PUT would also seed the cache via the
+        // WS echo, but the failing-PUT path is the one helm cares
+        // about and the one that previously dropped the marker.
+        var (f, waypoints, reader) = NewFixtureWithWaypointsAndReader();
+        using (f)
+        {
+            waypoints.CreateGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            f.Api.SuspendRaise = true;
+
+            var localId = await f.Service.RaiseAsync("MOB", 47.5, 8.5);
+
+            // Wait for the create call to ENTER the gate (so we know
+            // MobService has progressed past the seed point); the PUT
+            // is parked, simulating "request in flight forever" which
+            // is observationally identical to "offline".
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(1);
+            while (waypoints.CreateCalls.Count == 0 && DateTime.UtcNow < deadline)
+                await Task.Delay(10);
+
+            // The chart-rendering contract: ApplyLocal was called with
+            // a waypoint carrying the MOB metadata + the position the
+            // helm passed. The waypoint id is the client-generated
+            // resource id (NOT the notification localId) - that's what
+            // the JS chart layer keys on.
+            await Assert.That(reader.AppliedLocal.Count).IsEqualTo(1);
+            var seeded = reader.AppliedLocal[0];
+            await Assert.That(seeded.Latitude).IsEqualTo(47.5);
+            await Assert.That(seeded.Longitude).IsEqualTo(8.5);
+            await Assert.That(seeded.IsMob).IsTrue();
+            await Assert.That(seeded.IsMobActive).IsTrue();
+            await Assert.That(seeded.MobAlarmId).IsEqualTo(localId);
+            // The seeded id must match the PUT's id - otherwise the
+            // eventual WS echo lands at a different cache slot and the
+            // helm sees two pins (the seeded one and the server's twin).
+            await Assert.That(seeded.Id).IsEqualTo(waypoints.PutCalls[0].Id);
+
+            waypoints.CreateGate.TrySetResult();
+        }
+    }
+
+    [Test]
+    public async Task RaiseAsync_Without_Position_Does_Not_Seed_Resource_Cache()
+    {
+        // Mirror of RaiseAsync_Without_Position_Skips_Waypoint_Create:
+        // when no GPS fix is available there's nothing to render, so
+        // the optimistic seed must also short-circuit (a waypoint
+        // without lat/lon would render as a marker at (0, 0) on the
+        // chart). The alarm side still fires - tested elsewhere.
+        var (f, waypoints, reader) = NewFixtureWithWaypointsAndReader();
+        using (f)
+        {
+            f.Api.SuspendRaise = true;
+
+            await f.Service.RaiseAsync("MOB", latitude: null, longitude: null);
+
+            // Give the fire-and-forget continuation a beat to NOT run.
+            await Task.Delay(50);
+            await Assert.That(reader.AppliedLocal.Count).IsEqualTo(0);
+            await Assert.That(waypoints.PutCalls.Count).IsEqualTo(0);
+        }
+    }
+
+    [Test]
     public async Task RaiseAsync_With_Distinct_ServerId_Updates_Mob_Waypoint_AlarmId()
     {
         // TEST-002: cross-plotter correlation contract. After the
@@ -1525,13 +1598,33 @@ public class MobServiceTests
     /// <summary>List-backed <see cref="IWaypointReader"/> fake. Tests
     /// can pre-seed the cache to drive FindMobWaypoint's scan-fallback
     /// branch, or leave it empty to exercise the in-memory + pending
-    /// fast paths.</summary>
+    /// fast paths. <see cref="ApplyLocal"/> records every optimistic
+    /// seed call so the local-first contract on the chart-pin side
+    /// (MobService injects the MOB waypoint into the cache before the
+    /// first PUT) can be asserted from tests.</summary>
     private sealed class FakeWaypointReader : OnaPlotter.Services.Resources.IWaypointReader
     {
         public List<SignalkWaypoint> WaypointsList { get; } = [];
         public IReadOnlyList<SignalkWaypoint> Waypoints => WaypointsList;
         public SignalkWaypoint? GetWaypoint(string id) =>
             WaypointsList.FirstOrDefault(w => w.Id == id);
+
+        /// <summary>Every optimistic seed call MobService makes. Tests
+        /// assert on count + on the waypoint fields to verify the chart
+        /// rendering contract for offline MOB.</summary>
+        public List<SignalkWaypoint> AppliedLocal { get; } = [];
+
+        public void ApplyLocal(SignalkWaypoint wp)
+        {
+            if (wp is null || string.IsNullOrEmpty(wp.Id)) return;
+            AppliedLocal.Add(wp);
+            // Mirror the production cache's upsert semantics: keep the
+            // list consistent with what MobService just claimed is in
+            // the cache, so subsequent FindMobWaypoint scans through
+            // this fake observe the seeded entry.
+            var idx = WaypointsList.FindIndex(w => w.Id == wp.Id);
+            if (idx >= 0) WaypointsList[idx] = wp; else WaypointsList.Add(wp);
+        }
     }
 
     /// <summary>Records every waypoint API call so MOB-composition

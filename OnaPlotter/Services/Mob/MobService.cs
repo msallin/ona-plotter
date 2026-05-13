@@ -385,6 +385,18 @@ public sealed class MobService : IMobService, IDisposable
             MobAlarmId = localId,
         };
 
+        // Local-first: seed the waypoint into the resource cache BEFORE
+        // the first PUT attempt so the chart renders the MOB pin
+        // immediately - even when offline. Mirrors the notification side
+        // (which pre-applies a synthetic into ServerNotificationStore)
+        // so the helm gets one coherent picture: alarm banner, audible,
+        // and chart pin all up the moment the button is pressed, no
+        // dependency on a server round-trip. When the eventual server
+        // WS echo arrives (after the retry loop's PUT lands) the WS path
+        // goes through the same cache primitive and content-equality
+        // dedups against this entry - one Changed event per genuine diff.
+        _resources?.ApplyLocal(wp);
+
         // Backoff loop. Same schedule as RunRaiseLoopCoreAsync so the
         // helm sees the alarm + chart pin land at consistent moments
         // when offline-raise reconnects (1s, 2s, 5s, 10s, 30s, then
