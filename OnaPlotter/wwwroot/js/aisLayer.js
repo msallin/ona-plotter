@@ -499,6 +499,24 @@ export function resolveAisPopupTitle({ displayName, name, callsign, mmsi, buddy,
 }
 
 /**
+ * Unpack a flat alternating [lat0, lon0, lat1, lon1, ...] array into
+ * [[lat, lon], ...] tuples for Leaflet polyline/setLatLngs. Producer
+ * is the C# AisTrailBuffer.GetCoords / AisVesselPayload.Trail wire
+ * shape; length is expected even, a trailing odd element is silently
+ * dropped.
+ *
+ * Input:  [54.0, 11.0, 54.1, 11.1, 54.2, 11.2]
+ * Output: [[54.0, 11.0], [54.1, 11.1], [54.2, 11.2]]
+ */
+export function unpackLatLonPairs(flat) {
+    const pairs = new Array(flat.length >> 1);
+    for (let i = 0, j = 0; i + 1 < flat.length; i += 2, j++) {
+        pairs[j] = [flat[i], flat[i + 1]];
+    }
+    return pairs;
+}
+
+/**
  * Builds the full AIS popup HTML string from a vessel snapshot.
  * Called lazily - only when the popup is actually about to open or
  * is already open and the data changed. Building 200+ of these
@@ -1106,27 +1124,29 @@ export function updateAisTargets(vessels) {
 // by AisTrailBuffer on the C# side; this function is invoked only when
 // the payload carries a non-undefined `v.trail` (the C# side gates on
 // AisTrailBuffer.ConsumeDirty so unchanged trails skip the wire). A
-// null `coords` means "trail dropped below the 2-point minimum / aged
-// out" - remove the existing polyline; a 2+ point array means "update
-// or create the polyline with these coords".
+// null `coords` (or fewer than 4 numbers = < 2 points) means "trail
+// dropped below the 2-point minimum / aged out" - remove the existing
+// polyline; otherwise unpack the flat [lat,lon,lat,lon,...] array into
+// Leaflet LatLng tuples and update or create the polyline.
 function updateAisTrail(ctx, coords) {
     let line = aisTrailLines[ctx];
-    if (!coords || coords.length < 2) {
+    if (!coords || coords.length < 4) {
         if (line) { mapRef.removeLayer(line); delete aisTrailLines[ctx]; }
         return;
     }
+    const pairs = unpackLatLonPairs(coords);
     if (!line) {
         // Dashed slate line: distinguishes the historical trail from
         // the SOLID forward COG vector that points where the vessel
         // is GOING. With both rendered solid the helm couldn't tell
         // forward from backward at a glance.
-        line = L.polyline(coords, {
+        line = L.polyline(pairs, {
             color: '#94a3b8', weight: 1.2, opacity: 0.5,
             dashArray: '2,4', interactive: false,
         }).addTo(mapRef);
         aisTrailLines[ctx] = line;
     } else {
-        line.setLatLngs(coords);
+        line.setLatLngs(pairs);
     }
 }
 

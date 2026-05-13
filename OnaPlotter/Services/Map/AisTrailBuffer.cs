@@ -125,29 +125,27 @@ public sealed class AisTrailBuffer
         => _trails.TryGetValue(context, out var trail) ? trail.Points.Count : 0;
 
     /// <summary>
-    /// Snapshot the vessel's trail as the wire-format <c>[lat, lon]</c>
-    /// coord array (one entry per stored point). Returns <c>null</c>
+    /// Snapshot the vessel's trail as a flat alternating
+    /// <c>[lat0, lon0, lat1, lon1, ...]</c> array. Returns <c>null</c>
     /// when fewer than two points exist - mirrors the JS-side
     /// <c>hist.length &lt; 2</c> guard that suppresses degenerate
     /// single-vertex polylines.
     ///
-    /// <para>Allocates a fresh outer array + nested 2-tuples on each
-    /// call. Intended to be invoked only when <see cref="ConsumeDirty"/>
-    /// returns true, i.e. once per (vessel, content-change) tuple. If
-    /// caller ever wants this on every tick, a flat <c>double[]</c>
-    /// (alternating lat / lon) over interop would halve the wire
-    /// bytes - kept as nested arrays for v1 since JS reads
-    /// <c>[lat, lon]</c> pairs directly into <c>L.polyline</c>.</para>
+    /// <para>Single allocation per call (the outer <c>double[]</c>);
+    /// JS unpacks pairs in a single forward loop. Intended to be
+    /// invoked only when <see cref="ConsumeDirty"/> returns true,
+    /// i.e. once per (vessel, content-change) tuple.</para>
     /// </summary>
-    public double[][]? GetCoords(string context)
+    public double[]? GetCoords(string context)
     {
         if (!_trails.TryGetValue(context, out var trail) || trail.Points.Count < 2)
             return null;
-        var coords = new double[trail.Points.Count][];
+        var coords = new double[trail.Points.Count * 2];
         int i = 0;
         foreach (var p in trail.Points)
         {
-            coords[i++] = new[] { p.Lat, p.Lon };
+            coords[i++] = p.Lat;
+            coords[i++] = p.Lon;
         }
         return coords;
     }

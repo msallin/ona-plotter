@@ -66,6 +66,10 @@ public class LeafletInteropAisLayerReexportParityTests
             // Called by leafletInterop's own setCogVectorMinutes wrapper;
             // C# never invokes it directly. Same shape as setBoatPosition.
             "setAisCogMinutes",
+            // Pure helper exported only so the Node-driven aisLayer.test.js
+            // can pin the flat [lat,lon,...] -> [[lat,lon],...] unpack
+            // contract. Internal to aisLayer.js; the C# side never calls it.
+            "unpackLatLonPairs",
         };
 
         await Assert.That(aisLayerExports.Count)

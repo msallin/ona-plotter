@@ -3,7 +3,7 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveAisPopupTitle } from './aisLayer.js';
+import { resolveAisPopupTitle, unpackLatLonPairs } from './aisLayer.js';
 
 // resolveAisPopupTitle is pinned here because its precedence chain is
 // the entire point of the AIS popup-title dedup. A future refactor that
@@ -125,5 +125,32 @@ describe('resolveAisPopupTitle', () => {
             callsign: 'ZZZ1', mmsi: '244123456', buddy: false, cachedName: 'NotMe',
         });
         assert.equal(t, 'Hello');
+    });
+});
+
+// unpackLatLonPairs pins the wire-format contract for AIS trail coords:
+// AisTrailBuffer.GetCoords emits a flat alternating [lat,lon,...] array;
+// the JS-side unpacker must produce Leaflet-shaped [[lat,lon],...] pairs
+// in the same order. Any regression here silently corrupts trail
+// polylines on the chart.
+describe('unpackLatLonPairs', () => {
+    it('unpacks a three-point trail into ordered lat/lon tuples', () => {
+        const pairs = unpackLatLonPairs([54.0, 11.0, 54.1, 11.1, 54.2, 11.2]);
+        assert.deepEqual(pairs, [[54.0, 11.0], [54.1, 11.1], [54.2, 11.2]]);
+    });
+
+    it('unpacks the minimum two-point trail', () => {
+        const pairs = unpackLatLonPairs([54.0, 11.0, 54.1, 11.1]);
+        assert.deepEqual(pairs, [[54.0, 11.0], [54.1, 11.1]]);
+    });
+
+    it('returns an empty array for an empty input', () => {
+        assert.deepEqual(unpackLatLonPairs([]), []);
+    });
+
+    it('silently drops a trailing odd element so callers never observe a half pair', () => {
+        // The C# producer guarantees even length; this defends against
+        // a future wire-shape bug surfacing as a NaN lon on a fresh point.
+        assert.deepEqual(unpackLatLonPairs([54.0, 11.0, 54.1]), [[54.0, 11.0]]);
     });
 });

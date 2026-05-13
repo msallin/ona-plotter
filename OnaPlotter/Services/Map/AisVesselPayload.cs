@@ -94,20 +94,17 @@ public sealed class AisVesselPayload
     [JsonPropertyName("cpaPointLon")] public double? CpaPointLon { get; set; }
 
     /// <summary>
-    /// Fresh trail coords for this vessel as <c>[[lat,lon], ...]</c>,
-    /// or <c>null</c> when the trail didn't change since the last
-    /// push (JS leaves the existing polyline alone) or is too short
-    /// to draw. Owned C# side by <see cref="AisTrailBuffer"/>; the
-    /// JS layer used to keep a per-vessel rolling window of its own
-    /// (<c>aisLayer.aisTrailHistory</c>) and rebuild the coord array
-    /// every tick - that state + the per-tick allocator pressure is
-    /// gone now.
+    /// Fresh trail coords for this vessel as a flat alternating
+    /// <c>[lat0, lon0, lat1, lon1, ...]</c> array, or <c>null</c> when
+    /// the trail didn't change since the last push (JS leaves the
+    /// existing polyline alone) or is too short to draw. Owned C#-side
+    /// by <see cref="AisTrailBuffer"/>.
     ///
-    /// <para>Wire-format: nested arrays (one per point) rather than a
-    /// flat <c>Float64Array</c>. Easier to read JS-side; the wire cost
-    /// difference is small in practice because most vessels are
-    /// stationary between deltas and thus have <c>null</c> here on
-    /// most ticks.</para>
+    /// <para>When non-null, length is always even and at least 4 (two
+    /// points minimum; JS suppresses degenerate single-vertex
+    /// polylines). The JS side in <c>aisLayer.updateAisTrail</c>
+    /// unpacks the pairs into Leaflet LatLng tuples in a single
+    /// forward pass.</para>
     /// </summary>
-    [JsonPropertyName("trail")] public double[][]? Trail { get; set; }
+    [JsonPropertyName("trail")] public double[]? Trail { get; set; }
 }

@@ -109,8 +109,10 @@ public sealed class AisTrailBufferTests
     }
 
     [Test]
-    public async Task GetCoords_ReturnsLatLonPairsInInsertionOrder()
+    public async Task GetCoords_ReturnsFlatLatLonPairsInInsertionOrder()
     {
+        // Wire format is [lat0, lon0, lat1, lon1, ...] - JS unpacks
+        // pairs in a single forward pass.
         var buf = new AisTrailBuffer();
         buf.Push("v.A", 54.0, 11.0, T0);
         buf.Push("v.A", 54.1, 11.1, T0.AddSeconds(10));
@@ -119,9 +121,11 @@ public sealed class AisTrailBufferTests
         var coords = buf.GetCoords("v.A");
 
         await Assert.That(coords).IsNotNull();
-        await Assert.That(coords!.Length).IsEqualTo(3);
-        await Assert.That(coords[0][0]).IsEqualTo(54.0);
-        await Assert.That(coords[2][1]).IsEqualTo(11.2);
+        await Assert.That(coords!.Length).IsEqualTo(6);    // 3 points x 2 doubles
+        await Assert.That(coords[0]).IsEqualTo(54.0);      // lat of first
+        await Assert.That(coords[1]).IsEqualTo(11.0);      // lon of first
+        await Assert.That(coords[4]).IsEqualTo(54.2);      // lat of last
+        await Assert.That(coords[5]).IsEqualTo(11.2);      // lon of last
     }
 
     [Test]
