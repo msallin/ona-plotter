@@ -72,6 +72,12 @@ spamming interop on every render.
   SynchronizationContext mid-render.
 - **Every `module.InvokeVoidAsync` catches `JSDisconnectedException`.**
 - **Zero compiler warnings.** Treat the analyzer as authoritative.
+- **No history-flavoured comments.** Present-tense rationale only.
+  No "was X / now Y", no "from PR #N", no "tech-debt pass dropped Z".
+  Git blame carries history; comments carry the *why* of the
+  current shape. The version-history block in
+  `service-worker.js` is the one intentional exception (it IS the
+  SW changelog).
 
 ## Testing
 
@@ -89,6 +95,10 @@ dotnet test OnaPlotter.Tests/OnaPlotter.Tests.csproj
 
 One file per unit. Equivalence classes + boundaries + a realistic case.
 `FakeSettings` is the shared `IAppSettings` stub.
+`TestClock.FixedUtcNow` is the shared deterministic time seed
+(`2025-01-01T12:00:00Z`); use it instead of `DateTime.UtcNow` when
+a test needs a reference instant so the suite stays *Repeatable*
+across DST flips and leap seconds.
 
 ### 2. Component tests (bUnit)
 
