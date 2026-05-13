@@ -1880,10 +1880,14 @@ html:fullscreen .hud-stack-br {
     transition: color 0.3s ease;
 }
 
-/* Wind arrow in HUD */
-.wind-arrow {
-    transition: transform 0.3s ease-out;
-}
+/* Wind arrow in HUD. NO `transition: transform` here: MapHud writes
+   a fresh `transform: rotate(...)` every SignalK tick (~1 Hz). With a
+   300 ms transition every tick spawned a tween that overlapped 30 %
+   of every second forever, keeping the compositor running an
+   animation frame continuously on anchored idle. Snap-to-angle at
+   1 Hz reads fine on an instrument and lets the GPU sleep between
+   ticks. */
+.wind-arrow { }
 
 /* === Wind dial =============================================
    Both apparent (blue) and true (green) arrows live on the SAME
@@ -1907,7 +1911,9 @@ html:fullscreen .hud-stack-br {
 .wind-dial g {
     transform-origin: 0 0;
     transform-box: view-box;
-    transition: transform 0.3s ease-out;
+    /* No transform transition - see .wind-arrow above. The dial's
+       inline `transform: rotate(...)` updates on every SK tick and
+       a 300 ms tween-per-tick kept the compositor hot indefinitely. */
 }
 /* Wind value lives on a single horizontal line.
    Without nowrap the card's content width is set by the 84px dial
@@ -1995,7 +2001,12 @@ html:fullscreen .hud-stack-br {
     border: 1px solid rgba(255,255,255,0.06);
     border-radius: 14px;
     padding: 4px;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    /* Tightened from 24-px-blur to 8-px-blur. The bar is now fully
+       opaque (backdrop-filter dropped in the earlier perf commit) so
+       the shadow is the only "lift" cue from the chart underneath;
+       a smaller blur kernel rasterises faster on Pi 5's GPU when the
+       bar repaints, and the visual lift is still clearly readable. */
+    box-shadow: 0 4px 8px rgba(0,0,0,0.4);
 }
 /* Light + high-contrast: bar flips to a white pill with slate icons
    so it reads as the same chrome family as the HUD cards + Layers
@@ -2013,8 +2024,11 @@ html:fullscreen .hud-stack-br {
        glassy era and isn't perceptible against the helm's eye. */
     background: #ffffff;
     border-color: rgba(15, 23, 42, 0.10);
-    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.20),
-                0 2px 4px rgba(15, 23, 42, 0.10);
+    /* Single 8-px-blur shadow; previously stacked a 28-px + 4-px pair
+       which doubled the compositor work on every bar repaint. The
+       single tighter shadow still reads as floating chrome on a busy
+       white chart. */
+    box-shadow: 0 4px 8px rgba(15, 23, 42, 0.20);
 }
 .theme-effective-light .ctrl-btn {
     color: rgba(15, 23, 42, 0.70);
@@ -2168,7 +2182,11 @@ html:fullscreen .hud-stack-br {
     font-size: 0.78rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.15s ease;
+    /* Explicit property list - `transition: all` makes every change-
+       detection cycle inspect every animatable property on the
+       element. The hover/active states only flip background, border,
+       and color, so list those. */
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
     white-space: nowrap;
     -webkit-tap-highlight-color: transparent;
 }
@@ -2761,7 +2779,8 @@ html[data-map-rotated="1"] .bearing-tooltip {
 .compass-rose {
     transform-box: view-box;
     transform-origin: 0 0;
-    transition: transform 0.3s ease-out;
+    /* No transform transition - heading updates per SK tick; a 300 ms
+       tween-per-tick kept the compositor hot. Match the wind dial. */
 }
 
 /* Touch-friendly: larger tap targets (48px min per WCAG) */
@@ -5002,7 +5021,16 @@ html.night-mode-global body {
     left: 50%;
     transform: translateX(-50%);
     z-index: var(--z-controls);
-    display: inline-flex;
+    /* display: none by default so the chip occupies zero compositor
+       budget while idle. The previous shape kept the element in the
+       layer tree at opacity:0 with `transition: opacity` declared,
+       which made the browser materialise a compositor layer for the
+       16-px-blur halo + 1-px stroke shadow even though the chip was
+       invisible. .visible flips display:none -> inline-flex AND
+       transitions opacity for the fade-in; the fade-out under
+       `:not(.visible)` is gone with the layer (instant clear is fine
+       on a zoom-gesture chip that the helm wasn't looking at anyway). */
+    display: none;
     align-items: center;
     gap: 0.5rem;
     padding: 4px 8px;
@@ -5018,14 +5046,10 @@ html.night-mode-global body {
     font-variant-numeric: tabular-nums;
     pointer-events: none;
     user-select: none;
-    /* Hidden by default; only the .visible modifier (added during the
-       zoom gesture) makes it appear. The 0.4 s ease-out matches the
-       pattern the now-removed centred preview chip used so the fade
-       feels consistent. */
     opacity: 0;
-    transition: opacity 0.4s ease-out;
 }
 .ona-range-scale.visible {
+    display: inline-flex;
     opacity: 0.95;
     transition: opacity 0.12s ease-in;
 }
@@ -5095,6 +5119,11 @@ html.night-mode-global body {
     z-index: var(--z-controls);
     background: var(--panel-bg);
     color: var(--panel-text);
+    /* Single border declaration. The previous shape had two
+       conflicting `border:` declarations (`var(--panel-border)` first,
+       then `rgba(255,255,255,0.1)` later); CSS would keep the second
+       and discard the first, which left the panel-border token
+       unused here. Use the token so theme overrides flow through. */
     border: 1px solid var(--panel-border);
     /* backdrop-filter: blur was the dominant cost on scroll - every
        scroll frame re-rasterised a blurred snapshot of whatever the
@@ -5116,7 +5145,6 @@ html.night-mode-global body {
        sibling chrome (map, HUD). Standard pattern for long lists
        under a fixed wrapper; measurable help on scroll FPS. */
     contain: layout paint;
-    border: 1px solid rgba(255,255,255,0.1);
 }
 
 .chart-panel-header {
@@ -5580,13 +5608,19 @@ html.night-mode-global body {
    variant: white card, slate ink, soft shadow so dozens of labels read
    as paper labels stuck on a paper chart instead of dark blobs. */
 .ais-label {
-    background: rgba(15, 18, 25, 0.8) !important;
+    /* Opaque background + no shadow. With 20-30 AIS targets in a busy
+       anchorage the previous rgba(...0.8) + drop shadow forced 20-30
+       always-blended compositor surfaces (one per visible label) on
+       every chart pan / zoom / re-render. Opaque labels can be
+       occlusion-culled by the compositor and the chart-tile area
+       underneath the label rectangle doesn't need to paint at all.
+       Same playbook as the HUD-card opaque-bg fix. */
+    background: rgb(15, 18, 25) !important;
     border: none !important;
     color: #cbd5e1 !important;
     font-size: 11px !important;
     padding: 2px 6px !important;
     border-radius: 4px !important;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.2) !important;
     white-space: nowrap !important;
 }
 .ais-label::before { display: none !important; }
@@ -5596,9 +5630,8 @@ html.night-mode-global body {
    theme-effective-light is computed in JS so the dark fallback simply
    doesn't apply the override, no media-query reverter needed. */
 .theme-effective-light .ais-label {
-    background: rgba(255, 255, 255, 0.88) !important;
+    background: #ffffff !important;
     color: #1e293b !important;
-    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.18) !important;
 }
 
 /* Hide AIS labels at low zoom to avoid clutter */
@@ -5613,7 +5646,8 @@ html.night-mode-global body {
     border: 1px solid var(--sk-border);
     background: transparent;
     color: var(--sk-text-muted);
-    transition: all 0.15s ease;
+    /* Explicit list - see .map-btn. */
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
     user-select: none;
 }
 .path-chip:hover {
@@ -6143,7 +6177,12 @@ html.night-mode-global body {
     margin: -5px 0 0 -5px;
     border-radius: 50%;
     border: 2px solid rgba(239, 68, 68, 0.9);
-    box-shadow: 0 0 12px rgba(239, 68, 68, 0.5);
+    /* No box-shadow halo. The animation scales the element from
+       1× to 3.2× while fading opacity to 0 - a 12-px-blur shadow
+       inside the scaled subtree means the compositor rasterises a
+       progressively larger shadow texture on every frame of every
+       pulsing CPA marker. The 2-px solid red border carries the
+       affordance on its own; the helm sees the expanding ring. */
     animation: cpa-danger-pulse 1.1s ease-out infinite;
     pointer-events: none;
     will-change: transform, opacity;
@@ -6620,7 +6659,11 @@ html.night-mode-global body {
     background: var(--hud-btn-bg, rgba(255,255,255,0.05));
     color: var(--hud-ink);
     cursor: pointer;
-    transition: all 0.12s ease;
+    /* Explicit list (was `all`). The autopilot card re-renders per
+       tick - keeping `transition: all` here meant the per-tick Blazor
+       re-render kept the button in the animation tracker even with
+       nothing visually changing. */
+    transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease, transform 0.12s ease;
     font-variant-numeric: tabular-nums;
     -webkit-tap-highlight-color: transparent;
 }
@@ -6646,7 +6689,9 @@ html.night-mode-global body {
     background: transparent;
     color: var(--hud-ink-dim);
     cursor: pointer;
-    transition: all 0.12s ease;
+    /* Explicit list (was `all`). See .ap-btn above for the per-tick
+       re-render rationale. */
+    transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
     -webkit-tap-highlight-color: transparent;
 }
 .ap-mode-btn:hover { border-color: var(--sk-accent); color: var(--sk-text); }
@@ -9273,7 +9318,8 @@ main:has(.map-container.big-type) .alarm-hold-hint {
 }
 
 .sailsteer-compass {
-    transition: transform 0.3s ease-out;
+    /* No transform transition - same per-tick tween problem as the
+       map HUD's .wind-dial / .compass-rose above. */
 }
 
 /* Compass-ring scaffolding strokes + fills. Dedicated classes so the
