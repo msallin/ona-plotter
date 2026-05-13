@@ -102,8 +102,22 @@ public sealed class ServerNotificationsAlarmRule : IAlarmRule
     /// field stays null and dismiss falls back to local-only.</summary>
     internal static AlarmInfo BuildAlarmInfo(ServerNotification n, INotificationsApi? api)
     {
-        var (title, defaultMsg) = DeriveTitleAndDefault(n.Path);
-        var message = !string.IsNullOrEmpty(n.Message) ? n.Message : defaultMsg;
+        // Skip the HumaniseTail StringBuilder build when the upstream
+        // notification already carried a message (the typical case for
+        // OnaPlotter-published alarms and for plugins that populate
+        // value.message). Only fall back to the humanised path tail
+        // when there's no server-supplied text.
+        string title;
+        string message;
+        if (!string.IsNullOrEmpty(n.Message))
+        {
+            title = DeriveTitle(n.Path);
+            message = n.Message;
+        }
+        else
+        {
+            (title, message) = DeriveTitleAndDefault(n.Path);
+        }
         // SignalK vessel contexts come through the path as
         // urn_mrn_imo_mmsi_<digits> (the v2 publisher's
         // SanitisePerTargetPath scrubs colons to underscores so the
@@ -157,60 +171,87 @@ public sealed class ServerNotificationsAlarmRule : IAlarmRule
     /// include a <c>message</c> field; an OnaPlotter-published alarm
     /// almost always carries a richer message ("TWD shifted 60° in
     /// 30 min") that wins via the !string.IsNullOrEmpty check at the
-    /// call site.</summary>
+    /// call site. See <see cref="DeriveTitle"/> for the title-only
+    /// variant used on the typical (message-present) path.</summary>
     internal static (string title, string defaultMessage) DeriveTitleAndDefault(string path)
     {
-        // Strip the leading "notifications." prefix when present.
+        var tail = StripNotificationsPrefix(path);
+        var (title, humanisePrefix, hardcodedDefault) = MatchKnownPath(tail);
+        return (title, hardcodedDefault ?? HumaniseTail(tail, humanisePrefix));
+    }
+
+    /// <summary>Title-only variant for the hot path where the upstream
+    /// notification already carries a <c>message</c>; skips the
+    /// <see cref="HumaniseTail"/> StringBuilder build that the default-
+    /// message branch needs. Same matching semantics as
+    /// <see cref="DeriveTitleAndDefault"/>.</summary>
+    internal static string DeriveTitle(string path)
+    {
+        var tail = StripNotificationsPrefix(path);
+        return MatchKnownPath(tail).Title;
+    }
+
+    /// <summary>Strip the leading <c>notifications.</c> prefix when
+    /// present so prefix matchers can work on the meaningful tail.</summary>
+    private static string StripNotificationsPrefix(string path)
+    {
         const string prefix = "notifications.";
-        var tail = path.StartsWith(prefix, StringComparison.Ordinal)
+        return path.StartsWith(prefix, StringComparison.Ordinal)
             ? path[prefix.Length..]
             : path;
+    }
 
-        // Known path-prefix mappings. Keep the title list short and
-        // helm-readable; commonly-shipped plugins (anchor watch, MOB,
-        // depth, collision) get a recognised label so the helm's
-        // muscle memory carries from one chartplotter to the next.
-        // Default messages are humanised path tails so a missing
-        // upstream message renders as "shift" / "below transducer"
-        // / "position" rather than "environment.wind.shift" / etc.
+    /// <summary>Match a stripped notification tail against the known
+    /// path-prefix table. Returns the banner title, the prefix to
+    /// strip when humanising the default message, and a hardcoded
+    /// default message (when one exists; otherwise <see cref="HumaniseTail"/>
+    /// runs against the tail using <c>HumanisePrefix</c>).
+    ///
+    /// <para>Common plugins (anchor watch, MOB, depth, collision) get
+    /// a recognised title so muscle memory carries from one chartplotter
+    /// to the next. Unknown paths fall through to leaf-segment uppercased.</para>
+    ///
+    /// <para>The "APPROACH" title is load-bearing: MainLayout.razor
+    /// checks <c>a.Title == "APPROACH"</c> to render the "Next WP"
+    /// advance button on the banner. Course-provider bridged alarms
+    /// use the same title so the layout doesn't need a per-rule case.</para>
+    ///
+    /// <para>Row shape: rows with a <c>HardcodedDefault</c> ignore
+    /// <c>HumanisePrefix</c> (empty string sentinel); rows with a null
+    /// <c>HardcodedDefault</c> use <c>HumanisePrefix</c> to strip the
+    /// matched prefix from the tail before humanising the rest.</para></summary>
+    private static (string Title, string HumanisePrefix, string? HardcodedDefault) MatchKnownPath(string tail)
+    {
         if (tail.StartsWith("environment.depth.", StringComparison.Ordinal))
-            return ("DEPTH", HumaniseTail(tail, "environment.depth."));
+            return ("DEPTH", "environment.depth.", null);
         if (tail.StartsWith("navigation.anchor.", StringComparison.Ordinal))
-            return ("ANCHOR", HumaniseTail(tail, "navigation.anchor."));
+            return ("ANCHOR", "navigation.anchor.", null);
         if (tail == "navigation.anchor")
-            return ("ANCHOR", "anchor");
-        // Course-provider plugin (signalk-course-data) emits arrival-
-        // related notifications under navigation.course.* and the bare
-        // navigation.arrivalCircleEntered / perpendicularPassed /
-        // routeComplete leaves. The "APPROACH" title is load-bearing:
-        // MainLayout.razor checks `a.Title == "APPROACH"` to render
-        // the "Next WP" advance button on the banner; using the same
-        // string for the bridged alarm preserves that behaviour
-        // without a per-rule special case in the layout.
+            return ("ANCHOR", "", "anchor");
         if (tail.StartsWith("navigation.course.", StringComparison.Ordinal))
-            return ("APPROACH", HumaniseTail(tail, "navigation.course."));
+            return ("APPROACH", "navigation.course.", null);
         if (tail == "navigation.arrivalCircleEntered")
-            return ("APPROACH", "arrival circle entered");
+            return ("APPROACH", "", "arrival circle entered");
         if (tail == "navigation.perpendicularPassed")
-            return ("APPROACH", "perpendicular passed");
+            return ("APPROACH", "", "perpendicular passed");
         if (tail == "navigation.routeComplete")
-            return ("APPROACH", "route complete");
+            return ("APPROACH", "", "route complete");
         if (tail == "mob" || tail.StartsWith("mob.", StringComparison.Ordinal))
-            return ("MOB", "Man overboard");
+            return ("MOB", "", "Man overboard");
         if (tail.StartsWith("security.collision", StringComparison.Ordinal))
-            return ("COLLISION", HumaniseTail(tail, "security."));
+            return ("COLLISION", "security.", null);
         if (tail.StartsWith("environment.wind.", StringComparison.Ordinal))
-            return ("WIND", HumaniseTail(tail, "environment.wind."));
+            return ("WIND", "environment.wind.", null);
         if (tail.StartsWith("environment.fire.", StringComparison.Ordinal))
-            return ("FIRE", HumaniseTail(tail, "environment.fire."));
+            return ("FIRE", "environment.fire.", null);
         if (tail.StartsWith("buddy.", StringComparison.Ordinal))
-            return ("BUDDY", HumaniseTail(tail, "buddy."));
+            return ("BUDDY", "buddy.", null);
 
         // Default: last path segment, uppercased. Reasonable banner
         // for any plugin we don't have a hard-coded mapping for.
         var lastDot = tail.LastIndexOf('.');
         var leaf = lastDot >= 0 ? tail[(lastDot + 1)..] : tail;
-        return (leaf.ToUpperInvariant(), HumaniseTail(tail, ""));
+        return (leaf.ToUpperInvariant(), "", null);
     }
 
     /// <summary>Turn a SignalK path tail into a helm-readable phrase.
