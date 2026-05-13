@@ -1329,6 +1329,7 @@ export const setAisLabelsVisible = (enabled) =>
 export const setMeasureMode = (active) => measureLayerMod.setMeasureMode(active);
 export function clearMeasure() { return measureLayerMod.clearMeasure(); }
 export const measureFromVesselTo = (lat, lon) => measureLayerMod.measureFromVesselTo(lat, lon);
+export const measureFromPoint = (lat, lon) => measureLayerMod.measureFromPoint(lat, lon);
 
 // --- Anchor Watch ---
 // Implementation in anchorLayer.js; mux re-exports the C# entries.

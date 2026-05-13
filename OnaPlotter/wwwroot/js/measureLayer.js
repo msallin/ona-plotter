@@ -14,6 +14,7 @@
 //     leaving Measure mode.
 
 import { haversineMeters, bearingDeg, NM_PER_METER } from './geoMath.js';
+import { measureDistance } from './format.js';
 
 let mapRef = null;
 let colors = null;
@@ -222,13 +223,13 @@ function updateMeasureSegmentsAround(_idx) {
     // (only the affected ones strictly need geometry, but content
     // depends on the running total which shifts when any earlier
     // segment changed length).
-    let runningNm = 0;
+    let runningM = 0;
     for (let i = 1; i < positions.length; i++) {
         const a = positions[i - 1];
         const b = positions[i];
-        const segDist = haversineMeters(a[0], a[1], b[0], b[1]) * NM_PER_METER;
+        const segM = haversineMeters(a[0], a[1], b[0], b[1]);
         const segBrg = bearingDeg(a[0], a[1], b[0], b[1]);
-        runningNm += segDist;
+        runningM += segM;
 
         const segLayer = measureSegments[i - 1];
         const hitLayer = measureHitLines[i - 1];
@@ -237,7 +238,7 @@ function updateMeasureSegmentsAround(_idx) {
         if (hitLayer) hitLayer.setLatLngs([a, b]);
         if (tipLayer) {
             tipLayer.setLatLng(b);
-            tipLayer.setContent(`${segBrg.toFixed(0)}&deg; / ${segDist.toFixed(2)} nm<br/>total ${runningNm.toFixed(2)} nm`);
+            tipLayer.setContent(`${segBrg.toFixed(0)}&deg; / ${measureDistance(segM)}<br/>total ${measureDistance(runningM)}`);
         }
     }
 }
@@ -278,7 +279,7 @@ function redrawMeasure() {
 
     // Pre-compute running totals so the last-point tooltip can show
     // the cumulative distance without re-walking the array each tick.
-    let runningTotalNm = 0;
+    let runningTotalM = 0;
     for (let i = 0; i < positions.length; i++) {
         const [lat, lon] = positions[i];
         const point = measurePoints[i];
@@ -297,9 +298,9 @@ function redrawMeasure() {
         if (i >= 1) {
             const a = positions[i - 1];
             const b = positions[i];
-            const segDist = haversineMeters(a[0], a[1], b[0], b[1]) * NM_PER_METER;
+            const segM = haversineMeters(a[0], a[1], b[0], b[1]);
             const segBrg = bearingDeg(a[0], a[1], b[0], b[1]);
-            runningTotalNm += segDist;
+            runningTotalM += segM;
 
             // Visible dashed segment.
             const seg = L.polyline([a, b], {
@@ -331,14 +332,14 @@ function redrawMeasure() {
                 className: 'measure-tooltip'
             })
                 .setLatLng(b)
-                .setContent(`${segBrg.toFixed(0)}&deg; / ${segDist.toFixed(2)} nm<br/>total ${runningTotalNm.toFixed(2)} nm`)
+                .setContent(`${segBrg.toFixed(0)}&deg; / ${measureDistance(segM)}<br/>total ${measureDistance(runningTotalM)}`)
                 .addTo(mapRef);
             measureTooltips.push(tooltip);
         }
     }
 }
 
-// Public entry point for "Measure Here" in the map context menu.
+// Public entry point for "Measure to here" in the map context menu.
 // Drops a fresh two-point measurement: vessel as the moving anchor,
 // the clicked spot as the fixed endpoint. Activates measure mode so
 // the helm can keep tapping to extend the ruler if they want a
@@ -349,6 +350,20 @@ export function measureFromVesselTo(lat, lon) {
     measureActive = true;
     mapRef.getContainer().style.cursor = 'crosshair';
     addVesselMeasurePoint();
+    addMeasurePoint(lat, lon);
+}
+
+// Public entry point for "Measure from here" in the map context menu.
+// Seeds a one-point measurement at the clicked spot and activates
+// measure mode so the next tap on the chart extends the ruler. The
+// counterpart to measureFromVesselTo: that one anchors to the boat
+// and ends at the click; this one starts at the click and leaves
+// the endpoint to the user's next tap.
+export function measureFromPoint(lat, lon) {
+    if (!mapRef) return;
+    clearMeasure();
+    measureActive = true;
+    mapRef.getContainer().style.cursor = 'crosshair';
     addMeasurePoint(lat, lon);
 }
 

@@ -285,7 +285,8 @@
                keeps the flow debuggable. *@
             <button class="ctx-menu-item" @onclick="StartRouteFromContextMenu">Add Route</button>
             <button class="ctx-menu-item" @onclick="NavigateHere">Navigate Here</button>
-            <button class="ctx-menu-item" @onclick="MeasureHere">Measure Here</button>
+            <button class="ctx-menu-item" @onclick="MeasureFromHere">Measure from here</button>
+            <button class="ctx-menu-item" @onclick="MeasureToHere">Measure to here</button>
             @if (Data.HasActiveCourse)
             {
                 <button class="ctx-menu-item ctx-menu-danger" @onclick="StopNavigation">Stop Navigation</button>
@@ -3201,19 +3202,33 @@
         await StartRouteEdit();
     }
 
-    // "Measure Here" drops a fresh two-point measurement: own-boat as
-    // the moving anchor, the right-click / long-press position as the
-    // fixed endpoint. Mirrors the bearing-line overlay the user used
-    // to summon by double-clicking, but discoverable via the same
-    // context menu the helm already reaches for to navigate or drop a
-    // waypoint. Activates Measure mode so additional taps extend the
-    // ruler into a multi-leg route preview.
-    private async Task MeasureHere()
+    // "Measure to here" drops a fresh two-point measurement: own-boat
+    // as the moving anchor, the right-click / long-press position as
+    // the fixed endpoint. Mirrors the bearing-line overlay the user
+    // used to summon by double-clicking, but discoverable via the
+    // same context menu the helm already reaches for to navigate or
+    // drop a waypoint. Activates Measure mode so additional taps
+    // extend the ruler into a multi-leg route preview.
+    private async Task MeasureToHere()
     {
         contextMenuVisible = false;
         measureActive = true;
         if (_editJs is null) return;
         await _editJs.MeasureFromVesselToAsync(contextMenuLat, contextMenuLon);
+    }
+
+    // "Measure from here" activates the measure tool with the
+    // right-click / long-press position seeded as the first fixed
+    // point. The helm's next tap on the chart drops the second point
+    // and the segment tooltip appears. Counterpart to MeasureToHere:
+    // that one anchors to the boat and ends at the click; this one
+    // starts at the click and lets the helm pick the destination.
+    private async Task MeasureFromHere()
+    {
+        contextMenuVisible = false;
+        measureActive = true;
+        if (_editJs is null) return;
+        await _editJs.MeasureFromPointAsync(contextMenuLat, contextMenuLon);
     }
 
     private async Task StopNavigation()

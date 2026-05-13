@@ -64,6 +64,33 @@ public class FormatTests
     }
 
     [Test]
+    public async Task MeasureDistance_Short_NmAndMeters()
+    {
+        // 500 m -> 0.27 nm / 500 m
+        await Assert.That(Format.MeasureDistance(500.0)).IsEqualTo("0.27 nm / 500 m");
+    }
+
+    [Test]
+    public async Task MeasureDistance_OneNm_RoundTripsBothUnits()
+    {
+        // 1852m = exactly 1 nm
+        await Assert.That(Format.MeasureDistance(1852.0)).IsEqualTo("1.00 nm / 1852 m");
+    }
+
+    [Test]
+    public async Task MeasureDistance_Long_KeepsTwoDecimalsOnNm()
+    {
+        // 25.00 nm = 46300 m
+        await Assert.That(Format.MeasureDistance(46300.0)).IsEqualTo("25.00 nm / 46300 m");
+    }
+
+    [Test]
+    public async Task MeasureDistance_Zero_FormatsBothAsZero()
+    {
+        await Assert.That(Format.MeasureDistance(0.0)).IsEqualTo("0.00 nm / 0 m");
+    }
+
+    [Test]
     public async Task Depth_OneDecimal()
     {
         await Assert.That(Format.Depth(12.345)).IsEqualTo("12.3");

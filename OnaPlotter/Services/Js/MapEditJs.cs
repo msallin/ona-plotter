@@ -63,6 +63,9 @@ public sealed class MapEditJs : IMapEditJs
     public Task MeasureFromVesselToAsync(double lat, double lon)
         => InvokeSafe("measureFromVesselTo", lat, lon);
 
+    public Task MeasureFromPointAsync(double lat, double lon)
+        => InvokeSafe("measureFromPoint", lat, lon);
+
     private async Task InvokeSafe(string identifier, params object?[] args)
     {
         if (_disposed) return;

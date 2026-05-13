@@ -116,6 +116,19 @@ public class MapEditJsTests
     }
 
     [Test]
+    public async Task MeasureFromPointAsync_PassesLatLon()
+    {
+        var fake = new RecordingJsRef();
+        var sut = new MapEditJs(fake);
+
+        await sut.MeasureFromPointAsync(48.01, 7.86);
+
+        await Assert.That(fake.Calls[0].id).IsEqualTo("measureFromPoint");
+        await Assert.That(fake.Calls[0].args[0]).IsEqualTo(48.01);
+        await Assert.That(fake.Calls[0].args[1]).IsEqualTo(7.86);
+    }
+
+    [Test]
     public async Task RemovePolygonEditVertexAsync_PassesIndex()
     {
         var fake = new RecordingJsRef();

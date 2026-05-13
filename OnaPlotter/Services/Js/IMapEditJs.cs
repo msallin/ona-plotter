@@ -80,4 +80,10 @@ public interface IMapEditJs
     /// <summary>Drop a fresh two-point measurement: own boat as the
     /// moving anchor, the given lat/lon as the fixed endpoint.</summary>
     Task MeasureFromVesselToAsync(double lat, double lon);
+
+    /// <summary>Activate the measure tool and seed a single fixed
+    /// point at the given lat/lon. The helm's next tap on the chart
+    /// adds the second point and the running tooltip kicks in. Used
+    /// by "Measure from here" in the map context menu.</summary>
+    Task MeasureFromPointAsync(double lat, double lon);
 }

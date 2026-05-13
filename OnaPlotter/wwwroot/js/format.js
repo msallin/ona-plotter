@@ -16,11 +16,15 @@
 //   - latLonDms      -> Format.LatLonDms                (Format.cs)
 //   - rangeRingLabel -> Format.RangeRingLabel           (Format.cs)
 //   - etaWithTtg     -> Format.EtaWithTtg               (Format.cs)
+//   - measureDistance-> Format.MeasureDistance          (Format.cs)
 
 // --- Constants (mirror Format.cs) -------------------------------
 
 /** m/s -> knots multiplier. Matches Format.MsToKnots. */
 export const MS_TO_KNOTS = 1.94384;
+
+/** Meters per nautical mile. Matches Format.MetersPerNm. */
+export const METERS_PER_NM = 1852;
 
 /** SpeedColor.DefaultRgb - default colour when SOG is unknown. */
 export const SPEED_COLOR_DEFAULT = '#3b82f6';
@@ -152,6 +156,18 @@ export function rangeRingLabel(nm) {
  * test scrapes this file for the matching tokens (see
  * RouteEtaJsParityTests).
  */
+/**
+ * Format.MeasureDistance mirror. Returns the segment-tooltip string
+ * for the measure tool: "0.85 nm / 1574 m". F2 on nm matches the
+ * pre-meters tooltip width; meters are rounded to the nearest whole.
+ * Pure formatter - C# canonical is the contract (FormatTests).
+ */
+export function measureDistance(meters) {
+    const nm = meters / METERS_PER_NM;
+    const mRounded = Math.round(meters);
+    return `${nm.toFixed(2)} nm / ${mRounded} m`;
+}
+
 export function etaWithTtg(ttgSeconds) {
     if (ttgSeconds == null || !isFinite(ttgSeconds) || ttgSeconds <= 0) return null;
     const totalMin = Math.max(1, Math.round(ttgSeconds / 60));

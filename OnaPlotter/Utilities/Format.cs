@@ -39,6 +39,19 @@ public static class Format
         return m.Value < 1000 ? $"{m.Value:F0}m" : $"{(m.Value / MetersPerNm):F2}nm";
     }
 
+    /// <summary>Formats a distance in meters as nm and meters side by
+    /// side for the measure-tool tooltip: "0.85 nm / 1574 m". Two
+    /// decimals on nm (matches the existing measure tooltip width);
+    /// rounded integer meters. The JS mirror in <c>format.js</c>
+    /// produces the identical string for the in-browser tooltips.</summary>
+    public static string MeasureDistance(double meters)
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        double nm = meters / MetersPerNm;
+        long mRounded = (long)Math.Round(meters, MidpointRounding.AwayFromZero);
+        return $"{nm.ToString("F2", inv)} nm / {mRounded.ToString(inv)} m";
+    }
+
     /// <summary>Formats a depth in meters, one decimal. Returns "--" for null.</summary>
     public static string Depth(double? m) =>
         m is null ? "--" : m.Value.ToString("F1");

@@ -3,7 +3,7 @@
 // Pins the behaviour added under the "Vessel -> point measurement" item
 // in Plotter TODO: the Measure tool now supports a vessel-anchored
 // point that tracks own-boat as it moves, and the
-// "Measure Here" entry in the long-press / right-click context menu
+// "Measure to here" entry in the long-press / right-click context menu
 // drops a fresh two-point measurement (vessel + clicked spot) without
 // the helm needing to know the old undocumented double-click gesture.
 //
