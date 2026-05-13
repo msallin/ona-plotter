@@ -8,15 +8,24 @@
 // is why there's no `import L from 'leaflet'` here.
 //
 // Design:
-//   * One canvas per radar, sized (2 * maxSpokeLen) square, attached
+//   * One canvas per radar, sized maxSpokeLen square, attached
 //     directly to Leaflet's overlay pane via a custom L.Layer (see
 //     CanvasGeoLayer at the bottom of this file). The canvas IS the
-//     displayed pixels - no toDataURL / blob / imageOverlay dance,
-//     which the first cut of this file did and which cost 10-50 ms
-//     per reposition on the main thread.
+//     displayed pixels; no toDataURL / blob / imageOverlay dance,
+//     which would cost 10-50 ms per reposition on the main thread.
+//     Each pixel covers two range cells (pixelsPerCell = 0.5): the
+//     overlay is CSS-scaled down to roughly screen pixels anyway,
+//     so finer polar resolution is invisible and the smaller buffer
+//     (4 MB at typical maxSpokeLen=1024 vs 16 MB for 1:1) lets
+//     multi-radar setups stay inside compositor memory.
 //   * Spoke painting uses a precomputed polar -> pixel LUT (once per
 //     radar) indexed by (spokeIndex, rangeCell). Avoids per-pixel
 //     trig on every spoke.
+//   * putImageData uploads are rAF-coalesced: the spoke painter
+//     mutates the ImageData buffer immediately, but the GPU upload
+//     of the accumulated dirty rect is deferred to the next animation
+//     frame. Decouples upload traffic from the WS message rate
+//     (~50 Hz on a typical radar) and caps it at the display refresh.
 //   * North-up: if the spoke has a `bearing` field we paint there;
 //     else we rotate `angle` by the own-boat heading.
 //   * Pixel bytes are looked up in a Uint8ClampedArray of length 256
@@ -239,16 +248,22 @@ class RadarOverlay {
         this.range = cfg.range || 1000;
         this.opacity = cfg.opacity ?? 0.75;
 
-        // Canvas is square with side = 2 * maxSpokeLen so the polar
-        // origin sits at the centre and the furthest pixel lands on
-        // the edge. 2048 -> 4096px = 16 MB ImageData; heavy but
-        // manageable. If we hit memory pressure we can drop to
-        // maxSpokeLen/2 and accept the resolution loss.
-        this.canvasSize = 2 * this.maxSpokeLen;
+        // Canvas side = maxSpokeLen, two range cells per pixel. For
+        // a typical maxSpokeLen=1024 that's a 1024x1024 buffer = 4 MB
+        // of ImageData. A 1:1 cell-to-pixel layout would cost 4x the
+        // memory (16 MB) and buys no visible detail: the overlay is
+        // CSS-scaled down to ~600 px on screen at typical helm zoom.
+        this.canvasSize = this.maxSpokeLen;
         this.canvas = document.createElement('canvas');
         this.canvas.width = this.canvasSize;
         this.canvas.height = this.canvasSize;
-        this.ctx = this.canvas.getContext('2d', { willReadFrequently: true });
+        // Default 2D context (GPU-backed where available). We never
+        // call getImageData on this canvas - the paint loop writes
+        // into an offline ImageData buffer and uploads via
+        // putImageData - so willReadFrequently would force software
+        // compositing for no benefit, making every map pan / zoom
+        // CPU-route the full ImageData through the main thread.
+        this.ctx = this.canvas.getContext('2d');
         this.ctx.imageSmoothingEnabled = false;
         // Transparent backdrop: we putImageData so every pixel starts
         // at 0 alpha until a spoke paints over it.
@@ -301,12 +316,32 @@ class RadarOverlay {
         // changes; spoke paints directly mutate the canvas pixels
         // and don't need a reposition.
         this._refreshPending = false;
+
+        // rAF coalescer for putImageData uploads. Spoke painting
+        // mutates this.imageData32 synchronously per WS frame, but
+        // the GPU upload is deferred to the next animation frame so
+        // multiple WS frames landing inside one rAF batch into a
+        // single upload of their union dirty rect. Persistent across
+        // frames; reset to "empty" after each flush.
+        this._paintPending = false;
+        this._paintDirty = {
+            minX: Infinity, minY: Infinity,
+            maxX: -Infinity, maxY: -Infinity,
+        };
     }
 
     _computeLuts() {
-        const cx = this.maxSpokeLen;
-        const cy = this.maxSpokeLen;
-        const pixelsPerCell = 1;    // canvas side = 2 * maxSpokeLen, so 1 cell = 1 px
+        // Polar origin at the geometric centre of the canvas. Using
+        // (canvasSize - 1) / 2 places the centre on the boundary
+        // between two pixel rows; combined with Math.round below it
+        // guarantees every (x, y) lookup stays inside [0, canvasSize-1]
+        // even at the cardinal extremes (r = maxSpokeLen - 1).
+        const cx = (this.canvasSize - 1) / 2;
+        const cy = (this.canvasSize - 1) / 2;
+        // canvas diameter spans 2*maxSpokeLen radial cells, so each
+        // cell maps to canvasSize / (2*maxSpokeLen) pixels. For the
+        // 1:2 layout we chose (canvasSize = maxSpokeLen) that's 0.5.
+        const pixelsPerCell = this.canvasSize / (2 * this.maxSpokeLen);
         // Angle 0 = directly North (up on canvas). Spoke `angle` is
         // measured clockwise from bow; bearing is clockwise from
         // true north. We store north-up so bearing maps directly;
@@ -453,25 +488,23 @@ class RadarOverlay {
         // Paint the new wedge. The painter folds clear-stale into
         // the same loop as paint-new (writes alpha=0 where the new
         // spoke says "no echo"), so each cell is touched at most
-        // once per batch instead of twice. Tracks the dirty rect
-        // across the batch so the upload at the end touches only
-        // the pixels we actually changed - vs. uploading the full
-        // 16 MB ImageData at 17 fps under the previous code.
-        const dirty = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+        // once per batch instead of twice. Dirty-rect accumulator
+        // is the per-overlay persistent one so multiple WS frames
+        // landing inside one rAF coalesce into a single upload.
+        const dirty = this._paintDirty;
         for (const spoke of spokes) {
             this._paintSpoke(spoke, dirty);
         }
 
-        // Flush only the dirty rectangle. Skip if no pixels actually
-        // changed (open water and the new spoke matched what was
-        // already there). No _scheduleReposition() here: the canvas
-        // element is directly parented in the overlay pane, so pixel
-        // updates show up without any DOM movement. Reposition is
-        // driven solely by boat-state / range changes.
+        // Schedule the GPU upload for the next animation frame.
+        // Skip if no pixels actually changed (open water + new
+        // spoke matched what was already there). No
+        // _scheduleReposition() here: the canvas element is
+        // directly parented in the overlay pane, so pixel updates
+        // show up without any DOM movement. Reposition is driven
+        // solely by boat-state / range changes.
         if (dirty.maxX >= dirty.minX && dirty.maxY >= dirty.minY) {
-            const dw = dirty.maxX - dirty.minX + 1;
-            const dh = dirty.maxY - dirty.minY + 1;
-            this.ctx.putImageData(this.imageData, 0, 0, dirty.minX, dirty.minY, dw, dh);
+            this._schedulePaint();
         }
         // On first-ever frame, make sure the canvas is actually in
         // the overlay pane. If no boat fix yet, the layer stays
@@ -481,13 +514,41 @@ class RadarOverlay {
 
     _clearCanvas() {
         // Reuse the existing ImageData buffer rather than reallocating
-        // 16 MB every range change. Uint32 fill is one word per
-        // iteration vs Uint8's byte-per-iteration; both compile to a
-        // memset on hot V8 but the typed-array fill path stays cleaner
-        // when the JIT warms up, and it pairs with the Uint32 paint
-        // loop's view of the same buffer.
+        // every range change. Uint32 fill is one word per iteration
+        // vs Uint8's byte-per-iteration; both compile to a memset on
+        // hot V8 but the typed-array fill path stays cleaner when the
+        // JIT warms up, and it pairs with the Uint32 paint loop's
+        // view of the same buffer.
         this.imageData32.fill(0);
         this.ctx.clearRect(0, 0, this.canvasSize, this.canvasSize);
+        // A clear wipes the visible canvas immediately via clearRect,
+        // so any dirty rect accumulated for the next rAF upload now
+        // refers to pixels that have been zeroed in the buffer too.
+        // Uploading them would be a no-op; reset so the flush is
+        // empty if no fresh spokes have painted yet.
+        const d = this._paintDirty;
+        d.minX = Infinity; d.minY = Infinity;
+        d.maxX = -Infinity; d.maxY = -Infinity;
+    }
+
+    _schedulePaint() {
+        if (this._paintPending) return;
+        this._paintPending = true;
+        requestAnimationFrame(() => {
+            this._paintPending = false;
+            this._flushPaint();
+        });
+    }
+
+    _flushPaint() {
+        if (this.destroyed) return;
+        const d = this._paintDirty;
+        if (d.maxX < d.minX || d.maxY < d.minY) return;
+        const dw = d.maxX - d.minX + 1;
+        const dh = d.maxY - d.minY + 1;
+        this.ctx.putImageData(this.imageData, 0, 0, d.minX, d.minY, dw, dh);
+        d.minX = Infinity; d.minY = Infinity;
+        d.maxX = -Infinity; d.maxY = -Infinity;
     }
 
     /**
