@@ -38,6 +38,20 @@ let coursePulseSuppressed = false;
 // disables the APPROACH alarm by setting the radius to 0; the
 // route HUD shows a "APPROACH alarm off" banner in that case).
 let courseLineArrivalRing = null;
+
+// Per-layer diff caches. setCourseLine is invoked on every SK self-
+// delta while a course is active (~1-10 Hz), but the waypoint and
+// arrival radius only change on a leg advance or a settings tweak.
+// Without the diff, Leaflet rebuilds the polyline LatLng array,
+// reprojects the marker, and re-projects the circle's metres->pixels
+// radius on every call - measurable CPU on a Pi kiosk when the helm
+// is idle in port. Each Leaflet primitive gets the value(s) it
+// actually depends on; the bearing line tracks both endpoints, the
+// pulse tracks the WP only, the arrival ring tracks WP + radius.
+let lastBearingSelfLat = null, lastBearingSelfLon = null;
+let lastBearingWpLat = null, lastBearingWpLon = null;
+let lastPulseWpLat = null, lastPulseWpLon = null;
+let lastRingWpLat = null, lastRingWpLon = null, lastRingRadius = null;
 const courseLinePulseIcon = L.divIcon({
     className: 'active-wp-icon',
     html: '<div class="active-wp-pulse"></div>',
@@ -64,33 +78,43 @@ export function setCourseLine(selfLat, selfLon, wpLat, wpLon, arrivalRadiusMeter
         courseLineLeg = null;
     }
 
-    // Bearing line: boat to next WP.
-    const brgCoords = [[selfLat, selfLon], [wpLat, wpLon]];
-    if (courseLineBearing) {
-        courseLineBearing.setLatLngs(brgCoords);
-    } else {
-        courseLineBearing = L.polyline(brgCoords, {
+    // Bearing line: boat to next WP. Skip the setLatLngs rebuild when
+    // neither endpoint moved since the last call.
+    if (!courseLineBearing) {
+        courseLineBearing = L.polyline([[selfLat, selfLon], [wpLat, wpLon]], {
             color: colors.bearing, weight: 2, opacity: 0.7, dashArray: '6,4'
         }).addTo(mapRef);
+        lastBearingSelfLat = selfLat; lastBearingSelfLon = selfLon;
+        lastBearingWpLat = wpLat; lastBearingWpLon = wpLon;
+    } else if (selfLat !== lastBearingSelfLat || selfLon !== lastBearingSelfLon
+            || wpLat !== lastBearingWpLat || wpLon !== lastBearingWpLon) {
+        courseLineBearing.setLatLngs([[selfLat, selfLon], [wpLat, wpLon]]);
+        lastBearingSelfLat = selfLat; lastBearingSelfLon = selfLon;
+        lastBearingWpLat = wpLat; lastBearingWpLon = wpLon;
     }
 
     // Pulse marker at the destination. Skipped when the active-
     // route layer is rendering its own pulsing nextWpMarker at the
     // same coord (route case); otherwise rendered for the Navigate
-    // Here case where there's a destination but no route.
+    // Here case where there's a destination but no route. WP position
+    // is stable until a leg advance, so the setLatLng only needs to
+    // fire on actual change.
     if (coursePulseSuppressed) {
         if (courseLinePulse && mapRef) {
             mapRef.removeLayer(courseLinePulse);
             courseLinePulse = null;
+            lastPulseWpLat = null; lastPulseWpLon = null;
         }
-    } else if (courseLinePulse) {
-        courseLinePulse.setLatLng([wpLat, wpLon]);
-    } else {
+    } else if (!courseLinePulse) {
         courseLinePulse = L.marker([wpLat, wpLon], {
             icon: courseLinePulseIcon,
             zIndexOffset: 800,
             interactive: false,
         }).addTo(mapRef);
+        lastPulseWpLat = wpLat; lastPulseWpLon = wpLon;
+    } else if (wpLat !== lastPulseWpLat || wpLon !== lastPulseWpLon) {
+        courseLinePulse.setLatLng([wpLat, wpLon]);
+        lastPulseWpLat = wpLat; lastPulseWpLon = wpLon;
     }
 
     // Arrival-radius ring at the destination. L.circle takes a radius
@@ -98,12 +122,11 @@ export function setCourseLine(selfLat, selfLon, wpLat, wpLon, arrivalRadiusMeter
     // always represents the helm-configured "arrived" distance to
     // scale. Radius 0 (or negative) means the helm disabled the
     // APPROACH alarm; tear down the ring in that case so the chart
-    // doesn't suggest an alarm that won't fire.
+    // doesn't suggest an alarm that won't fire. setRadius reprojects
+    // metres-to-pixels at the current zoom on every call - the
+    // heaviest op of the three, so guarding it is the biggest win.
     if (typeof arrivalRadiusMeters === 'number' && arrivalRadiusMeters > 0) {
-        if (courseLineArrivalRing) {
-            courseLineArrivalRing.setLatLng([wpLat, wpLon]);
-            courseLineArrivalRing.setRadius(arrivalRadiusMeters);
-        } else {
+        if (!courseLineArrivalRing) {
             courseLineArrivalRing = L.circle([wpLat, wpLon], {
                 radius: arrivalRadiusMeters,
                 color: colors.bearing,
@@ -113,10 +136,17 @@ export function setCourseLine(selfLat, selfLon, wpLat, wpLon, arrivalRadiusMeter
                 fill: false,
                 interactive: false,
             }).addTo(mapRef);
+            lastRingWpLat = wpLat; lastRingWpLon = wpLon; lastRingRadius = arrivalRadiusMeters;
+        } else if (wpLat !== lastRingWpLat || wpLon !== lastRingWpLon
+                || arrivalRadiusMeters !== lastRingRadius) {
+            courseLineArrivalRing.setLatLng([wpLat, wpLon]);
+            courseLineArrivalRing.setRadius(arrivalRadiusMeters);
+            lastRingWpLat = wpLat; lastRingWpLon = wpLon; lastRingRadius = arrivalRadiusMeters;
         }
     } else if (courseLineArrivalRing) {
         mapRef.removeLayer(courseLineArrivalRing);
         courseLineArrivalRing = null;
+        lastRingWpLat = null; lastRingWpLon = null; lastRingRadius = null;
     }
 }
 
@@ -132,6 +162,7 @@ export function setCoursePulseSuppressed(suppress) {
     if (coursePulseSuppressed && courseLinePulse && mapRef) {
         mapRef.removeLayer(courseLinePulse);
         courseLinePulse = null;
+        lastPulseWpLat = null; lastPulseWpLon = null;
     }
 }
 
@@ -140,6 +171,10 @@ export function clearCourseLine() {
     if (courseLineBearing && mapRef) { mapRef.removeLayer(courseLineBearing); courseLineBearing = null; }
     if (courseLinePulse && mapRef) { mapRef.removeLayer(courseLinePulse); courseLinePulse = null; }
     if (courseLineArrivalRing && mapRef) { mapRef.removeLayer(courseLineArrivalRing); courseLineArrivalRing = null; }
+    lastBearingSelfLat = null; lastBearingSelfLon = null;
+    lastBearingWpLat = null; lastBearingWpLon = null;
+    lastPulseWpLat = null; lastPulseWpLon = null;
+    lastRingWpLat = null; lastRingWpLon = null; lastRingRadius = null;
 }
 
 // Dim/restore opacity. Called by setActiveRouteStopping in the mux
@@ -167,6 +202,10 @@ export function dispose() {
     courseLineBearing = null;
     courseLinePulse = null;
     courseLineArrivalRing = null;
+    lastBearingSelfLat = null; lastBearingSelfLon = null;
+    lastBearingWpLat = null; lastBearingWpLon = null;
+    lastPulseWpLat = null; lastPulseWpLon = null;
+    lastRingWpLat = null; lastRingWpLon = null; lastRingRadius = null;
     mapRef = null;
     colors = null;
 }
