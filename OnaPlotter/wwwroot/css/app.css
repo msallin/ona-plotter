@@ -2566,11 +2566,17 @@ html:fullscreen .hud-stack-br {
 }
 
 /* Measurement-tool segment tooltips. Same skeleton as bearing-
-   tooltip but amber-framed to match the ruler polyline. */
+   tooltip; both surface bearing + distance text in a small pill
+   anchored to the polyline end. Helm-feedback: the earlier amber
+   border + amber text variant read as a theme-violating sandy
+   blob in light mode and didn't match anything else (the ruler
+   line is slate-200 / --map-measure, not amber). Switched to the
+   neutral theme-variable palette so the tooltip surface follows
+   dark / light / high-contrast like every other in-app dialog. */
 .measure-tooltip {
     background: rgba(30, 34, 44, 0.92) !important;
-    border: 1px solid rgba(233, 196, 106, 0.55) !important;
-    color: #f0d49c !important;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    color: var(--sk-text) !important;
     font-size: 11.5px !important;
     font-weight: 500 !important;
     padding: 4px 10px !important;
@@ -2579,6 +2585,25 @@ html:fullscreen .hud-stack-br {
     line-height: 1.3 !important;
 }
 .measure-tooltip::before { display: none !important; }
+
+/* Light + high-contrast theme overrides for .measure-tooltip. Same
+   pattern the route-edit-list block uses (see further below): the
+   base rule above hard-codes a dark slate surface so a fresh helm
+   on the default dark theme has a legible pill; the overrides flip
+   the surface to a near-white for light themes so dark map tiles
+   below don't bleed through the alpha and break legibility. */
+:root.theme-effective-light .measure-tooltip {
+    background: rgba(255, 255, 255, 0.96) !important;
+    border: 1px solid var(--sk-border) !important;
+    color: var(--sk-text) !important;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.18) !important;
+}
+:root.theme-high-contrast .measure-tooltip {
+    background: #ffffff !important;
+    border: 1.5px solid #000000 !important;
+    color: #000000 !important;
+    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.12) !important;
+}
 
 /* COG vector time/distance label */
 .vector-label {

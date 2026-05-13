@@ -1175,7 +1175,18 @@
 //                DST / leap-second flips. service-worker.js is the
 //                intentional changelog of the SW itself and was left
 //                untouched.
-const CACHE_NAME = 'ona-plotter-v111';
+// v111 -> v112: Measurement-tool segment tooltips now follow the
+//                dark / light / high-contrast theme. Helm-reported
+//                that the previous amber-bordered + amber-text pill
+//                ignored the active theme and read as an out-of-
+//                place sandy blob. Dropped the amber accent (the
+//                ruler polyline itself is slate-200, not amber, so
+//                the tooltip border never matched it); switched to
+//                the same neutral surface + var(--sk-text) pattern
+//                the rest of the in-app dialogs use, with
+//                :root.theme-effective-light and high-contrast
+//                overrides for the lighter themes.
+const CACHE_NAME = 'ona-plotter-v112';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
