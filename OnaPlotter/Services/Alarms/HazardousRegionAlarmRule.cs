@@ -108,16 +108,27 @@ public sealed class HazardousRegionAlarmRule : IAlarmRule
             "notifications.security.hazard", alarm.TargetKey);
     }
 
+    /// <summary>Build the per-target notification path in one allocation
+    /// via <see cref="string.Create{TState}(int, TState, System.Buffers.SpanAction{char, TState})"/>,
+    /// matching the sibling helper in <c>CpaAlarmRule</c>. Cold path
+    /// (only on alarm publish) but the single-pass alloc keeps the
+    /// shape consistent with the rest of the alarms pipeline.</summary>
     private static string SanitisePerTargetPath(string prefix, string targetKey)
     {
-        var sb = new System.Text.StringBuilder(targetKey.Length);
-        foreach (var c in targetKey)
-        {
-            if (char.IsAsciiLetterOrDigit(c) || c == '_' || c == '-')
-                sb.Append(c);
-            else
-                sb.Append('_');
-        }
-        return $"{prefix}.{sb.ToString()}";
+        int totalLen = prefix.Length + 1 + targetKey.Length;
+        return string.Create(totalLen, (prefix, targetKey),
+            static (span, state) =>
+            {
+                var (p, k) = state;
+                p.AsSpan().CopyTo(span);
+                span[p.Length] = '.';
+                var dest = span[(p.Length + 1)..];
+                var src = k.AsSpan();
+                for (int i = 0; i < src.Length; i++)
+                {
+                    char c = src[i];
+                    dest[i] = (char.IsAsciiLetterOrDigit(c) || c == '_' || c == '-') ? c : '_';
+                }
+            });
     }
 }
