@@ -21,7 +21,27 @@ public sealed class AisTrailBuffer
     /// plain long-compare (no timezone math per-point per-vessel).</summary>
     public readonly record struct TrailPoint(double Lat, double Lon, long TicksUtc);
 
-    private readonly Dictionary<string, List<TrailPoint>> _trails = new(StringComparer.Ordinal);
+    /// <summary>Per-context trail state. <see cref="Points"/> is a
+    /// <see cref="Queue{T}"/> so age-trim is O(1) Dequeue from the
+    /// head and append is O(1) Enqueue at the tail. <see cref="Last"/>
+    /// caches the most recently appended point for the position-dedup
+    /// check inside <see cref="Push"/> (Queue exposes head-peek but
+    /// not tail-peek). Meaningful only when <c>Points.Count &gt; 0</c>;
+    /// callers must always go through <see cref="Append"/> so the cache
+    /// stays in sync with the queue.</summary>
+    private sealed class TrailHistory
+    {
+        public readonly Queue<TrailPoint> Points = new();
+        public TrailPoint Last { get; private set; }
+
+        public void Append(TrailPoint pt)
+        {
+            Points.Enqueue(pt);
+            Last = pt;
+        }
+    }
+
+    private readonly Dictionary<string, TrailHistory> _trails = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> _versions = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> _lastEmittedVersions = new(StringComparer.Ordinal);
     /// <summary>Per-context generation stamp updated on every <see cref="Push"/>.
@@ -63,36 +83,32 @@ public sealed class AisTrailBuffer
     /// </summary>
     public bool Push(string context, double lat, double lon, DateTime nowUtc)
     {
-        if (!_trails.TryGetValue(context, out var hist))
+        if (!_trails.TryGetValue(context, out var trail))
         {
-            hist = new List<TrailPoint>();
-            _trails[context] = hist;
+            trail = new TrailHistory();
+            _trails[context] = trail;
         }
         bool pushed = false;
-        if (hist.Count == 0
-            || hist[^1].Lat != lat || hist[^1].Lon != lon)
+        if (trail.Points.Count == 0
+            || trail.Last.Lat != lat || trail.Last.Lon != lon)
         {
-            hist.Add(new TrailPoint(lat, lon, nowUtc.Ticks));
+            trail.Append(new TrailPoint(lat, lon, nowUtc.Ticks));
             pushed = true;
         }
-        // Trim front: drop the oldest points whose age has crossed
-        // the window. List.RemoveAt(0) is O(n) - acceptable here
-        // because the trail length is bounded by the trail window and
-        // the SK sample cadence (a 300 s window at 1 Hz tops out
-        // around 300 points). For larger windows or higher cadence
-        // a head-index ring buffer would be the next step.
+        // Trim front: drop oldest points whose age has crossed the
+        // window. Queue.Dequeue is O(1).
         long cutoff = nowUtc.Ticks - _maxAge.Ticks;
-        int dropped = 0;
-        while (hist.Count > 0 && hist[0].TicksUtc < cutoff)
+        bool trimmed = false;
+        while (trail.Points.Count > 0 && trail.Points.Peek().TicksUtc < cutoff)
         {
-            hist.RemoveAt(0);
-            dropped++;
+            trail.Points.Dequeue();
+            trimmed = true;
         }
         // Stamp liveness for the current sweep regardless of whether
         // the geometry changed - a moored vessel pinging the same coords
         // is still "live" and must not be EndSwept away.
         _pushedInSweep[context] = _sweepGen;
-        if (pushed || dropped > 0)
+        if (pushed || trimmed)
         {
             _versions.TryGetValue(context, out int v);
             _versions[context] = v + 1;
@@ -106,7 +122,7 @@ public sealed class AisTrailBuffer
     /// <paramref name="context"/>, or 0 if the vessel isn't tracked.
     /// </summary>
     internal int CountFor(string context)
-        => _trails.TryGetValue(context, out var hist) ? hist.Count : 0;
+        => _trails.TryGetValue(context, out var trail) ? trail.Points.Count : 0;
 
     /// <summary>
     /// Snapshot the vessel's trail as the wire-format <c>[lat, lon]</c>
@@ -125,12 +141,13 @@ public sealed class AisTrailBuffer
     /// </summary>
     public double[][]? GetCoords(string context)
     {
-        if (!_trails.TryGetValue(context, out var hist) || hist.Count < 2)
+        if (!_trails.TryGetValue(context, out var trail) || trail.Points.Count < 2)
             return null;
-        var coords = new double[hist.Count][];
-        for (int i = 0; i < hist.Count; i++)
+        var coords = new double[trail.Points.Count][];
+        int i = 0;
+        foreach (var p in trail.Points)
         {
-            coords[i] = new[] { hist[i].Lat, hist[i].Lon };
+            coords[i++] = new[] { p.Lat, p.Lon };
         }
         return coords;
     }
