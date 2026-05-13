@@ -66,11 +66,14 @@ public sealed class ServerNotificationStore
     /// shallow copy so iteration is safe against concurrent
     /// <see cref="Apply"/> calls (Blazor WASM is single-threaded but the
     /// copy keeps callers from accidentally relying on live-update
-    /// semantics).</summary>
+    /// semantics). Empty-case returns the cached
+    /// <see cref="Array.Empty{T}"/> singleton so polling callers don't
+    /// allocate a zero-length array on the steady-state empty tick.</summary>
     public IReadOnlyCollection<ServerNotification> Active
     {
         get
         {
+            if (_byPath.Count == 0) return Array.Empty<ServerNotification>();
             var snap = new ServerNotification[_byPath.Count];
             int i = 0;
             foreach (var v in _byPath.Values) snap[i++] = v;
