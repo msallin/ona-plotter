@@ -288,13 +288,10 @@ public sealed class AisPushService
             ? result.AsSpan(0, written).ToArray()
             : result;
 
-        // Trail stale-sweep. Drop any context in the buffer that
-        // isn't in the snapshot we're about to emit - matches what
-        // the JS-side `for (const ctx of aisMarkers.keys()) ...
-        // removeAisTrail(ctx)` loop did. Allocates a HashSet only
-        // when there's actual stale content; in steady-state harbour
-        // traffic the live set dominates the cached set.
-        _trailBuffer.RetainOnly(snapshot.Select(p => p.Context!));
+        // FillPayload above stamped each visible context as live.
+        // EndSweep retires the rest - the equivalent of the JS-side
+        // aisMarkers stale-loop that removed orphaned trails.
+        _trailBuffer.EndSweep();
         return snapshot;
     }
 
@@ -536,7 +533,7 @@ public sealed class AisPushService
         //   between pushes flips dirty on the next push and JS
         //   receives the shortened (or null) trail.
         // - Stale vessels (not in `visible`) are forgotten in the
-        //   loop's RetainOnly call after BuildSnapshot returns.
+        //   loop's EndSweep call after BuildSnapshot returns.
         bool trailChanged = trailBuffer.Push(v.Context ?? string.Empty, vLat, vLon, nowUtc);
         if (trailChanged && trailBuffer.ConsumeDirty(v.Context ?? string.Empty))
         {

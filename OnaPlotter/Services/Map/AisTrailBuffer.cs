@@ -24,6 +24,12 @@ public sealed class AisTrailBuffer
     private readonly Dictionary<string, List<TrailPoint>> _trails = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> _versions = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> _lastEmittedVersions = new(StringComparer.Ordinal);
+    /// <summary>Per-context generation stamp updated on every <see cref="Push"/>.
+    /// <see cref="EndSweep"/> drops trails whose stamp doesn't match the
+    /// current generation - lets the per-tick stale sweep avoid building
+    /// a live-set HashSet from the snapshot.</summary>
+    private readonly Dictionary<string, int> _pushedInSweep = new(StringComparer.Ordinal);
+    private int _sweepGen;
     private readonly TimeSpan _maxAge;
 
     /// <summary>Default constructor: 5-minute window mirroring the JS
@@ -82,6 +88,10 @@ public sealed class AisTrailBuffer
             hist.RemoveAt(0);
             dropped++;
         }
+        // Stamp liveness for the current sweep regardless of whether
+        // the geometry changed - a moored vessel pinging the same coords
+        // is still "live" and must not be EndSwept away.
+        _pushedInSweep[context] = _sweepGen;
         if (pushed || dropped > 0)
         {
             _versions.TryGetValue(context, out int v);
@@ -154,27 +164,36 @@ public sealed class AisTrailBuffer
         _trails.Remove(context);
         _versions.Remove(context);
         _lastEmittedVersions.Remove(context);
+        _pushedInSweep.Remove(context);
     }
 
     /// <summary>
-    /// Drop every context not in <paramref name="liveContexts"/>.
-    /// One-shot stale-sweep for the AisPushService loop: after the
-    /// per-vessel pass, the caller knows which contexts are still
-    /// visible; everything else is gone. Allocates a HashSet copy
-    /// of <paramref name="liveContexts"/> only when the buffer has
-    /// more than a few stale candidates - cheap when the live set
-    /// dominates the cached set (the steady-state case).
+    /// End-of-tick stale sweep: drops every context that wasn't
+    /// <see cref="Push"/>ed since the previous <see cref="EndSweep"/>.
+    /// One call per AisPushService snapshot. Allocates only a small
+    /// remove-list, and only when something is actually stale - in the
+    /// steady-state case where every trail was refreshed this tick the
+    /// method is a single dictionary scan with zero allocations.
+    ///
+    /// <para>Pairing contract: each call retires contexts that had no
+    /// Push since the previous EndSweep. Calling EndSweep twice in a
+    /// row without intervening Pushes will drop every tracked context -
+    /// the second sweep finds none stamped with the new generation.</para>
     /// </summary>
-    public void RetainOnly(IEnumerable<string> liveContexts)
+    public void EndSweep()
     {
-        var live = liveContexts as HashSet<string>
-                   ?? new HashSet<string>(liveContexts, StringComparer.Ordinal);
-        if (_trails.Count == 0) return;
-        // ToArray() so we can mutate the dict mid-iteration.
-        foreach (var ctx in _trails.Keys.ToArray())
+        List<string>? toRemove = null;
+        foreach (var (ctx, gen) in _pushedInSweep)
         {
-            if (!live.Contains(ctx)) Forget(ctx);
+            if (gen != _sweepGen)
+            {
+                toRemove ??= new List<string>();
+                toRemove.Add(ctx);
+            }
         }
+        _sweepGen++;
+        if (toRemove is null) return;
+        foreach (var ctx in toRemove) Forget(ctx);
     }
 
     /// <summary>Drop every tracked trail. Used on dispose / page
@@ -185,5 +204,7 @@ public sealed class AisTrailBuffer
         _trails.Clear();
         _versions.Clear();
         _lastEmittedVersions.Clear();
+        _pushedInSweep.Clear();
+        _sweepGen = 0;
     }
 }

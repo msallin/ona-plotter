@@ -162,18 +162,63 @@ public sealed class AisTrailBufferTests
     }
 
     [Test]
-    public async Task RetainOnly_DropsAbsentContexts_KeepsLiveOnes()
+    public async Task EndSweep_DropsContextsNotPushedSinceLastSweep()
     {
+        // Sweep semantics: every Push stamps the current generation;
+        // EndSweep drops anything whose stamp doesn't match. Mirrors
+        // the AisPushService loop where each visible vessel is Pushed
+        // and EndSweep retires whatever fell out of `visible`.
         var buf = new AisTrailBuffer();
         buf.Push("v.A", 54.0, 11.0, T0);
         buf.Push("v.B", 55.0, 12.0, T0);
         buf.Push("v.C", 56.0, 13.0, T0);
+        buf.EndSweep();   // sweep 0 closes; all three live
 
-        buf.RetainOnly(new[] { "v.A", "v.C" });
+        // Sweep 1: only A and C are pushed; B falls off.
+        buf.Push("v.A", 54.0, 11.0, T0.AddSeconds(3));
+        buf.Push("v.C", 56.0, 13.0, T0.AddSeconds(3));
+        buf.EndSweep();
 
         await Assert.That(buf.CountFor("v.A")).IsEqualTo(1);
         await Assert.That(buf.CountFor("v.B")).IsEqualTo(0);  // gone
         await Assert.That(buf.CountFor("v.C")).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task EndSweep_KeepsContextsRePushedAtSamePosition()
+    {
+        // A moored vessel pinging the same coords is dedup'd by Push
+        // (geometry doesn't change) but must still be marked live so
+        // EndSweep doesn't drop it.
+        var buf = new AisTrailBuffer();
+        buf.Push("v.A", 54.0, 11.0, T0);
+        buf.EndSweep();
+
+        bool changed = buf.Push("v.A", 54.0, 11.0, T0.AddSeconds(3));
+        buf.EndSweep();
+
+        await Assert.That(changed).IsFalse();              // dedup
+        await Assert.That(buf.CountFor("v.A")).IsEqualTo(1); // still here
+    }
+
+    [Test]
+    public async Task EndSweep_AllRefreshed_KeepsEverything()
+    {
+        // Steady-state guard: if every Push'd context was refreshed,
+        // EndSweep must not Forget anything. (The zero-allocation
+        // property of this path is reasoned about, not asserted -
+        // see the EndSweep doc.)
+        var buf = new AisTrailBuffer();
+        buf.Push("v.A", 54.0, 11.0, T0);
+        buf.Push("v.B", 55.0, 12.0, T0);
+        buf.EndSweep();
+
+        buf.Push("v.A", 54.0, 11.0, T0.AddSeconds(3));
+        buf.Push("v.B", 55.0, 12.0, T0.AddSeconds(3));
+        buf.EndSweep();
+
+        await Assert.That(buf.CountFor("v.A")).IsEqualTo(1);
+        await Assert.That(buf.CountFor("v.B")).IsEqualTo(1);
     }
 
     [Test]
@@ -194,7 +239,7 @@ public sealed class AisTrailBufferTests
     public async Task Push_ReacquiredContextAfterForget_StartsFreshTrail()
     {
         // Common case: a vessel ages out of the AisStore, gets forgotten
-        // by RetainOnly, then comes back. The new trail must NOT carry
+        // by EndSweep, then comes back. The new trail must NOT carry
         // points from the pre-forget life.
         var buf = new AisTrailBuffer();
         buf.Push("v.A", 54.0, 11.0, T0);
