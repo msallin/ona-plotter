@@ -85,6 +85,11 @@ public sealed class AlarmManager : IAlarmManager
     // so auto-clear / latch behaviour survives severity/message updates.
     private readonly Dictionary<AlarmKey, ActiveEntry> _active = [];
 
+    // Per-tick scratch dictionary reused across Evaluate calls. Cleared
+    // at the top of each call rather than re-allocated; saves one Dict
+    // per-tick (~1 Hz) when the typical fill is 0-3 entries.
+    private readonly Dictionary<AlarmKey, (AlarmInfo info, IAlarmRule rule)> _thisTick = new();
+
     // Cached sort of _active. Invalidated on every mutation (Add/Remove/
     // Clear) and re-materialised lazily on read. The ActiveAlarms
     // property is hit from every Blazor render + every delta tick;
@@ -380,7 +385,7 @@ public sealed class AlarmManager : IAlarmManager
         // warning doesn't hide a closing ferry (and vice versa). The
         // display order is severity-then-priority; the rules themselves
         // stay ignorant of the stack.
-        var thisTick = new Dictionary<AlarmKey, (AlarmInfo info, IAlarmRule rule)>();
+        _thisTick.Clear();
         foreach (var rule in _rules)
         {
             // Per-rule kill-switch from Settings -> Alarms. Skipping
@@ -398,7 +403,7 @@ public sealed class AlarmManager : IAlarmManager
             // active server notification on each tick.
             foreach (var alarm in rule.CheckMany(ctx))
             {
-                thisTick[new AlarmKey(alarm.Title, alarm.TargetKey)] = (alarm, rule);
+                _thisTick[new AlarmKey(alarm.Title, alarm.TargetKey)] = (alarm, rule);
             }
         }
 
@@ -423,7 +428,7 @@ public sealed class AlarmManager : IAlarmManager
         foreach (var kv in _active)
         {
             bool ruleDisabled = disabledRules.Contains(kv.Value.Rule.Title);
-            bool autoClearMissing = !thisTick.ContainsKey(kv.Key) && kv.Value.Rule.AutoClear;
+            bool autoClearMissing = !_thisTick.ContainsKey(kv.Key) && kv.Value.Rule.AutoClear;
             if (ruleDisabled || autoClearMissing)
             {
                 toDrop ??= new List<AlarmKey>(2);
@@ -442,7 +447,7 @@ public sealed class AlarmManager : IAlarmManager
         }
 
         // Add-or-update from this tick's hits.
-        foreach (var (key, (info, rule)) in thisTick)
+        foreach (var (key, (info, rule)) in _thisTick)
         {
             if (_active.TryGetValue(key, out var existing))
             {
