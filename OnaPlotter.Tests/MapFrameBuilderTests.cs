@@ -38,6 +38,46 @@ public class MapFrameBuilderTests
     }
 
     [Test]
+    public async Task FramePos_HeadingTrueRad_TracksHeadingTrueRegardlessOfHelmDisplayChoice()
+    {
+        // The radar overlay paints against a true-north canvas. If the
+        // helm flips PreferMagneticHeading on, the HUD readouts swap to
+        // magnetic but the radar must keep using true. FramePos carries
+        // a separate HeadingTrueRad channel for the geometry path; this
+        // pins that it follows NavigationData.HeadingTrueResolved (true,
+        // with magnetic as fallback) and ignores the display preference.
+        var b = new MapFrameBuilder();
+        var nav = NavAt(47.4, 8.5, headingRad: 3.53);  // headingTrue 202°
+        nav.Apply("navigation.headingMagnetic", 3.67);  // 210°
+        nav.PreferMagneticHeading = true;
+
+        var frame = b.Build(nav);
+        await Assert.That(frame.Pos).IsNotNull();
+        // Display heading follows the helm's pick.
+        await Assert.That(frame.Pos!.Value.HeadingRad).IsEqualTo(3.67);
+        // Radar-bound true heading is the true value regardless.
+        await Assert.That(frame.Pos!.Value.HeadingTrueRad).IsEqualTo(3.53);
+    }
+
+    [Test]
+    public async Task FramePos_HeadingTrueRad_SerialisesAs_headingTrueRad_InCamelCase()
+    {
+        // Blazor's JS interop uses JsonSerializerDefaults.Web (camelCase
+        // policy). The JS side reads `p.headingTrueRad`; pin the wire
+        // key name so a future serialization-config change can't
+        // silently break the field name (the JS would read undefined,
+        // fall through the heading chain, and the radar overlay would
+        // quietly mis-rotate again).
+        var b = new MapFrameBuilder();
+        var nav = NavAt(47.4, 8.5, headingRad: 3.14);
+        var frame = b.Build(nav);
+        var json = System.Text.Json.JsonSerializer.Serialize(frame.Pos!.Value,
+            new System.Text.Json.JsonSerializerOptions(
+                System.Text.Json.JsonSerializerDefaults.Web));
+        await Assert.That(json).Contains("\"headingTrueRad\":3.14");
+    }
+
+    [Test]
     public async Task FirstFix_Emits_Position_But_No_TrackSegment()
     {
         // Track segments need BOTH endpoints - the first tick after

@@ -49,7 +49,18 @@ public sealed record RadarOverlayStartConfig(
     /// production provider (Mayara) fills bearing with the radar's
     /// internal HS-corrected value rather than true-north, which paints
     /// every spoke bow-up when no HS sensor is wired in.</summary>
-    bool UseWireBearing = false);
+    bool UseWireBearing = false,
+    /// <summary>Installation-time radar bearing alignment in radians,
+    /// 0..2π. Compensates for the antenna not being mechanically aligned
+    /// to the bow centreline (common when the radar mount is on a
+    /// pole or arch, off-axis from the bow). Mayara exposes this as
+    /// a per-radar control <c>bearingAlignment</c>; we read it at
+    /// enable-time and add it to the spoke index so the rendered
+    /// echoes align with the chart. The radar's own UI exposes a
+    /// slider for this; if you adjust it, disable + re-enable the
+    /// overlay (or just toggle off / on) to pick up the new value.
+    /// Default 0 (no correction).</summary>
+    double BearingAlignmentRad = 0.0);
 
 /// <summary>Surfaced to the manager when starting an overlay fails;
 /// the manager translates this to a user-visible toast.</summary>

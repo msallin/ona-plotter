@@ -291,6 +291,16 @@ class RadarOverlay {
         // the correct paint as long as boatState.headingRad is true-
         // north (see boatState comment above).
         this.useWireBearing = !!cfg.useWireBearing;
+        // Installation-time radar bearing alignment, in spoke units.
+        // Mirrors the per-radar Mayara `bearingAlignment` control which
+        // the helm tunes at commissioning when the antenna isn't
+        // mechanically aligned with the bow. Added to the bow-relative
+        // angle before the heading offset so the picture lines up with
+        // the chart regardless of mount orientation. Read once at
+        // construction; helm-driven updates require toggling the
+        // overlay off+on.
+        const baRad = Number(cfg.bearingAlignmentRad) || 0;
+        this.bearingAlignmentSpokes = Math.round(baRad * this.spokes / (2 * Math.PI));
 
         // Canvas side = maxSpokeLen, two range cells per pixel. For
         // a typical maxSpokeLen=1024 that's a 1024x1024 buffer = 4 MB
@@ -656,7 +666,9 @@ class RadarOverlay {
      *  so the policy can be unit-tested without a canvas/Leaflet
      *  stub; see computeSpokeIndex below for the rules. */
     _spokeIndex(spoke) {
-        return computeSpokeIndex(spoke, boatState.headingRad, this.spokes, this.useWireBearing);
+        return computeSpokeIndex(
+            spoke, boatState.headingRad, this.spokes,
+            this.useWireBearing, this.bearingAlignmentSpokes);
     }
 
     setRange(range) {
@@ -902,17 +914,22 @@ function headingToSpokeOffset(headingRad, spokesPerRevolution) {
 /**
  * Decide which spoke index on the north-up canvas to paint into.
  *
- * Default (useWireBearing=false): compose `angle + heading` from the
- * spoke's bow-relative angle plus the boat's TRUE-NORTH heading. The
- * wire's optional `bearing` field is ignored because at least one
- * production provider (Mayara) fills it with the radar's internal
- * HS-corrected value rather than true-north - paints every spoke
- * bow-up when the radar has no heading sensor wired in.
+ * Default (useWireBearing=false): compose `angle + alignment + heading`
+ * from the spoke's bow-relative angle, the radar's installation
+ * bearing alignment (antenna-vs-bow offset), and the boat's
+ * TRUE-NORTH heading. The wire's optional `bearing` field is ignored
+ * because at least one production provider (Mayara) fills it with
+ * the radar's internal HS-corrected value rather than true-north -
+ * paints every spoke bow-up when the radar has no heading sensor
+ * wired in.
  *
  * Opt-in (useWireBearing=true): trust the wire's `bearing` as
  * true-north when present. For helms whose provider verifiably
  * emits true-north bearings; saves one add per spoke at the cost
- * of correctness on non-conforming providers.
+ * of correctness on non-conforming providers. The bearing alignment
+ * is still applied because Mayara doesn't compensate for it before
+ * filling the field (observed on a HALO 31 install with
+ * bearingAlignment = 5° and bearing == angle on the wire).
  *
  * Both paths funnel through wrapSpoke for the defensive modulo.
  *
@@ -920,13 +937,17 @@ function headingToSpokeOffset(headingRad, spokesPerRevolution) {
  * @param {number} headingRad   Boat heading (radians, 0..2pi from true north).
  * @param {number} spokesPerRevolution
  * @param {boolean} useWireBearing
+ * @param {number}  [bearingAlignmentSpokes=0]  Radar antenna installation
+ *   offset in spoke units. 0 = antenna pointing 0° aligns with bow.
  */
-function computeSpokeIndex(spoke, headingRad, spokesPerRevolution, useWireBearing) {
+function computeSpokeIndex(spoke, headingRad, spokesPerRevolution, useWireBearing,
+                           bearingAlignmentSpokes = 0) {
     if (useWireBearing && spoke.bearing != null) {
-        return wrapSpoke(spoke.bearing, spokesPerRevolution);
+        return wrapSpoke(spoke.bearing + bearingAlignmentSpokes, spokesPerRevolution);
     }
     return wrapSpoke(
-        spoke.angle + headingToSpokeOffset(headingRad, spokesPerRevolution),
+        spoke.angle + bearingAlignmentSpokes
+            + headingToSpokeOffset(headingRad, spokesPerRevolution),
         spokesPerRevolution);
 }
 

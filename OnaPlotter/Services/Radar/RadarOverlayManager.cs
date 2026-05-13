@@ -159,6 +159,31 @@ public sealed class RadarOverlayManager
             caps?.MaxSpokeLength ?? radar.MaxSpokeLength);
         int range = radar.Range ?? RadarOverlayLimits.DefaultRangeMetres;
 
+        // Installation-time bearing alignment. Live in /controls
+        // (Mayara per-radar setting that the helm tunes in the radar's
+        // own UI when commissioning the antenna). Read at enable time
+        // and threaded into the overlay so the canvas spokes line up
+        // with the chart even when the antenna mount is off-axis. We
+        // don't subscribe to live updates: the user re-toggles the
+        // overlay if they adjust it. Best-effort: if the controls
+        // fetch fails, we proceed with 0 - same picture the helm had
+        // before, just uncompensated.
+        double bearingAlignment = 0;
+        try
+        {
+            var controls = await _radarApi.GetControlsAsync(radar.Id, ct);
+            if (controls is not null
+                && controls.TryGetValue("bearingAlignment", out var ba)
+                && ba.NumericValue is double v)
+            {
+                bearingAlignment = v;
+            }
+        }
+        catch
+        {
+            // Best-effort - leave at 0 on any fetch failure.
+        }
+
         // Spoke WebSocket URL. Prefer the server-supplied value (spec
         // intent), but only if it points back at our SK origin - a
         // compromised plugin could otherwise hand us an attacker URL
@@ -185,7 +210,8 @@ public sealed class RadarOverlayManager
             // layers (charts, AIS, regions, routes) have their own
             // opacity settings and are unchanged.
             Opacity: 0.50,
-            UseWireBearing: _settings.RadarUseWireBearing);
+            UseWireBearing: _settings.RadarUseWireBearing,
+            BearingAlignmentRad: bearingAlignment);
 
         try
         {

@@ -220,3 +220,34 @@ test('computeSpokeIndex: negative compound index wraps to positive', () => {
     const spoke = { angle: 10 };
     assert.equal(computeSpokeIndex(spoke, -Math.PI / 2, 2048, false), 1546);
 });
+
+test('computeSpokeIndex: bearingAlignment rotates default path by N spokes', () => {
+    // Installation-time radar antenna offset: when the helm mounts
+    // the radar with antenna 0° not exactly toward the bow (common
+    // on a pole/arch install), Mayara exposes a `bearingAlignment`
+    // control they tune at commissioning. We read it at enable time
+    // and add it to the spoke index so the picture lines up with
+    // the chart regardless of mount orientation. 5° alignment on a
+    // 2048-spoke radar = round(5/360 * 2048) = 28 spokes.
+    const spoke = { angle: 0 };
+    assert.equal(computeSpokeIndex(spoke, 0, 2048, false, 28), 28);
+});
+
+test('computeSpokeIndex: bearingAlignment also applied on opt-in path', () => {
+    // Mayara doesn't bake bearingAlignment into its wire `bearing`
+    // field (observed on the HALO 31 install where bearing == angle
+    // on the wire while bearingAlignment was set to 5°). Apply it
+    // on both paths so flipping the opt-in doesn't suddenly stop
+    // compensating for the antenna offset.
+    const spoke = { angle: 0, bearing: 100 };
+    assert.equal(computeSpokeIndex(spoke, 0, 2048, true, 28), 128);
+});
+
+test('computeSpokeIndex: bearingAlignment default 0 reproduces unaligned behaviour', () => {
+    // Backwards-compat: callers that don't pass the alignment param
+    // get the old behaviour. Pins so a future refactor that flips
+    // the default to a non-zero value can't silently drift the
+    // picture by ~5° on every helm.
+    const spoke = { angle: 100 };
+    assert.equal(computeSpokeIndex(spoke, 0, 2048, false), 100);
+});
