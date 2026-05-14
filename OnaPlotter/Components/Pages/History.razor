@@ -910,6 +910,14 @@
             return;
         }
 
+        // Thin the dense GPS sample stream down to a waypoint set that
+        // preserves the leg's shape but is sane to push to a chart-
+        // plotter or replay later. 10 m perpendicular tolerance keeps
+        // headland turns and channel kinks while collapsing GPS-noise
+        // wiggle on straight runs. Endpoints always survive so the
+        // saved route still starts / ends where the trip did.
+        coords = RouteSimplify.Rdp(coords, 10.0);
+
         ApiResult<string> r;
         try { r = await RouteApi.SaveAsync(name, [.. coords]); }
         catch (Exception ex) { Toasts.LogException(ex, "Save route"); return; }
