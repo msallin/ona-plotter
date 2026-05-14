@@ -5479,17 +5479,25 @@ html.night-mode-global body {
     font-size: 0.7rem;
 }
 
+/* Meta-toggle (e.g. Charts "Show all", Regions "Show"). Stays small +
+   muted so it visually subordinates to the row content it modifies,
+   whether it sits in a SectionHeader's extras slot or floats above the
+   list as a standalone control. Without an explicit font-size the
+   standalone usage inherited the panel default (~1rem) and looked
+   oversized next to 0.7rem hints and descriptions. */
 .notes-visible-toggle {
     display: inline-flex;
     align-items: center;
     gap: 4px;
     cursor: pointer;
-    opacity: 0.75;
+    font-size: 0.7rem;
+    color: var(--sk-text-muted);
+    opacity: 0.85;
 }
-.notes-visible-toggle:hover { opacity: 1; }
+.notes-visible-toggle:hover { opacity: 1; color: var(--sk-text); }
 .notes-visible-toggle input[type="checkbox"] { margin: 0; cursor: pointer; }
 @media (pointer: coarse) {
-    .notes-visible-toggle { font-size: 0.8rem; padding: 4px 0; }
+    .notes-visible-toggle { font-size: 0.75rem; padding: 4px 0; }
     .notes-visible-toggle input[type="checkbox"] { width: 18px; height: 18px; }
 }
 
