@@ -257,7 +257,7 @@ public partial class Map
         string json = System.Text.Json.JsonSerializer.Serialize(
             feature, OnaGeoJsonContext.Default.GeoJsonShareWaypointFeature);
         string title = string.IsNullOrWhiteSpace(wp.Name) ? "Waypoint" : wp.Name!;
-        await ShareService.ShareJsonAsync(title, json);
+        await ShareService.ShareTextAsync(title, json);
     }
 
     // ---- Note (create, save, delete, focus, show/hide) ---------------
@@ -461,7 +461,7 @@ public partial class Map
         string json = System.Text.Json.JsonSerializer.Serialize(
             feature, OnaGeoJsonContext.Default.GeoJsonShareNoteFeature);
         string title = string.IsNullOrWhiteSpace(note.Title) ? "Note" : note.Title!;
-        await ShareService.ShareJsonAsync(title, json);
+        await ShareService.ShareTextAsync(title, json);
     }
 
     private async Task FocusNote(SignalkNote note)

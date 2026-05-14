@@ -1064,12 +1064,11 @@
 
     /// <summary>Web Share API (system share sheet on iPad / Android
     /// Chrome) with a clipboard fallback when the API isn't
-    /// available. Shares the GeoJSON because that's the
-    /// most-portable format that round-trips through every consumer
-    /// the helm is likely to send to (peer SignalK clients, QGIS,
-    /// browser previews); GPX would be more interop-friendly with
-    /// dedicated chartplotter hardware but doesn't preview as
-    /// nicely in chat apps.</summary>
+    /// available. Shares a human-readable recap (from / to / distance
+    /// / duration / SOG / min depth) rather than GeoJSON: the share
+    /// sheet's typical target is a chat message to a friend, where a
+    /// few readable lines beat a wall of coordinates. Helms who want
+    /// the raw geometry use the Export button alongside.</summary>
     private async Task ShareSegmentAsync(TrackSegment s)
     {
         var pts = SegmentPoints(s);
@@ -1079,9 +1078,8 @@
             return;
         }
         string suggested = $"Trip {s.StartUtc.ToLocalTime():yyyy-MM-dd HH:mm}";
-        string? content = ResourceExporter.TripGeoJson(suggested, s, pts);
-        if (content is null) return;
-        await ShareService.ShareJsonAsync(suggested, content);
+        string content = TripSummary.Build(suggested, s);
+        await ShareService.ShareTextAsync(suggested, content);
     }
 
     /// <summary>Strip filesystem-illegal characters from a humanly-
