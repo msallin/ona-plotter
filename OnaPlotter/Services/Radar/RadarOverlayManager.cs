@@ -120,6 +120,26 @@ public sealed class RadarOverlayManager
     /// explicitly turned this overlay off in this session?</summary>
     public bool IsUserDisabled(string radarId) => _userDisabled.Contains(radarId);
 
+    /// <summary>Map.razor calls this after handing a freshly-loaded JS
+    /// module to the host (page remount on nav back). The previous
+    /// module was disposed by the page, so any overlays the manager
+    /// still believes are running are actually gone from the browser.
+    /// Forget the JS-side memory (<c>_enabled</c>, <c>_lastRange</c>)
+    /// so the next <see cref="OnRadarListUpdatedAsync"/> re-issues
+    /// <c>StartOverlayAsync</c> against the new module. Sticky-off
+    /// preferences and the capabilities cache survive: the first is a
+    /// session-level UI choice; the second is spec-stable per radar
+    /// and re-fetching it would just add a needless round-trip.
+    ///
+    /// Does NOT call <c>StopOverlayAsync</c> on the forgotten ids -
+    /// the old module is already disposed, and calling stop on the
+    /// new module would target overlays that aren't open there.</summary>
+    public void OnHostModuleReplaced()
+    {
+        _enabled = new HashSet<string>(StringComparer.Ordinal);
+        _lastRange.Clear();
+    }
+
     // --- internals ----------------------------------------------------
 
     /// <summary>Open the overlay canvas + spoke WS for one radar.

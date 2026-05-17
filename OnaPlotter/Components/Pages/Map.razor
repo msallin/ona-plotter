@@ -1485,6 +1485,12 @@
         // Toast surface plugged in once - the manager calls back
         // through here on overlay-start failures.
         RadarOverlayHost.SetModule(module);
+        // Manager and host are singletons; on nav-away the previous
+        // module was disposed but _enabled / _lastRange still claim
+        // overlays are running. Tell the manager to forget the JS-
+        // side memory so the bootstrap radar poll below re-issues
+        // startRadarOverlay against the fresh module.
+        RadarOverlay.OnHostModuleReplaced();
         RadarOverlay.OnError = msg => Toasts.Error(msg);
 
         // Per-tick / per-event sync controllers. Each owns a slice of

@@ -470,4 +470,106 @@ public class RadarOverlayManagerTests
         await Assert.That(ReferenceEquals(refBefore, refAfter)).IsFalse();
         await Assert.That(refAfter.ContainsKey("r1")).IsTrue();
     }
+
+    // --- nav-away / nav-back: host module replaced ------------------
+
+    [Test]
+    public async Task OnHostModuleReplaced_Clears_Enabled_So_Next_Poll_Restarts_Overlay()
+    {
+        // Repro for the helm-visible bug: navigate Map -> SailSteer ->
+        // Map. The page disposes its JS module and mounts a new one,
+        // but the singleton manager still thinks the radar is "on" -
+        // EnableAsync's idempotency guard then skips startRadarOverlay
+        // on the new module, leaving the canvas blank even though the
+        // layers-panel checkbox shows on. The reset call must clear
+        // the JS-side memory so the next OnRadarListUpdatedAsync
+        // re-issues StartOverlayAsync against the new module.
+        var (mgr, host, _) = NewManager();
+        await mgr.OnRadarListUpdatedAsync([Radar("r1", "transmit")]);
+        await Assert.That(host.Started.Count).IsEqualTo(1);
+
+        // Simulate Map.razor disposing + remounting with a new module.
+        mgr.OnHostModuleReplaced();
+        await Assert.That(mgr.EnabledRadarIds.Contains("r1")).IsFalse();
+
+        // Same radar, still transmitting - new poll should re-enable.
+        await mgr.OnRadarListUpdatedAsync([Radar("r1", "transmit")]);
+        await Assert.That(host.Started.Count).IsEqualTo(2);
+        await Assert.That(mgr.EnabledRadarIds.Contains("r1")).IsTrue();
+    }
+
+    [Test]
+    public async Task OnHostModuleReplaced_Does_Not_Call_Stop_On_Old_Module()
+    {
+        // The old JS module is already disposed by the page; calling
+        // Stop on its ids would just be noise (and against the new
+        // module would also be wrong - it doesn't know those overlays).
+        // The reset must drop the enabled set silently, not via Disable.
+        var (mgr, host, _) = NewManager();
+        await mgr.OnRadarListUpdatedAsync([Radar("r1", "transmit")]);
+        host.Stopped.Clear();
+
+        mgr.OnHostModuleReplaced();
+
+        await Assert.That(host.Stopped).IsEmpty();
+    }
+
+    [Test]
+    public async Task OnHostModuleReplaced_Preserves_UserDisabled_Sticky()
+    {
+        // The sticky-off preference is the user's deliberate choice
+        // for the session. A page nav must not silently re-enable an
+        // overlay the helm turned off; sticky survives the JS reset.
+        var (mgr, host, _) = NewManager();
+        await mgr.OnRadarListUpdatedAsync([Radar("r1", "transmit")]);
+        await mgr.OnUserToggleAsync(Radar("r1", "transmit"), enabled: false);
+        await Assert.That(mgr.IsUserDisabled("r1")).IsTrue();
+
+        mgr.OnHostModuleReplaced();
+
+        await Assert.That(mgr.IsUserDisabled("r1")).IsTrue();
+        // Next poll must NOT re-enable.
+        host.Started.Clear();
+        await mgr.OnRadarListUpdatedAsync([Radar("r1", "transmit")]);
+        await Assert.That(host.Started).IsEmpty();
+        await Assert.That(mgr.EnabledRadarIds.Contains("r1")).IsFalse();
+    }
+
+    [Test]
+    public async Task OnHostModuleReplaced_Preserves_Capabilities_Cache()
+    {
+        // Capabilities are spec-stable per radar. A page nav doesn't
+        // invalidate them; the reset should keep the cache to avoid
+        // a needless re-fetch on the new module's first poll.
+        var (mgr, _, api) = NewManager();
+        api.CapsByRadar["r1"] = new RadarCapabilities { SupportedRanges = [500, 1000] };
+        await mgr.OnRadarListUpdatedAsync([Radar("r1", "transmit")]);
+        await Assert.That(api.CapabilityFetches).IsEqualTo(1);
+
+        mgr.OnHostModuleReplaced();
+        await mgr.OnRadarListUpdatedAsync([Radar("r1", "transmit")]);
+
+        await Assert.That(api.CapabilityFetches).IsEqualTo(1);
+        await Assert.That(mgr.Capabilities.ContainsKey("r1")).IsTrue();
+    }
+
+    [Test]
+    public async Task OnHostModuleReplaced_Resets_Range_Cache_So_Range_Repushed()
+    {
+        // PushRangeUpdates skips ids whose range matches _lastRange;
+        // after a JS reset the new module knows no ranges, so the
+        // diff cache must clear too or the first post-reset range
+        // change would be suppressed.
+        var (mgr, host, _) = NewManager();
+        await mgr.OnRadarListUpdatedAsync([Radar("r1", "transmit", range: 1852)]);
+
+        mgr.OnHostModuleReplaced();
+        // Re-enable via the next poll (same range).
+        await mgr.OnRadarListUpdatedAsync([Radar("r1", "transmit", range: 1852)]);
+        // The Start call seeds the new last-range to 1852; assert by
+        // pushing a different range and confirming it's forwarded.
+        host.Ranges.Clear();
+        await mgr.OnRadarListUpdatedAsync([Radar("r1", "transmit", range: 3704)]);
+        await Assert.That(host.Ranges).IsEquivalentTo([("r1", 3704)]);
+    }
 }
