@@ -21,6 +21,12 @@ public static class SkPaths
     {
         public const string Position = "navigation.position";
         public const string SpeedOverGround = "navigation.speedOverGround";
+        /// <summary>Speed through water in m/s (NMEA VHW / PGN 128259).
+        /// Surfaced alongside SOG in the top-left HUD so the helm can
+        /// read current effect at a glance (SOG-STW =~ current along
+        /// track). Optional; servers without a paddlewheel / sonic-log
+        /// transducer leave it absent and the row stays dormant.</summary>
+        public const string SpeedThroughWater = "navigation.speedThroughWater";
         public const string CourseOverGroundTrue = "navigation.courseOverGroundTrue";
         public const string CourseOverGroundMagnetic = "navigation.courseOverGroundMagnetic";
         public const string HeadingTrue = "navigation.headingTrue";

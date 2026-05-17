@@ -10,6 +10,13 @@ public sealed class NavigationData
     private readonly Lock _lock = new();
 
     public double? SpeedOverGround { get; private set; }
+    /// <summary>Speed through water in m/s (from
+    /// <c>navigation.speedThroughWater</c>, NMEA VHW / PGN 128259).
+    /// Independent of SOG: STW reflects what a paddlewheel / sonic-log
+    /// reads, so SOG-STW =~ current along the boat's heading. Surfaced
+    /// alongside SOG in the top-left HUD card. Null on servers without
+    /// a water-speed transducer.</summary>
+    public double? SpeedThroughWater { get; private set; }
     public double? Latitude { get; private set; }
     public double? Longitude { get; private set; }
     /// <summary>Reading from <c>environment.depth.belowTransducer</c>
@@ -246,7 +253,17 @@ public sealed class NavigationData
 
     // Autopilot state
     public string? AutopilotState { get; private set; }        // "standby", "auto", "route", "wind"
-    public double? AutopilotTargetHeading { get; private set; } // radians
+    public double? AutopilotTargetHeading { get; private set; } // radians (from steering.autopilot.target.headingTrue)
+
+    /// <summary>Autopilot target heading in radians sourced from
+    /// <c>steering.autopilot.target.headingMagnetic</c>. Some helms
+    /// steer the AP in magnetic (their plotter publishes the target on
+    /// the magnetic path); others publish true. We track both so the
+    /// extended HDG HUD can surface whichever the bus actually carries
+    /// rather than silently dropping a target a helm can see on their
+    /// hardware AP head. Null when the magnetic variant isn't
+    /// published.</summary>
+    public double? AutopilotTargetHeadingMagnetic { get; private set; }
 
     /// <summary>Autopilot target apparent wind angle in wind mode
     /// (<c>steering.autopilot.target.windAngleApparent</c>), radians,
@@ -313,6 +330,9 @@ public sealed class NavigationData
             {
                 case OnaPlotter.Utilities.SkPaths.Navigation.SpeedOverGround:
                     SpeedOverGround = value;
+                    break;
+                case OnaPlotter.Utilities.SkPaths.Navigation.SpeedThroughWater:
+                    SpeedThroughWater = value;
                     break;
                 case OnaPlotter.Utilities.SkPaths.Navigation.CourseOverGroundTrue:
                     CourseOverGroundTrue = value;
@@ -418,6 +438,9 @@ public sealed class NavigationData
                     break;
                 case "steering.autopilot.target.headingTrue":
                     AutopilotTargetHeading = value;
+                    break;
+                case "steering.autopilot.target.headingMagnetic":
+                    AutopilotTargetHeadingMagnetic = value;
                     break;
                 case "steering.autopilot.target.windAngleApparent":
                     AutopilotTargetWindAngle = value;

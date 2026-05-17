@@ -167,9 +167,19 @@ public sealed class SignalkClient : IAsyncDisposable
         // tier so they ride policy=instant and don't get coalesced).
         Utilities.SkPaths.Navigation.Course.CalcValues.PerpendicularPassed,
         Utilities.SkPaths.Navigation.Course.CalcValues.ArrivalCircleEntered,
-        // Autopilot state + target heading + target AWA (wind mode).
+        // Speed through water (paddlewheel / sonic log). Self-only -
+        // AIS targets don't publish their own STW. Surfaced in the SOG
+        // HUD so the helm sees SOG vs STW side by side and can read
+        // current effect (delta along track ≈ current contribution).
+        Utilities.SkPaths.Navigation.SpeedThroughWater,
+        // Autopilot state + target heading (true + magnetic) + target
+        // AWA (wind mode). We subscribe both heading variants because
+        // some AP plugins publish the target on the magnetic path
+        // (helm steering by magnetic compass), others on true. The
+        // extended HDG HUD surfaces whichever the bus actually carries.
         "steering.autopilot.state",
         "steering.autopilot.target.headingTrue",
+        "steering.autopilot.target.headingMagnetic",
         "steering.autopilot.target.windAngleApparent",
         // Rudder angle. Spec path is steering.rudderAngle; some AP
         // plugins publish steering.autopilot.rudderAngle instead, so

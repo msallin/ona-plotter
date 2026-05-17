@@ -1200,7 +1200,44 @@
 //                  "marinePoi.overlayVisible.v1" key is no longer
 //                  read (stale entries linger in storage but have
 //                  no effect).
-const CACHE_NAME = 'ona-plotter-v113';
+// v113 -> v114: Night-mode + HUD rework.
+//                - Night mode red-shifts the active-WP pulse halo +
+//                  tooltip via a new --map-bearing-rgb override,
+//                  red-shifts speed-coloured track polylines via a
+//                  .speed-track-line filter, nightifies the radar
+//                  Transmit border + status chips, the unloaded-tile
+//                  backdrop, the Resources tabs, and the route-edit
+//                  bar / hint / list.
+//                - MainLayout's settings handler calls a new
+//                  refreshPalette() JS export so the active route's
+//                  polyline + course-line bearing dash pick up the
+//                  fresh --map-* tokens on a theme / night-mode
+//                  flip rather than waiting for the next SK course
+//                  delta.
+//                - Follow-mode flips Leaflet's scrollWheelZoom /
+//                  touchZoom / doubleClickZoom to 'center' so the
+//                  wheel + pinch zoom around the boat instead of the
+//                  cursor (no more post-zoom jump-back from the next
+//                  position fix).
+//                - Cross-track error swatch removed from the legend
+//                  (chart tick was already dropped).
+//                - SOG HUD details: STW row added; VMG / Drift /
+//                  XTE removed (VMG -> Route detail; Drift duplicates
+//                  HDG card; XTE moved to HDG details where the
+//                  heading reference lives).
+//                - HDG HUD details: shows the alternate heading
+//                  reference (true when primary is magnetic and
+//                  vice versa), the moved XTE row, and the AP
+//                  target row gains a magnetic variant (sourced
+//                  from steering.autopilot.target.headingMagnetic).
+//                  Row order reads top-down: alternate HDG -> Drift
+//                  -> XTE -> AP block (state, targets T+M, error,
+//                  rudder).
+//                - NavigationData adds SpeedThroughWater (from
+//                  navigation.speedThroughWater) and
+//                  AutopilotTargetHeadingMagnetic; SignalkClient's
+//                  fast tier subscribes both.
+const CACHE_NAME = 'ona-plotter-v114';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

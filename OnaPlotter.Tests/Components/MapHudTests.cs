@@ -302,6 +302,135 @@ public class MapHudTests
         public DateTime Get() => Now;
     }
 
+    // ---- SOG card: STW row + Drift/VMG/XTE removal ----
+
+    [Test]
+    public async Task Expanded_TopLeft_Shows_Stw_Row_When_Published()
+    {
+        using var ctx = new Bunit.TestContext();
+        var data = new NavigationData();
+        // 5.4 kn = ~2.78 m/s. Format.Speed renders with 1 decimal so
+        // we assert on the digit pair the helm actually reads.
+        data.Apply("navigation.speedThroughWater", 2.78);
+        var cut = Render(ctx, data);
+
+        cut.Find(".hud-stack-tl .hud-panel").Click();
+
+        var extras = cut.Find(".hud-stack-tl .hud-extra").TextContent;
+        await Assert.That(extras).Contains("STW");
+        await Assert.That(extras).Contains("5.4");
+    }
+
+    [Test]
+    public async Task Expanded_TopLeft_Hides_Stw_Row_When_Absent()
+    {
+        // Installs without a paddlewheel / sonic-log leave the STW row
+        // dormant rather than rendering a "--" placeholder.
+        using var ctx = new Bunit.TestContext();
+        var data = new NavigationData();
+        var cut = Render(ctx, data);
+
+        cut.Find(".hud-stack-tl .hud-panel").Click();
+
+        var extras = cut.Find(".hud-stack-tl .hud-extra").TextContent;
+        await Assert.That(extras.Contains("STW")).IsFalse();
+    }
+
+    [Test]
+    public async Task Expanded_TopLeft_Does_Not_Show_Vmg_Drift_Xte()
+    {
+        // VMG migrated to the Route detail card (single source of truth),
+        // Drift lives on the HDG card, XTE lives on the HDG card next to
+        // the heading reference it relates to. The SOG card stays focused
+        // on speed + position.
+        using var ctx = new Bunit.TestContext();
+        var data = new NavigationData();
+        data.Apply("navigation.headingTrue", 90.0 * System.Math.PI / 180);
+        data.Apply("navigation.courseOverGroundTrue", 100.0 * System.Math.PI / 180);
+        data.Apply("navigation.course.calcValues.velocityMadeGood", 2.5);
+        data.Apply("navigation.course.calcValues.crossTrackError", 35.0);
+        var cut = Render(ctx, data);
+
+        cut.Find(".hud-stack-tl .hud-panel").Click();
+
+        var extras = cut.Find(".hud-stack-tl .hud-extra").TextContent;
+        await Assert.That(extras.Contains("VMG")).IsFalse();
+        await Assert.That(extras.Contains("Drift")).IsFalse();
+        await Assert.That(extras.Contains("XTE")).IsFalse();
+    }
+
+    // ---- HDG card: alternate heading reference, XTE, AP target M ----
+
+    [Test]
+    public async Task Expanded_BottomRight_Shows_Alternate_Heading_True_When_Primary_Magnetic()
+    {
+        using var ctx = new Bunit.TestContext();
+        var data = new NavigationData();
+        data.Apply("navigation.headingMagnetic", 80.0 * System.Math.PI / 180);
+        data.Apply("navigation.headingTrue", 88.0 * System.Math.PI / 180);
+        data.PreferMagneticHeading = true;
+        var cut = Render(ctx, data);
+
+        cut.Find(".hud-stack-br .hud-panel").Click();
+
+        var extras = cut.Find(".hud-stack-br .hud-extra").TextContent;
+        // Primary HDG (mag, 080) lives on the .hud-value above the
+        // extras block; the alternate (true, 088 T) is what we expect
+        // to find in the details.
+        await Assert.That(extras).Contains("HDG T");
+        await Assert.That(extras).Contains("88");
+    }
+
+    [Test]
+    public async Task Expanded_BottomRight_Shows_Alternate_Heading_Magnetic_When_Primary_True()
+    {
+        using var ctx = new Bunit.TestContext();
+        var data = new NavigationData();
+        data.Apply("navigation.headingTrue", 100.0 * System.Math.PI / 180);
+        data.Apply("navigation.headingMagnetic", 108.0 * System.Math.PI / 180);
+        data.PreferMagneticHeading = false;
+        var cut = Render(ctx, data);
+
+        cut.Find(".hud-stack-br .hud-panel").Click();
+
+        var extras = cut.Find(".hud-stack-br .hud-extra").TextContent;
+        await Assert.That(extras).Contains("HDG M");
+        await Assert.That(extras).Contains("108");
+    }
+
+    [Test]
+    public async Task Expanded_BottomRight_Shows_Xte_When_Course_Active()
+    {
+        // XTE moved here from the SOG card because it's a heading-
+        // relative reading; pin it under the HDG details column.
+        using var ctx = new Bunit.TestContext();
+        var data = new NavigationData();
+        data.Apply("navigation.course.calcValues.crossTrackError", 42.0);
+        var cut = Render(ctx, data);
+
+        cut.Find(".hud-stack-br .hud-panel").Click();
+
+        var extras = cut.Find(".hud-stack-br .hud-extra").TextContent;
+        await Assert.That(extras).Contains("XTE");
+    }
+
+    [Test]
+    public async Task Expanded_BottomRight_Shows_Ap_Target_Magnetic_When_Published()
+    {
+        using var ctx = new Bunit.TestContext();
+        var data = new NavigationData();
+        data.ApplyString("steering.autopilot.state", "auto");
+        // 90 deg magnetic target.
+        data.Apply("steering.autopilot.target.headingMagnetic", 90.0 * System.Math.PI / 180);
+        var cut = Render(ctx, data);
+
+        cut.Find(".hud-stack-br .hud-panel").Click();
+
+        var extras = cut.Find(".hud-stack-br .hud-extra").TextContent;
+        await Assert.That(extras).Contains("AP tgt M");
+        await Assert.That(extras).Contains("90");
+    }
+
     // ---- Anchor bearing source ----
     // BuildAnchorSnapshot computes the bearing client-side via
     // Utilities.GeoBearing from anchor + own-ship lat/lon. Pin the
