@@ -162,6 +162,25 @@ public sealed class AisStore
     public int Count => _vessels.Count;
 
     /// <summary>
+    /// True when at least one AIS-source vessel in the store has no resolved
+    /// name yet (Type 5 / 24 static hasn't arrived, or SK hasn't emitted a
+    /// delta for it). Used by the periodic REST re-seed in
+    /// <c>SignalkClient</c> to skip the network round-trip when every
+    /// tracked vessel already carries a name. Radar targets are excluded:
+    /// they're synthesised with an "RDR-..." name on creation and will
+    /// never get an AIS static lookup.
+    /// </summary>
+    public bool HasUnnamedAisVessels()
+    {
+        foreach (var v in _vessels.Values)
+        {
+            if (v.Source == TargetSource.Ais && string.IsNullOrEmpty(v.Name))
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>
     /// Replaces the buddy-context set and retags every tracked vessel. Fed
     /// from the REST seed of sbender9/signalk-buddylist-plugin at startup.
     /// Vessels that join later are tagged on creation in <see cref="Apply"/>.
