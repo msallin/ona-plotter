@@ -31,13 +31,13 @@ public sealed class SignalkClient : IAsyncDisposable
     /// How often to re-poll <c>/signalk/v1/api/vessels</c> for AIS identity
     /// data (name, callsign, ship type, dimensions) while at least one
     /// tracked vessel is unnamed. AIS Type 5 static is broadcast every 6
-    /// minutes for class A, every 6 min for class B at rest; 30 s pulls
-    /// the name in well within one static cycle once SK has it, while
-    /// staying cheap on the network. Loop self-throttles via
+    /// minutes for class A, every 6 min for class B at rest; a 2 min
+    /// cadence pulls the name in within one static cycle once SK has it
+    /// while staying cheap on the network. Loop self-throttles via
     /// <see cref="AisStore.HasUnnamedAisVessels"/> so a fully-named chart
     /// never hits the endpoint at all.
     /// </summary>
-    private const int VesselNamesReseedIntervalMs = 30_000;
+    private const int VesselNamesReseedIntervalMs = 120_000;
 
     /// <summary>
     /// Default SignalK subscription period for our standard paths:
