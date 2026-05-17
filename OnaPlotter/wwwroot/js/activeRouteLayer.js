@@ -36,6 +36,13 @@ let activeRouteLayer = null;
 let activeRouteCoords = null;
 let nextWpMarker = null;
 let activeOverlayHidden = false;
+// Cached call args so refreshActiveRoute() can re-issue the original
+// setActiveRoute with the latest palette after a theme / night-mode
+// toggle. The polyline colour is set at L.polyline construction
+// time so a palette swap only takes effect on a fresh setActiveRoute
+// call - without this cache the active overlay stays the pre-toggle
+// hue until the next SK course delta lands.
+let lastSetArgs = null;
 
 export function init(map, deps) {
     mapRef = map;
@@ -79,6 +86,7 @@ export function getActiveRouteCoords() { return activeRouteCoords; }
 // uuid prefix on a moving boat. Pass an empty string for unnamed
 // routes - the popup falls back to "Route <first 6 chars of id>".
 export function setActiveRoute(coords, wpIdx, routeId, routeName) {
+    lastSetArgs = { coords, wpIdx, routeId, routeName };
     clearActiveRoute();
     // Suppress redraw while the helm is editing the active route -
     // any in-flight SyncActiveRouteAsync that races the edit (e.g.
@@ -250,6 +258,17 @@ export function clearActiveRoute() {
     if (setCoursePulseSuppressedFn) setCoursePulseSuppressedFn(false);
 }
 
+// Re-issue the last setActiveRoute call so the freshly-updated
+// `colors` object (handed in via init / refreshed by the mux on a
+// palette flip) is picked up by the new L.polyline construction.
+// No-op when no active route is set, which is the common case
+// (Navigate Here without a route resource, or no course at all).
+export function refreshActiveRoute() {
+    if (!lastSetArgs || activeOverlayHidden) return;
+    const { coords, wpIdx, routeId, routeName } = lastSetArgs;
+    setActiveRoute(coords, wpIdx, routeId, routeName);
+}
+
 // Toggle the "edit-active-route in progress" suppression flag. While
 // hidden, applyFrame skips setCourseLine (so the leg / bearing / XTE
 // tick don't keep redrawing on every position update against stale
@@ -301,6 +320,7 @@ export function dispose() {
     activeRouteCoords = null;
     nextWpMarker = null;
     activeOverlayHidden = false;
+    lastSetArgs = null;
     mapRef = null;
     colors = null;
     getDotNetRef = null;

@@ -735,6 +735,18 @@
                 }
                 catch (JSDisconnectedException) { }
             }
+            // After the class flip, kick the map's palette cache so
+            // construction-time colours (active-route polyline, the
+            // course-line bearing dash) pick up the new --map-*
+            // tokens. Skipped when the leaflet module hasn't loaded
+            // yet (helm is on a non-map page); the next Map page
+            // mount reads the palette fresh in initMap anyway.
+            if (leafletModule is not null)
+            {
+                try { await leafletModule.InvokeVoidAsync("refreshPalette"); }
+                catch (JSDisconnectedException) { }
+                catch (JSException) { /* old bundle without the export */ }
+            }
             await InvokeAsync(StateHasChanged);
         }
         catch (ObjectDisposedException) { }

@@ -682,6 +682,11 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
     // control was too small at arm's length in a rolling cockpit;
     // the topbar pair is bigger and reachable one-handed.
 
+    // Seed the follow-mode zoom pivot. followBoat defaults to true at
+    // module load; the helm's persisted preference flows in via
+    // setFollow shortly after, which re-applies the mode anyway.
+    applyFollowZoomMode();
+
     // Zoom-level badge in the bottom-left of the Leaflet control area:
     // "z14" chip so the helm can tell at a glance whether they're at
     // z14 or z16 without poking the +/- buttons until tile detail
@@ -1050,6 +1055,28 @@ export function zoomOut(step) {
     map.zoomOut(typeof step === 'number' ? step : map.options.zoomDelta);
 }
 
+// Re-read the --map-* palette from the stylesheet and re-render any
+// layer whose colour is locked at construction time. Called from
+// MainLayout's HandleSettingsChanged after themeApply.setNightMode /
+// setTheme have flipped the <html> class - those class changes update
+// var() consumers automatically but L.polyline({color: '#06b6d4'})
+// holds the literal until the polyline is rebuilt. Without this hook
+// the active route stayed cyan after switching into night mode and
+// stayed warm-red after switching back out.
+export function refreshPalette() {
+    if (!map) return;
+    readMapColors();
+    // Force the course-line bearing dash to rebuild on the next
+    // applyFrame tick by tearing it down here - the diff cache in
+    // courseLineLayer.setCourseLine compares lat/lon only, not
+    // colour, so we have to drop the layer object itself.
+    courseLineLayerMod.clearCourseLine();
+    // Re-issue the cached active-route call so the polyline + WP
+    // dots pick up the new bearing hue. Idempotent + no-op when no
+    // route is active.
+    activeRouteLayerMod.refreshActiveRoute();
+}
+
 export function applyFrame(frame) {
     if (!map || !frame) return;
     if (frame.pos) {
@@ -1275,6 +1302,7 @@ export function setColoredTrack(runs) {
             color: speedColor(SPEED_BUCKETS[run.bucket]),
             weight: 2.5,
             opacity: 0.8,
+            className: 'speed-track-line',
         }).addTo(trackLayer);
         trackSegmentCount++;
     }
@@ -1300,7 +1328,8 @@ export function flushTrackPoints() {
     if (!trackLayer || pendingTrackPoints.length === 0) return;
     for (const [lat, lon, sogMs, pLat, pLon] of pendingTrackPoints) {
         L.polyline([[pLat, pLon], [lat, lon]], {
-            color: speedColor(sogMs), weight: 2.5, opacity: 0.8
+            color: speedColor(sogMs), weight: 2.5, opacity: 0.8,
+            className: 'speed-track-line'
         }).addTo(trackLayer);
         trackSegmentCount++;
     }
@@ -2145,7 +2174,8 @@ function _renderServerTrack() {
         if (b !== runBucket) {
             runCoords.push(ll); // bridge point so adjacent runs visually connect
             L.polyline(runCoords, {
-                color: speedColor(SPEED_BUCKETS[runBucket]), weight: 2.5, opacity: 0.8
+                color: speedColor(SPEED_BUCKETS[runBucket]), weight: 2.5, opacity: 0.8,
+                className: 'speed-track-line'
             }).addTo(serverTrackLayer);
             runBucket = b;
             runCoords = [ll];
@@ -2554,7 +2584,44 @@ export function disableKeyboardShortcuts() {
 
 // --- Controls ---
 
-export function setFollow(follow) { followBoat = follow; }
+export function setFollow(follow) {
+    followBoat = !!follow;
+    applyFollowZoomMode();
+}
+
+// While Follow is engaged the boat sits at the map centre, so wheel /
+// pinch zoom should pivot around the centre too - otherwise zooming
+// in on an off-centre cursor immediately fights the next position
+// update which yanks the view back to centre, producing the "strange
+// jumping" the helm flagged. Leaflet exposes 'center' as an option
+// value for both handlers; flipping the option + re-enabling the
+// handler rebinds it with the new pivot rule. When Follow drops, we
+// restore the default cursor-anchored zoom.
+function applyFollowZoomMode() {
+    if (!map) return;
+    const mode = followBoat ? 'center' : true;
+    try {
+        map.options.scrollWheelZoom = mode;
+        if (map.scrollWheelZoom) {
+            map.scrollWheelZoom.disable();
+            map.scrollWheelZoom.enable();
+        }
+        map.options.touchZoom = mode;
+        if (map.touchZoom) {
+            map.touchZoom.disable();
+            map.touchZoom.enable();
+        }
+        map.options.doubleClickZoom = mode;
+        if (map.doubleClickZoom) {
+            map.doubleClickZoom.disable();
+            map.doubleClickZoom.enable();
+        }
+    } catch (_) {
+        // Older Leaflet builds without the handler refs - the helm
+        // sees the slightly off-centre zoom on the first interaction,
+        // which is still a strict improvement over the pre-fix lurch.
+    }
+}
 
 // Map orientation: 'north' (default), 'course' (rotates to COG), 'head' (rotates to heading).
 export function setMapOrientation(mode) {

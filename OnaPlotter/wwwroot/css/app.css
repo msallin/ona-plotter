@@ -4439,6 +4439,12 @@ main:has(.alarm-banner-stack) .snooze-chips {
        background rules, but the palette-derived colours still
        want red-shifting so a toolbar glance doesn't jar. */
     --map-bearing: #ff9a6b;
+    /* RGB twin of --map-bearing for rgba() consumers (active-WP
+       pulse glow + ring, route-wp tooltip background). Without this
+       override the rgba() calls below stayed cyan-shifted while
+       --map-bearing itself flipped red, so the pulse drew an orange
+       dot inside a cyan halo on a red-shifted chart. */
+    --map-bearing-rgb: 255, 154, 107;
     --map-current: #ffa07d;
     --map-buddy: #ffb06a;
     --map-course-leg: #ffe0e0;
@@ -6453,14 +6459,6 @@ html.night-mode-global body {
     border-radius: 0;
     opacity: 0.5;
 }
-/* XTE gradient: bar that fades green -> amber -> red to match the
-   threshold bands the actual tick uses. */
-.legend-xte {
-    background: linear-gradient(90deg, var(--sev-ok) 0%, var(--sev-warn) 50%, var(--sev-danger) 100%);
-    height: 6px;
-    align-self: center;
-    border-radius: 2px;
-}
 /* Route-edit preview: violet dashed line (the planning polyline). */
 .legend-route-edit {
     background: transparent;
@@ -6644,6 +6642,16 @@ html.night-mode-global body {
     color: var(--sev-warn);
 }
 .ap-engaged .ap-state { color: var(--sev-ok); }
+
+/* Radar HUD shares .ap-engaged with the autopilot card to read as
+   "this card is in an active state", but the AP rule hard-codes a
+   green border via rgba(34,197,94,0.5) on EVERY .ap-engaged - which
+   meant "Transmit on" lit the radar card with the autopilot's engage
+   green. Helm flagged it as confusing (radar isn't AP) and as visible
+   even under night mode. Neutralise the green tint on the radar card
+   so the border matches the rest of the HUD chrome; the green
+   "TRANSMIT" status chip already signals the live state. */
+.radar-hud-panel.ap-engaged { border: 1px solid var(--hud-card-stroke-out); }
 
 .ap-controls {
     display: flex;
@@ -6857,6 +6865,16 @@ html.night-mode-global body {
    real fix. */
 .theme-effective-light .leaflet-container {
     background: var(--sk-bg);
+}
+/* Night mode: tile gaps (region the tile pane covers before tiles
+   arrive, holes between charts, post-pan unloaded blocks) read as
+   pale grey/white from Leaflet's default container background. On
+   a red-shifted helm a flash of white at the edge of the chart
+   wrecks dark adaptation. Force the container backdrop to a deep
+   wine-red so the "no tile here yet" state stays inside the night
+   palette. */
+.night-mode-global .leaflet-container {
+    background: #2a0808;
 }
 /* Night mode also needs to red-shift the chart tile rasters - the
    rest of the UI flips to warm red via token overrides, but Leaflet's
@@ -9831,6 +9849,129 @@ main:has(.map-container.big-type) .alarm-hold-hint {
 
 .night-mode-global .anchor-panel {
     background: rgba(30, 5, 5, 0.92);
+}
+
+/* ===== Night-mode adjustments for chart overlays + chrome =====
+   The token block above red-shifts var() consumers automatically; the
+   rules below patch surfaces that hard-code colour outside the token
+   system (Bootstrap nav-tabs, the radar transmit chip, route-edit
+   chrome, the speed-coloured server track polyline). */
+
+/* Server-track + local-trail polylines are coloured by speed bucket
+   through SpeedColor.Rgb (mirror in format.js); the C# canonical is
+   the contract so we don't touch the rgb() output. Instead, red-
+   shift the rendered SVG path via filter so the green/yellow speed
+   band reads inside the warm palette without losing the speed
+   gradient. */
+.night-mode-global .speed-track-line {
+    filter: hue-rotate(-95deg) saturate(0.8) brightness(0.9);
+}
+
+/* Radar status chip + Transmit power button. The chip palette
+   (green for transmit, amber for preparing, etc.) reads through
+   hard-coded RGB; on a night helm those bright greens jar against
+   the warm chrome. Pull the chip + active power button into the
+   red family. */
+.night-mode-global .radar-status-transmit {
+    background: rgba(255, 130, 100, 0.18);
+    color: #ffb09a;
+    border-color: rgba(255, 130, 100, 0.45);
+}
+.night-mode-global .radar-status-warming,
+.night-mode-global .radar-status-preparing {
+    background: rgba(255, 160, 110, 0.18);
+    color: var(--sev-warn);
+    border-color: rgba(255, 160, 110, 0.45);
+}
+.night-mode-global .radar-status-standby {
+    background: rgba(255, 180, 160, 0.18);
+    color: #ffb89c;
+    border-color: rgba(255, 180, 160, 0.35);
+}
+.night-mode-global .radar-status-off {
+    background: rgba(255, 96, 96, 0.18);
+    color: var(--sev-danger);
+    border-color: rgba(255, 96, 96, 0.45);
+}
+
+/* Resources page tabs. Bootstrap's nav-tabs use --bs-* tokens
+   keyed off data-bs-theme (which themeApply.js leaves at "dark"
+   under night mode); the tab border + the .active bottom-border
+   accent stay slate-blue. Bring the strip into the red family
+   so the Resources page reads at-a-glance as part of the night
+   chrome. */
+.night-mode-global .resources-tabs.nav-tabs {
+    border-bottom-color: var(--sk-border);
+}
+.night-mode-global .resources-tabs .nav-link {
+    color: var(--sk-text-muted);
+    border-color: transparent;
+}
+.night-mode-global .resources-tabs .nav-link:hover {
+    color: var(--sk-text);
+    border-color: var(--sk-border) var(--sk-border) transparent;
+}
+.night-mode-global .resources-tabs .nav-link.active {
+    color: var(--sk-text);
+    background: var(--sk-surface);
+    border-color: var(--sk-border) var(--sk-border) var(--sk-surface);
+}
+.night-mode-global .resources-body,
+.night-mode-global .resources-filter {
+    color: var(--sk-text);
+}
+.night-mode-global .resources-filter {
+    background: var(--sk-surface);
+    border-color: var(--sk-border);
+}
+.night-mode-global .resources-body table {
+    color: var(--sk-text);
+    --bs-table-bg: transparent;
+    --bs-table-color: var(--sk-text);
+    --bs-table-border-color: var(--sk-border);
+    --bs-table-striped-bg: var(--sk-surface);
+    --bs-table-striped-color: var(--sk-text);
+    --bs-table-hover-bg: var(--sk-surface-hover);
+    --bs-table-hover-color: var(--sk-text);
+}
+
+/* Route-edit + polygon-edit bar / hint / list. The base rules
+   hard-code violet identity (rgba(167,139,250,...)); :root.theme-
+   effective-light has its own light-theme override block, but
+   night-mode-global never picked up a matching warm-tone pass so
+   the bar + hint stayed violet on a red-shifted chart. Re-tint to
+   the night palette - the panel is still recognisable as "route
+   edit" via shape + position rather than hue. */
+.night-mode-global .route-edit-bar,
+.night-mode-global .route-edit-list {
+    background: rgba(30, 5, 5, 0.92);
+    color: var(--sk-text);
+    border-color: rgba(255, 154, 107, 0.45);
+}
+.night-mode-global .route-edit-hint {
+    background: rgba(60, 15, 10, 0.85);
+    color: var(--sk-text);
+    border-color: rgba(255, 154, 107, 0.45);
+}
+.night-mode-global .route-edit-stats,
+.night-mode-global .route-edit-list-header,
+.night-mode-global .route-edit-list-chevron {
+    color: var(--sk-text);
+}
+.night-mode-global .route-edit-list-count {
+    background: rgba(255, 154, 107, 0.18);
+    color: var(--sk-text);
+}
+.night-mode-global .route-edit-list-header {
+    border-bottom-color: var(--sk-border);
+}
+.night-mode-global .route-edit-wp-coord {
+    color: var(--sk-text);
+}
+.night-mode-global .route-name-input {
+    background: rgba(60, 15, 10, 0.6);
+    border-color: var(--sk-border);
+    color: var(--sk-text);
 }
 
 /* ===== Slow-client perf overrides =====
