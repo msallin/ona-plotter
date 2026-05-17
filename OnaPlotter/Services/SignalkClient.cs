@@ -28,6 +28,18 @@ public sealed class SignalkClient : IAsyncDisposable
     private const int StaleDataThresholdSec = 5;
 
     /// <summary>
+    /// How often to re-poll <c>/signalk/v1/api/vessels</c> for AIS identity
+    /// data (name, callsign, ship type, dimensions) while at least one
+    /// tracked vessel is unnamed. AIS Type 5 static is broadcast every 6
+    /// minutes for class A, every 6 min for class B at rest; 30 s pulls
+    /// the name in well within one static cycle once SK has it, while
+    /// staying cheap on the network. Loop self-throttles via
+    /// <see cref="AisStore.HasUnnamedAisVessels"/> so a fully-named chart
+    /// never hits the endpoint at all.
+    /// </summary>
+    private const int VesselNamesReseedIntervalMs = 30_000;
+
+    /// <summary>
     /// Default SignalK subscription period for our standard paths:
     /// position / speed / heading / wind / depth / course / autopilot /
     /// tide. 1000 ms with <c>policy: "ideal"</c> caps per-path updates
@@ -711,6 +723,17 @@ public sealed class SignalkClient : IAsyncDisposable
                 // exceptions on TaskScheduler.UnobservedTaskException
                 // instead.
                 _ = _vesselNamesSeeder.SeedAsync(ct);
+
+                // Some SK servers / plugins update a vessel's name in their
+                // tree without re-emitting a name delta on the subscription
+                // stream (observed: name lands with a later timestamp than
+                // mmsi but the helm-side delta never carries it). The one-
+                // shot seed above only covers identities present at connect
+                // time; this loop re-runs the seed while ANY tracked vessel
+                // is still unnamed so a name that arrives at SK 30 s, 5 min
+                // or an hour after our connect still reaches the chart.
+                // Self-throttles to a no-op when every vessel is named.
+                _ = PeriodicVesselNamesReseedAsync(ct);
 
                 // Identify ourselves via REST so we can filter own-boat out
                 // of the AIS list even on servers that never emit a hello
@@ -1596,6 +1619,42 @@ public sealed class SignalkClient : IAsyncDisposable
             }
 
             OnDataChanged?.Invoke();
+        }
+    }
+
+    /// <summary>
+    /// Background loop that re-fetches the SK vessels REST snapshot on a
+    /// fixed cadence while at least one tracked vessel still has no name.
+    /// Bridges the gap left by SK servers that update their tree with a
+    /// later-timestamped name but don't emit a corresponding delta on the
+    /// subscription stream. Exits cleanly on cancellation (page navigation,
+    /// reconnect, dispose); a new loop spawns on the next WebSocket connect.
+    /// </summary>
+    private async Task PeriodicVesselNamesReseedAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(VesselNamesReseedIntervalMs, ct);
+                if (!_ais.HasUnnamedAisVessels()) continue;
+                await _vesselNamesSeeder.SeedAsync(ct);
+            }
+            catch (OperationCanceledException)
+            {
+                // Normal: token cancelled by reconnect / dispose.
+                // Exit cleanly without further log noise.
+                return;
+            }
+            catch (Exception ex)
+            {
+                // Best-effort loop: a transient failure (network blip,
+                // REST 5xx) must NOT terminate the long-running re-seed
+                // for the rest of the session. Log once per failure and
+                // fall through to the next interval.
+                _logger.LogWarning(ex,
+                    "Periodic AIS-name re-seed failed; will retry on next interval");
+            }
         }
     }
 

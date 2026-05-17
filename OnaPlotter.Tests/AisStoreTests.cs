@@ -425,6 +425,35 @@ public class AisStoreTests
     // --- Stale eviction: long-running session must not leak vessels ---
 
     [Test]
+    public async Task HasUnnamedAisVessels_ReflectsResolutionState()
+    {
+        // Drives the periodic REST re-seed in SignalkClient: stays true
+        // while any AIS-source vessel is still showing as MMSI-only,
+        // flips to false once every vessel has a resolved name so the
+        // re-seed loop can short-circuit and stop hammering the REST
+        // endpoint. Radar targets get a synthesised "RDR-..." name on
+        // creation, so they MUST NOT keep the flag stuck on true.
+        var store = new AisStore();
+        var pos = System.Text.Json.JsonSerializer.SerializeToElement(new { latitude = 47.0, longitude = 8.0 });
+
+        // Empty store: nothing to chase.
+        await Assert.That(store.HasUnnamedAisVessels()).IsFalse();
+
+        // AIS vessel with no name yet: unresolved.
+        store.Apply("vessels.urn:mrn:imo:mmsi:111", "navigation.position", pos);
+        await Assert.That(store.HasUnnamedAisVessels()).IsTrue();
+
+        // Name arrives: resolved.
+        var name = System.Text.Json.JsonSerializer.SerializeToElement("Salty Breeze");
+        store.Apply("vessels.urn:mrn:imo:mmsi:111", "name", name);
+        await Assert.That(store.HasUnnamedAisVessels()).IsFalse();
+
+        // Radar target with its synthetic RDR-xxx name must not flip the flag.
+        store.Apply("radar.rdr1.target42", "position", pos);
+        await Assert.That(store.HasUnnamedAisVessels()).IsFalse();
+    }
+
+    [Test]
     public async Task GetVessels_AfterLongIdle_PrunesStaleEntries()
     {
         // Boats sitting at anchor in port watch the AIS list grow for
