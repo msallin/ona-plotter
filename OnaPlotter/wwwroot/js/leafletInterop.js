@@ -1361,6 +1361,8 @@ export const setGuardZoneWarningRingVisible = (visible) =>
 export const setHarborMode = (enabled) => aisLayerMod.setHarborMode(enabled);
 export const setAisLabelsVisible = (enabled) =>
     aisLayerMod.setAisLabelsVisible(enabled);
+export const setAisInactiveMinutes = (minutes) =>
+    aisLayerMod.setAisInactiveMinutes(minutes);
 
 // --- Persistent measurement tool ---
 // Implementation in measureLayer.js; mux re-exports the C# entries.
@@ -2553,6 +2555,7 @@ export function enableKeyboardShortcuts(dotNetObjRef) {
             // the follow flag).
             if (followBoat) {
                 followBoat = false;
+                aisLayerMod.setFollow(false);
                 if (dotNetRef) dotNetRef.invokeMethodAsync('SetFollowFromJs', false).catch(() => {});
             }
             map.panBy([dx, dy], { animate: true, duration: 0.3 });
@@ -2586,6 +2589,10 @@ export function disableKeyboardShortcuts() {
 
 export function setFollow(follow) {
     followBoat = !!follow;
+    // Mirror into aisLayer so its popup-open path can pick a placement
+    // that doesn't trigger autoPan (which would scroll the map and
+    // visibly fight follow-mode on every AIS click).
+    aisLayerMod.setFollow(follow);
     applyFollowZoomMode();
 }
 

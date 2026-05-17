@@ -1,12 +1,15 @@
 using System.Collections.Concurrent;
 using OnaPlotter.Models;
+using OnaPlotter.Services.Settings;
 
 namespace OnaPlotter.Services;
 
 /// <summary>
 /// Thread-safe store for AIS vessel targets received from SignalK.
 /// Maintains a snapshot cache that is rebuilt only when data changes,
-/// and prunes stale entries that haven't been seen for 10 minutes.
+/// and prunes stale entries whose <see cref="AisVessel.LastAisSeen"/> is
+/// older than the helm-configured "AIS remove" window
+/// (see <see cref="IMapDisplaySettings.AisRemoveMinutes"/>).
 /// </summary>
 public sealed class AisStore
 {
@@ -17,7 +20,14 @@ public sealed class AisStore
     // ConcurrentDictionary so reads in Apply() on the WebSocket thread
     // don't race a write from Evict() or a future UI-thread caller.
     private readonly ConcurrentDictionary<string, byte> _blocklist = new(StringComparer.Ordinal);
-    private static readonly TimeSpan StaleThreshold = TimeSpan.FromMinutes(10);
+    /// <summary>Optional settings source for the prune threshold. Null in test
+    /// fixtures that exercise the store standalone; falls back to
+    /// <see cref="DefaultRemoveMinutes"/> when absent.</summary>
+    private readonly IMapDisplaySettings? _settings;
+    /// <summary>Default prune-after window. Matches the historical hard-coded
+    /// 10 minutes so behaviour is unchanged for callers (mainly tests) that
+    /// don't wire a settings instance.</summary>
+    internal const double DefaultRemoveMinutes = 10.0;
     private static readonly TimeSpan PruneInterval = TimeSpan.FromMinutes(2);
 
     private AisVessel[]? _cachedSnapshot;
@@ -36,6 +46,25 @@ public sealed class AisStore
     public event Action? OnAisUpdated;
 
     /// <summary>
+    /// Production constructor. Reads the helm-configured prune window from
+    /// <see cref="IMapDisplaySettings.AisRemoveMinutes"/>.
+    /// </summary>
+    public AisStore(IMapDisplaySettings settings)
+    {
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+    }
+
+    /// <summary>
+    /// Settings-less constructor for tests + standalone fixtures. Pruning
+    /// falls back to <see cref="DefaultRemoveMinutes"/> (10 min, the
+    /// historical hard-coded value).
+    /// </summary>
+    public AisStore()
+    {
+        _settings = null;
+    }
+
+    /// <summary>
     /// Gets or creates a vessel entry for the given SignalK context, then applies the path/value.
     /// </summary>
     /// <summary>Prefix used for radar-target contexts: <c>radar.&lt;radarId&gt;.&lt;targetId&gt;</c>.
@@ -44,7 +73,11 @@ public sealed class AisStore
     /// pipeline treats both uniformly.</summary>
     public const string RadarContextPrefix = "radar.";
 
-    public void Apply(string context, string path, object? value)
+    /// <param name="skTimestamp">Wall-clock instant from the parent SK update's
+    /// <c>timestamp</c> field, when available. Forwarded to
+    /// <see cref="AisVessel.Apply"/> so the per-vessel staleness clock tracks
+    /// the wire-supplied instant instead of delta-arrival time.</param>
+    public void Apply(string context, string path, object? value, DateTime? skTimestamp = null)
     {
         // Block-list guard: once SignalkClient identifies the self-URN,
         // any further deltas on that context are dropped so own-boat
@@ -72,7 +105,7 @@ public sealed class AisStore
             return v;
         });
 
-        if (vessel.Apply(path, value))
+        if (vessel.Apply(path, value, skTimestamp))
         {
             Interlocked.Increment(ref _version);
             OnAisUpdated?.Invoke();
@@ -219,10 +252,18 @@ public sealed class AisStore
 
     private void PruneStale(DateTime now)
     {
-        var cutoff = now - StaleThreshold;
+        // Read once per sweep. Helm-tunable via the AIS-remove setting; tests
+        // and the parameterless ctor fall back to the historical 10 min.
+        double minutes = _settings?.AisRemoveMinutes ?? DefaultRemoveMinutes;
+        if (!double.IsFinite(minutes) || minutes <= 0) minutes = DefaultRemoveMinutes;
+        var cutoff = now - TimeSpan.FromMinutes(minutes);
         foreach (var kvp in _vessels)
         {
-            if (kvp.Value.LastSeen < cutoff)
+            // Key off LastAisSeen so a plugin that keeps republishing derived
+            // paths (sensors.ais.*, distance-to-self) for a ghost vessel
+            // doesn't keep it on the chart forever - the underlying AIS
+            // transponder is the source of truth, plugin chatter isn't.
+            if (kvp.Value.LastAisSeen < cutoff)
             {
                 _vessels.TryRemove(kvp.Key, out _);
                 Interlocked.Increment(ref _version);

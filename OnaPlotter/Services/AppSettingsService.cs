@@ -168,6 +168,20 @@ public sealed class AppSettingsService : IAppSettings
     /// without losing their own predictor's reach.</summary>
     public double AisCogVectorMinutes { get; private set; } = 10.0;
 
+    /// <summary>Helm-configured "AIS inactive" threshold in minutes. When a
+    /// target's last AIS-evidence delta is older than this, the chart fades
+    /// the marker to the stale-floor opacity and hides its name label.
+    /// Default 5 min; clamp 1..240. See
+    /// <see cref="IMapDisplaySettings.AisInactiveMinutes"/>.</summary>
+    public double AisInactiveMinutes { get; private set; } = 5.0;
+
+    /// <summary>Helm-configured "AIS remove" threshold in minutes. When a
+    /// target's last AIS-evidence delta is older than this, the store
+    /// drops it entirely so it vanishes from the chart and alarms. Default
+    /// 10 min; clamp 1..240. Setter clamps to &gt;= AisInactiveMinutes so
+    /// the faded band always exists before removal.</summary>
+    public double AisRemoveMinutes { get; private set; } = 10.0;
+
     /// <summary>Show the tide row + extras on the depth HUD +
     /// Dashboard. Default true.</summary>
     public bool TideVisible { get; private set; } = true;
@@ -423,6 +437,15 @@ public sealed class AppSettingsService : IAppSettings
             ShowDefaultHud = await LoadBool("showDefaultHud.v1", true);
             OwnCogVectorMinutes = await LoadDouble("ownCogVectorMinutes.v1", 10.0);
             AisCogVectorMinutes = await LoadDouble("aisCogVectorMinutes.v1", 10.0);
+            // AIS inactive / remove thresholds. The remove window is then
+            // clamped to >= inactive so a corrupt or hand-edited storage
+            // entry can't end up with remove < inactive (which would skip
+            // the faded "still on chart" band entirely).
+            AisInactiveMinutes = Math.Clamp(
+                await LoadDouble("aisInactiveMinutes.v1", 5.0), 1.0, 240.0);
+            AisRemoveMinutes = Math.Clamp(
+                await LoadDouble("aisRemoveMinutes.v1", 10.0), 1.0, 240.0);
+            if (AisRemoveMinutes < AisInactiveMinutes) AisRemoveMinutes = AisInactiveMinutes;
             TideVisible = await LoadBool("tideVisible.v1", true);
             RadarRangeRingsEnabled = await LoadBool("radarRangeRingsEnabled.v1", true);
             // 4 covers quarter / half / three-quarter / full range,
@@ -966,6 +989,36 @@ public sealed class AppSettingsService : IAppSettings
         value = Math.Clamp(value, 1.0, 60.0);
         AisCogVectorMinutes = value;
         await Save("aisCogVectorMinutes.v1", value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetAisInactiveMinutesAsync(double value)
+    {
+        if (!double.IsFinite(value)) value = 5.0;
+        value = Math.Clamp(value, 1.0, 240.0);
+        AisInactiveMinutes = value;
+        // Inactive raised past current Remove would skip the faded band.
+        // Bump Remove in lockstep so the invariant Inactive <= Remove holds
+        // without forcing the helm to edit two fields in a specific order.
+        if (AisRemoveMinutes < value)
+        {
+            AisRemoveMinutes = value;
+            await Save("aisRemoveMinutes.v1", value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+        await Save("aisInactiveMinutes.v1", value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetAisRemoveMinutesAsync(double value)
+    {
+        if (!double.IsFinite(value)) value = 10.0;
+        value = Math.Clamp(value, 1.0, 240.0);
+        // Remove < Inactive would mean targets get pruned before they ever
+        // hit the faded band. Clamp up so the helm-visible state stays
+        // ordered; the inverse direction is handled in SetAisInactive.
+        if (value < AisInactiveMinutes) value = AisInactiveMinutes;
+        AisRemoveMinutes = value;
+        await Save("aisRemoveMinutes.v1", value.ToString(System.Globalization.CultureInfo.InvariantCulture));
         OnSettingsChanged?.Invoke();
     }
 

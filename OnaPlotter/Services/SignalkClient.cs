@@ -1606,12 +1606,28 @@ public sealed class SignalkClient : IAsyncDisposable
             if (update.Values is null)
                 continue;
 
+            // Parse the wire timestamp once per update. SignalK servers emit
+            // RFC 3339 with millisecond precision (e.g. "2024-01-01T12:00:00.000Z").
+            // When absent or malformed, leave null so AisVessel.Apply falls
+            // back to DateTime.UtcNow (delta-arrival time). DateTimeStyles
+            // .AssumeUniversal handles the "Z" suffix without timezone drift.
+            DateTime? skTs = null;
+            if (!string.IsNullOrEmpty(update.Timestamp)
+                && DateTime.TryParse(
+                    update.Timestamp,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
+                    out var parsedTs))
+            {
+                skTs = parsedTs;
+            }
+
             foreach (var val in update.Values)
             {
                 if (val.Path is null)
                     continue;
 
-                _ais.Apply(delta.Context!, val.Path, val.Value);
+                _ais.Apply(delta.Context!, val.Path, val.Value, skTs);
             }
         }
     }

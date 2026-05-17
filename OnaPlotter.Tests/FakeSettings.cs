@@ -80,6 +80,8 @@ internal sealed class FakeSettings : IAppSettings
     public bool ShowDefaultHud { get; set; } = true;
     public double OwnCogVectorMinutes { get; set; } = 10.0;
     public double AisCogVectorMinutes { get; set; } = 10.0;
+    public double AisInactiveMinutes { get; set; } = 5.0;
+    public double AisRemoveMinutes { get; set; } = 10.0;
     public bool PreferMagneticHeading { get; set; } = false;
     public bool PreferMagneticCourse { get; set; } = false;
     public bool AutoAdvanceWaypoints { get; set; } = true;
@@ -196,6 +198,8 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetShowDefaultHudAsync(bool v) { ShowDefaultHud = v; return Task.CompletedTask; }
     public Task SetOwnCogVectorMinutesAsync(double v) { OwnCogVectorMinutes = v; return Task.CompletedTask; }
     public Task SetAisCogVectorMinutesAsync(double v) { AisCogVectorMinutes = v; return Task.CompletedTask; }
+    public Task SetAisInactiveMinutesAsync(double v) { AisInactiveMinutes = v; return Task.CompletedTask; }
+    public Task SetAisRemoveMinutesAsync(double v) { AisRemoveMinutes = v; return Task.CompletedTask; }
     public Task SetPreferMagneticHeadingAsync(bool v) { PreferMagneticHeading = v; return Task.CompletedTask; }
     public Task SetPreferMagneticCourseAsync(bool v) { PreferMagneticCourse = v; return Task.CompletedTask; }
     public Task SetCogReadoutSourceAsync(string v) { CogReadoutSource = v; return Task.CompletedTask; }

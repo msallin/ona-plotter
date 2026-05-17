@@ -500,6 +500,31 @@
     <div class="col-sm-6">
         <div class="card">
             <div class="card-body">
+                <label class="form-label">AIS target staleness</label>
+                <div class="input-group mb-2">
+                    <span class="input-group-text">Fade after</span>
+                    <input type="number" class="form-control" step="1" min="1" max="240"
+                           aria-label="AIS inactive threshold in minutes"
+                           value="@AppSettings.AisInactiveMinutes"
+                           @onchange="(e) => OnAisInactiveChanged(e)" />
+                    <span class="input-group-text">min</span>
+                </div>
+                <div class="input-group">
+                    <span class="input-group-text">Remove after</span>
+                    <input type="number" class="form-control" step="1" min="1" max="240"
+                           aria-label="AIS remove threshold in minutes"
+                           value="@AppSettings.AisRemoveMinutes"
+                           @onchange="(e) => OnAisRemoveChanged(e)" />
+                    <span class="input-group-text">min</span>
+                </div>
+                <small class="text-muted">Fade dims the marker and hides its name once AIS evidence (position/COG/SOG/static) stops arriving. Remove drops it from the chart entirely. Remove is held at or above Fade automatically.</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
                 <label class="form-label">Radar range rings</label>
                 <div class="form-check form-switch mb-2">
                     <input type="checkbox" class="form-check-input" role="switch"
@@ -1817,6 +1842,26 @@
             System.Globalization.CultureInfo.InvariantCulture, out double val))
         {
             await AppSettings.SetAisCogVectorMinutesAsync(val);
+        }
+    }
+
+    private async Task OnAisInactiveChanged(ChangeEventArgs e)
+    {
+        if (double.TryParse(e.Value?.ToString(),
+            System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out double val))
+        {
+            await AppSettings.SetAisInactiveMinutesAsync(val);
+        }
+    }
+
+    private async Task OnAisRemoveChanged(ChangeEventArgs e)
+    {
+        if (double.TryParse(e.Value?.ToString(),
+            System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out double val))
+        {
+            await AppSettings.SetAisRemoveMinutesAsync(val);
         }
     }
 

@@ -78,13 +78,24 @@ export function speedBucket(sogMs) {
  * string for an AIS marker of the given age (seconds), or null when
  * the marker is fresh (caller clears any previous inline opacity so
  * CSS defaults apply).
+ *
+ * @param ageSec        Seconds since the last AIS-evidence delta.
+ * @param fadedSeconds  Optional helm-tunable "AIS inactive" threshold
+ *                      (seconds) at which the marker is pinned at the
+ *                      stale floor. Defaults to STALE_FADED_SECONDS
+ *                      (300 s / 5 min) so existing callers and the C#
+ *                      mirror keep their original ramp.
  */
-export function stalenessOpacity(ageSec) {
+export function stalenessOpacity(ageSec, fadedSeconds = STALE_FADED_SECONDS) {
     if (ageSec < STALE_FRESH_SECONDS) return null;
-    if (ageSec >= STALE_FADED_SECONDS) {
+    // A pathologically short faded window (<= fresh) would make the
+    // linear segment vanish or invert; degenerate-case fallback is to
+    // pin at the floor for anything past the fresh threshold.
+    const faded = fadedSeconds > STALE_FRESH_SECONDS ? fadedSeconds : STALE_FRESH_SECONDS + 1;
+    if (ageSec >= faded) {
         return STALE_FLOOR_OPACITY.toFixed(2);
     }
-    const op = 1 - STALE_FADE_SPAN * (ageSec - STALE_FRESH_SECONDS) / (STALE_FADED_SECONDS - STALE_FRESH_SECONDS);
+    const op = 1 - STALE_FADE_SPAN * (ageSec - STALE_FRESH_SECONDS) / (faded - STALE_FRESH_SECONDS);
     return op.toFixed(2);
 }
 

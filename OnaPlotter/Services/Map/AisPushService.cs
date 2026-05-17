@@ -478,11 +478,16 @@ public sealed class AisPushService
         p.CpaThreat = ThreatToWireString(threat.Threat);
         p.ColregsLabel = threat.ColregsLabel;
         p.ColregsRole = threat.ColregsRole;
-        // Seconds since we last heard from this target. JS uses it to
-        // fade stale markers (>30 s) so the chart visually
-        // distinguishes a live target from a ghost that hasn't
-        // updated in minutes.
-        p.AgeSec = (int)(nowUtc - v.LastSeen).TotalSeconds;
+        // Seconds since the last AIS-evidence delta. Keys off LastAisSeen
+        // (position / motion / static / state) instead of LastSeen so
+        // plugin-emitted derived paths (sensors.ais.*, distance-to-self)
+        // don't make ghost vessels look fresh. JS uses it to fade the
+        // marker and suppress the label past the inactive threshold.
+        p.AgeSec = (int)(nowUtc - v.LastAisSeen).TotalSeconds;
+        // ISO 8601 UTC wire format - the JS popup renders this as a
+        // 24h hh:mm plus an "(N min ago)" tail computed live in the
+        // browser so paused-tab clocks don't drift.
+        p.LastAisSeen = v.LastAisSeen.ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture);
 
         // Precompute the COG-vector endpoint here so the JS hot path
         // doesn't run destPoint() per vessel per tick. GeoMath.VectorEnd

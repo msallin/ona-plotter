@@ -26,6 +26,7 @@ public class AtonPushServiceTests
 
         public Task SetAtonsVisibleAsync(bool visible) => Task.CompletedTask;
         public Task SetAisLabelsVisibleAsync(bool visible) => Task.CompletedTask;
+        public Task SetAisInactiveMinutesAsync(double minutes) => Task.CompletedTask;
         public Task SetOwnMmsiAsync(string mmsi) => Task.CompletedTask;
         public Task SetOwnCallsignAsync(string callsign) => Task.CompletedTask;
         public Task SetHarborModeAsync(bool enabled) => Task.CompletedTask;

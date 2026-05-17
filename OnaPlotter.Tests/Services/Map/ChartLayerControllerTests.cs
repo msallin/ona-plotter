@@ -166,6 +166,8 @@ public class ChartLayerControllerTests
         public bool ShowDefaultHud => true;
         public double OwnCogVectorMinutes => 10.0;
         public double AisCogVectorMinutes => 10.0;
+        public double AisInactiveMinutes => 5.0;
+        public double AisRemoveMinutes => 10.0;
         public Task SetMapOrientationAsync(string v) => Task.CompletedTask;
         public Task SetShipOrientationSourceAsync(string v) => Task.CompletedTask;
         public Task SetFollowBoatAsync(bool v) => Task.CompletedTask;
@@ -199,6 +201,8 @@ public class ChartLayerControllerTests
         public Task SetShowDefaultHudAsync(bool v) => Task.CompletedTask;
         public Task SetOwnCogVectorMinutesAsync(double v) => Task.CompletedTask;
         public Task SetAisCogVectorMinutesAsync(double v) => Task.CompletedTask;
+        public Task SetAisInactiveMinutesAsync(double v) => Task.CompletedTask;
+        public Task SetAisRemoveMinutesAsync(double v) => Task.CompletedTask;
     }
 
     private static (ChartLayerController ctrl, FakeOverlaysJs js, ChartFakeSettings settings, DisplayFakeSettings display, List<(string name, string msg)> errors)

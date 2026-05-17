@@ -1879,6 +1879,8 @@
         Atons.OnAtonsUpdated += HandleAtonsUpdated;
         await _aisJs.SetAtonsVisibleAsync(Settings.AtonsVisible);
         await _aisJs.SetAisLabelsVisibleAsync(Settings.AisLabelsVisible);
+        _cachedAisInactiveMinutes = Settings.AisInactiveMinutes;
+        await _aisJs.SetAisInactiveMinutesAsync(_cachedAisInactiveMinutes);
         await _aisJs.SetGuardZoneVisibleAsync(Settings.GuardZoneVisible);
         await _aisJs.SetGuardZoneWarningRingVisibleAsync(Settings.GuardZoneWarningRingVisible);
         _ = _atonPush!.PushAsync();
@@ -2032,6 +2034,11 @@
     private double _cachedRadarBearingCorrection;
     private bool _cachedAtonsVisible;
     private bool _cachedAisLabelsVisible;
+    // Helm-configured AIS-inactive threshold. Tracked here so a Settings-
+    // page change reaches the JS layer without a Map-page refresh, the
+    // same pattern as the visibility caches above. Default mirrors the
+    // AppSettings default so the first sync after init is a no-op.
+    private double _cachedAisInactiveMinutes = 5.0;
     private bool _cachedGuardZoneWarningRingVisible;
     private (int Contrast, int Saturation, int Brightness) _cachedChartFilter;
 
@@ -2111,6 +2118,16 @@
             {
                 _cachedAisLabelsVisible = Settings.AisLabelsVisible;
                 _ = _aisJs.SetAisLabelsVisibleAsync(_cachedAisLabelsVisible);
+            }
+            // AIS inactive threshold: drives both the staleness-fade
+            // floor and the per-target label suppression on the JS side.
+            // Compared with a small epsilon so float round-trip noise
+            // (storage <-> double parse) doesn't trigger a spurious
+            // re-push every render pass.
+            if (Math.Abs(Settings.AisInactiveMinutes - _cachedAisInactiveMinutes) > 0.001)
+            {
+                _cachedAisInactiveMinutes = Settings.AisInactiveMinutes;
+                _ = _aisJs.SetAisInactiveMinutesAsync(_cachedAisInactiveMinutes);
             }
             // Outer guard-zone warning ring: tracked here too so a
             // Settings-page toggle reaches the JS layer without the

@@ -40,6 +40,14 @@ public interface IMapAisJs
     /// the AND of both.</summary>
     Task SetAisLabelsVisibleAsync(bool visible);
 
+    /// <summary>Push the helm-configured "AIS inactive" threshold (in
+    /// minutes) to the JS layer. Used to pin the staleness fade floor
+    /// and to suppress the vessel name label for targets past the
+    /// threshold so a chart full of ghost MMSIs doesn't drown out the
+    /// live targets. Called on startup and whenever the setting
+    /// changes.</summary>
+    Task SetAisInactiveMinutesAsync(double minutes);
+
     /// <summary>Seed the JS side with own-vessel MMSI once the SignalK
     /// hello resolves it. Used by the self-popup HTML to fetch the
     /// country flag from the same endpoint AIS markers do.</summary>

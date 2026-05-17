@@ -193,6 +193,24 @@ let harborMode = false;
 // labels the helm hid via Settings.
 let aisLabelsVisible = true;
 
+// Helm-configured "AIS inactive" threshold (in seconds). Targets whose
+// payload.ageSec equals or exceeds this are treated as stale: the marker
+// is pinned at the staleness-floor opacity AND the name label is
+// suppressed so a chart full of ghost vessels stays legible. Mirrors
+// IMapDisplaySettings.AisInactiveMinutes; default 300 s (5 min) matches
+// the AppSettings default until Map.razor pushes the live value at
+// startup. Seconds (not minutes) for cheap per-vessel comparison against
+// the C#-computed ageSec.
+let aisInactiveSeconds = 300;
+
+// Mirror of leafletInterop.followBoat. Kept here so the AIS popup-open
+// path can pick a popup direction that opens AWAY from the nearest
+// viewport edge instead of relying on Leaflet's autoPan, which would
+// scroll the map and break follow-mode. leafletInterop is the source
+// of truth; it pushes updates into setFollow() below whenever the helm
+// toggles follow or a manual pan drops it.
+let followBoat = true;
+
 // Reusable [lat, lon] scratch passed to L.marker() / marker.setLatLng()
 // per vessel per tick. Leaflet copies the values into its own LatLng
 // internally so a single shared array is safe; eliminates ~200 fresh
@@ -517,6 +535,56 @@ export function unpackLatLonPairs(flat) {
 }
 
 /**
+ * Builds the "Last update" row for the AIS popup table.
+ *
+ * Renders the C#-supplied LastAisSeen ISO instant as local 24h hh:mm,
+ * with an "(N min ago)" tail computed from the C#-stamped ageSec so
+ * both halves come off the same clock and stay consistent even after
+ * a paused tab resumes. Falls back to "ageSec ago" alone when the
+ * wire field is missing (defensive - newer payloads always populate
+ * it but a transient interop hiccup shouldn't drop the row).
+ *
+ * Input:
+ *   lastAisSeenIso "2026-05-17T11:42:13Z"
+ *   ageSec         183
+ * Output:
+ *   <tr><td>Last</td><td>13:42 (3 min ago)</td></tr>
+ */
+function formatLastAisSeenRow(lastAisSeenIso, ageSec) {
+    let hhmm = null;
+    if (typeof lastAisSeenIso === 'string' && lastAisSeenIso.length > 0) {
+        const d = new Date(lastAisSeenIso);
+        if (!isNaN(d.getTime())) {
+            const h = String(d.getHours()).padStart(2, '0');
+            const m = String(d.getMinutes()).padStart(2, '0');
+            hhmm = `${h}:${m}`;
+        }
+    }
+    const ago = formatAgo(ageSec);
+    if (!hhmm && !ago) return '';
+    let cell;
+    if (hhmm && ago) cell = `${hhmm} (${ago})`;
+    else cell = hhmm ?? ago;
+    return `<tr><td>Last</td><td>${cell}</td></tr>`;
+}
+
+/**
+ * Renders a non-negative duration in seconds as "Ns" / "N min ago" /
+ * "Hh Mm ago". Returns null when ageSec is missing or negative (clock
+ * skew between server and client). Capped at 24 h - anything older
+ * means the vessel should already have been pruned.
+ */
+function formatAgo(ageSec) {
+    if (typeof ageSec !== 'number' || !isFinite(ageSec) || ageSec < 0) return null;
+    if (ageSec < 60) return `${Math.round(ageSec)} s ago`;
+    const m = Math.floor(ageSec / 60);
+    if (m < 60) return `${m} min ago`;
+    const h = Math.floor(m / 60);
+    const rem = m - h * 60;
+    return `${h} h ${rem} min ago`;
+}
+
+/**
  * Builds the full AIS popup HTML string from a vessel snapshot.
  * Called lazily - only when the popup is actually about to open or
  * is already open and the data changed. Building 200+ of these
@@ -533,6 +601,14 @@ function buildAisPopupHtml(snap) {
     const type = v.shipType ? esc(v.shipType) : '';
     const dist = haversineMeters(_selfLat, _selfLon, v.lat, v.lon) * NM_PER_METER;
     const brg = bearingDeg(_selfLat, _selfLon, v.lat, v.lon);
+    // Last-AIS-evidence row: "13:42 (3 min ago)". Formats LOCAL 24h
+    // hh:mm so the helm reads it against the chartplotter clock, with
+    // an "ago" tail computed live in the browser (paused-tab clocks
+    // don't drift relative to v.ageSec since C# stamps both fields off
+    // the same UTC instant). When the wire field is missing we fall
+    // back to the C#-computed ageSec alone - the helm still gets the
+    // age, just not a wall-clock anchor.
+    const lastAisHtml = formatLastAisSeenRow(v.lastAisSeen, v.ageSec);
 
     // Title resolution lives in resolveAisPopupTitle so the precedence
     // is testable in isolation (Node, no DOM). The resolver returns a
@@ -690,6 +766,7 @@ function buildAisPopupHtml(snap) {
           `<tr><td>HDG</td><td>${hdgDeg}&deg;</td></tr>` +
           `<tr><td>Dist</td><td>${dist.toFixed(2)} nm</td></tr>` +
           `<tr><td>BRG</td><td>${brg.toFixed(0)}&deg;</td></tr>` +
+          lastAisHtml +
         `</table>` +
         linksHtml +
         `</div>`
@@ -871,9 +948,12 @@ export function updateAisTargets(vessels) {
             } else {
                 // The fade ramp lives in C# (StalenessOpacity.Compute);
                 // format.js mirrors it. Null means "fresh, clear inline
-                // opacity so the CSS default applies".
+                // opacity so the CSS default applies". The faded-floor
+                // boundary follows the helm-configurable AIS inactive
+                // threshold so a harbour helm can dim ghosts sooner
+                // than the default 5 min.
                 const ageSec = v.ageSec ?? 0;
-                const op = stalenessOpacity(ageSec) ?? '';
+                const op = stalenessOpacity(ageSec, aisInactiveSeconds) ?? '';
                 // Only write when the bucket actually changes; 200+
                 // vessels in a harbour re-writing style every tick
                 // invalidates layout for nothing.
@@ -885,9 +965,16 @@ export function updateAisTargets(vessels) {
         // with buddy star prefix) happens C#-side - Map.razor.PushAisTargets
         // stamps v.displayName so this label and any other label-rendering
         // surface share one fallback chain. Suppressed in harbor mode
-        // to keep the chart legible when entering a busy port.
+        // to keep the chart legible when entering a busy port AND when
+        // the target is past the helm-configured "AIS inactive"
+        // threshold so a chart full of ghost MMSIs doesn't drown out
+        // the live targets the helm actually has to react to. SART /
+        // buddy keep their labels regardless of fade (life-safety and
+        // "where's my friend" both tolerate lateness).
         const displayName = v.displayName || null;
-        if (displayName && !harborMode && aisLabelsVisible) {
+        const ageSecLbl = v.ageSec ?? 0;
+        const labelStaleHide = ageSecLbl >= aisInactiveSeconds && !isSart && !v.buddy;
+        if (displayName && !harborMode && aisLabelsVisible && !labelStaleHide) {
             if (!aisLabels[v.context]) {
                 aisLabels[v.context] = L.tooltip({
                     permanent: true, direction: 'right', offset: [12, 0],
@@ -905,6 +992,13 @@ export function updateAisTargets(vessels) {
                 tip.setContent(escapedName);
                 tip._lastContent = escapedName;
             }
+        } else if (aisLabels[v.context]) {
+            // Target just crossed into the stale band (or harbor mode
+            // / labels-off flipped). Tear down the tooltip so the helm
+            // sees the change next paint; the create-gate above rebuilds
+            // it from v.displayName once the target goes fresh again.
+            try { marker.unbindTooltip(); } catch (_) { /* marker gone */ }
+            delete aisLabels[v.context];
         }
 
         // Rich popup with vessel details and external lookup links.
@@ -946,6 +1040,45 @@ export function updateAisTargets(vessels) {
                 autoPan: true,
                 autoPanPadding: [20, 20],
                 keepInView: true,
+            });
+            // Adjust popup placement BEFORE Leaflet's click handler
+            // calls openPopup. `preclick` is the Leaflet hook that fires
+            // ahead of `click` for exactly this kind of override; a plain
+            // `click` listener added after bindPopup would fire AFTER
+            // openPopup and the new options wouldn't apply until the
+            // next click.
+            //
+            // Follow-mode behaviour: helm wants their boat to stay
+            // centred when they tap an AIS target. Leaflet's autoPan
+            // would scroll the chart to fit the popup, fighting follow.
+            // We disable autoPan and instead push the popup body BELOW
+            // the marker (large positive Y offset) when the marker
+            // sits in the top portion of the viewport so the popup
+            // stays on screen without moving the map. Out of follow
+            // mode the original autoPan behaviour is unchanged.
+            marker.on('preclick', () => {
+                const popup = marker.getPopup();
+                if (!popup) return;
+                if (!followBoat || !mapRef) {
+                    popup.options.autoPan = true;
+                    popup.options.offset = L.point(0, 7);
+                    return;
+                }
+                popup.options.autoPan = false;
+                // Threshold: top ~30 % of the viewport is the danger
+                // zone for a default popup whose body extends UP from
+                // the marker. Below that the default placement fits.
+                const cp = mapRef.latLngToContainerPoint(marker.getLatLng());
+                const size = mapRef.getSize();
+                if (cp.y < size.y * 0.3) {
+                    // Push the popup tip ~240 px below the marker; the
+                    // body still extends UP from the tip, so the body
+                    // ends up centred near the marker / vertical
+                    // midline instead of off-screen above.
+                    popup.options.offset = L.point(0, 240);
+                } else {
+                    popup.options.offset = L.point(0, 7);
+                }
             });
             marker.on('popupopen', () => {
                 if (marker._onaVesselSnapshot) {
@@ -1346,6 +1479,22 @@ function safeRemoveLayer(layer) {
     if (!layer || !mapRef) return;
     try { mapRef.removeLayer(layer); } catch (_) { /* already gone */ }
 }
+
+// Push the helm-configured "AIS inactive" threshold (in minutes) from
+// the C# settings. Stored internally as seconds for cheap comparison
+// against the per-vessel ageSec we get on the wire. Clamps non-finite
+// or non-positive values to the AppSettings default (5 min) so a
+// corrupted setting can't disable the stale-rule entirely.
+export function setAisInactiveMinutes(minutes) {
+    const m = Number(minutes);
+    aisInactiveSeconds = (Number.isFinite(m) && m > 0) ? Math.round(m * 60) : 300;
+}
+
+// Mirror of leafletInterop.setFollow. Called by the interop ladder
+// whenever follow mode flips so the AIS popup-open path can pick a
+// direction without autoPan when follow is on (autoPan would scroll
+// the map and break follow).
+export function setFollow(follow) { followBoat = !!follow; }
 
 // Toggle the persistent AIS-name-label preference. When disabled,
 // tears down every existing label so the helm sees the change

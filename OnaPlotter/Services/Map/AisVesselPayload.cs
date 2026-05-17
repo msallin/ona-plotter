@@ -70,9 +70,20 @@ public sealed class AisVesselPayload
     [JsonPropertyName("cpaThreat")] public string CpaThreat { get; set; } = "none";
     [JsonPropertyName("colregsLabel")] public string? ColregsLabel { get; set; }
     [JsonPropertyName("colregsRole")] public string? ColregsRole { get; set; }
-    /// <summary>Seconds since the last delta touched this vessel. JS
-    /// uses it to fade stale markers (>30 s).</summary>
+    /// <summary>Seconds since the last AIS-evidence delta touched this vessel
+    /// (position / motion / static-data). Computed from <c>AisVessel.LastAisSeen</c>
+    /// rather than delta-arrival time so plugin chatter on derived paths
+    /// doesn't keep ghost vessels looking fresh. JS uses it to fade stale
+    /// markers and (past the helm-configured "AIS inactive" threshold)
+    /// suppress their name label.</summary>
     [JsonPropertyName("ageSec")] public int AgeSec { get; set; }
+
+    /// <summary>ISO 8601 (UTC, RFC 3339, e.g. <c>"2026-05-17T11:42:13Z"</c>)
+    /// of the most recent AIS-evidence delta from <c>AisVessel.LastAisSeen</c>.
+    /// The JS popup formats this as a 24h <c>hh:mm</c> with an inline "(N min
+    /// ago)" tail so the helm sees both the exact instant and the elapsed
+    /// time the marker is drawn against. Always populated.</summary>
+    [JsonPropertyName("lastAisSeen")] public string? LastAisSeen { get; set; }
 
     /// <summary>COG-vector endpoint precomputed from current lat / lon +
     /// CourseOverGround + SpeedOverGround * AisCogVectorMinutes. Lifted

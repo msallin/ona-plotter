@@ -220,6 +220,106 @@ public class AisVesselTests
         await Assert.That(vessel.LastSeen).IsGreaterThanOrEqualTo(before);
     }
 
+    [Test]
+    public async Task Apply_AisEvidencePath_AdvancesLastAisSeen()
+    {
+        // A whitelisted AIS-evidence path (here: SOG, a motion field that
+        // only an actual AIS transponder transmits) must advance the
+        // staleness clock so the chart treats this vessel as live.
+        var vessel = new AisVessel("vessels.test");
+        // Backdate to an obviously-stale instant - any forward motion
+        // through the whitelist gate must overwrite it.
+        var oldInstant = DateTime.UtcNow.AddHours(-1);
+        vessel.LastAisSeen = oldInstant;
+
+        var je = JsonSerializer.SerializeToElement(3.0);
+        vessel.Apply("navigation.speedOverGround", je);
+
+        await Assert.That(vessel.LastAisSeen).IsGreaterThan(oldInstant);
+    }
+
+    [Test]
+    public async Task Apply_NonEvidencePath_DoesNotAdvanceLastAisSeen()
+    {
+        // Some SK plugins keep republishing derived paths (sensors.ais.*,
+        // distance-to-self) for ghost vessels long after the underlying
+        // transponder went silent. Those paths are NOT AIS evidence and
+        // must not refresh LastAisSeen - otherwise the chart would never
+        // be allowed to fade them out.
+        var vessel = new AisVessel("vessels.test");
+        var sentinel = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        vessel.LastAisSeen = sentinel;
+
+        // Path not in the AIS-evidence whitelist. Apply may or may not
+        // return true - what matters is the clock stays pinned.
+        var je = JsonSerializer.SerializeToElement(123.0);
+        vessel.Apply("sensors.ais.class", je);
+
+        await Assert.That(vessel.LastAisSeen).IsEqualTo(sentinel);
+    }
+
+    [Test]
+    public async Task Apply_WithSkTimestamp_UsesWireInstantNotArrivalTime()
+    {
+        // When the SK update carries a `timestamp` field, the staleness
+        // clock must follow the wire instant (when the transponder
+        // transmitted) instead of the delta-arrival time. This makes the
+        // popup "last update" match what the network actually said.
+        var vessel = new AisVessel("vessels.test");
+        var wireTs = new DateTime(2026, 5, 17, 11, 42, 13, DateTimeKind.Utc);
+
+        var pos = JsonSerializer.SerializeToElement(new { latitude = 47.0, longitude = 8.0 });
+        vessel.Apply("navigation.position", pos, wireTs);
+
+        await Assert.That(vessel.LastAisSeen).IsEqualTo(wireTs);
+    }
+
+    [Test]
+    public async Task Apply_OlderSkTimestamp_DoesNotRegressLastAisSeen()
+    {
+        // SK servers in the wild emit AIS static fields as SEPARATE deltas
+        // with independent timestamps. A republish of mmsi can carry an
+        // older timestamp than the most recent name; we must not drag the
+        // staleness clock backward, otherwise a vessel that's been heard
+        // from at T2 would look as stale as one last seen at T0 < T2.
+        var vessel = new AisVessel("vessels.test");
+        var newer = new DateTime(2026, 5, 17, 12, 0, 0, DateTimeKind.Utc);
+        var older = new DateTime(2026, 5, 17, 11, 0, 0, DateTimeKind.Utc);
+
+        var name = JsonSerializer.SerializeToElement("MV NEWER");
+        vessel.Apply("name", name, newer);
+        await Assert.That(vessel.LastAisSeen).IsEqualTo(newer);
+
+        // Older-timestamped mmsi republish: clock must hold at `newer`.
+        var mmsi = JsonSerializer.SerializeToElement("211234567");
+        vessel.Apply("mmsi", mmsi, older);
+        await Assert.That(vessel.LastAisSeen).IsEqualTo(newer);
+    }
+
+    [Test]
+    public async Task Apply_EmptyStringName_DoesNotOverwriteGoodName()
+    {
+        // SK servers occasionally republish identity with name="" - empty
+        // string, NOT null. The previous null-only guard let it through,
+        // and Name="" then made the displayName fallback fire (because
+        // IsNullOrEmpty(v.Name) is true), knocking the on-chart label back
+        // to the MMSI even though we previously had a good name. Whitespace-
+        // only deltas are also blocked since they'd render as a visually
+        // empty label.
+        var vessel = new AisVessel("vessels.test");
+        var good = JsonSerializer.SerializeToElement("Salty Breeze");
+        vessel.Apply("name", good);
+        await Assert.That(vessel.Name).IsEqualTo("Salty Breeze");
+
+        var empty = JsonSerializer.SerializeToElement("");
+        vessel.Apply("name", empty);
+        await Assert.That(vessel.Name).IsEqualTo("Salty Breeze");
+
+        var blank = JsonSerializer.SerializeToElement("   ");
+        vessel.Apply("name", blank);
+        await Assert.That(vessel.Name).IsEqualTo("Salty Breeze");
+    }
+
     // --- ExtractMmsi ---
 
     [Test]

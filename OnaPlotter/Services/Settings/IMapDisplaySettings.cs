@@ -197,6 +197,30 @@ public interface IMapDisplaySettings
     /// without affecting their own predictor. Default 10 min.</summary>
     double AisCogVectorMinutes { get; }
 
+    /// <summary>
+    /// When an AIS target stops emitting evidence (no position / motion /
+    /// static-data delta) for this many minutes, the chart fades its marker
+    /// to the stale-floor opacity and hides its name label. The threshold
+    /// is keyed off <see cref="OnaPlotter.Models.AisVessel.LastAisSeen"/>
+    /// so plugin-emitted derivative paths (sensors.ais.*, distance-to-self)
+    /// don't disguise the silence. Default 5 min; clamp 1..240. Pairs with
+    /// <see cref="AisRemoveMinutes"/>, which must always be greater than or
+    /// equal so the inactive band exists before the remove band kicks in.
+    /// </summary>
+    double AisInactiveMinutes { get; }
+
+    /// <summary>
+    /// Hard removal window: an AIS target whose
+    /// <see cref="OnaPlotter.Models.AisVessel.LastAisSeen"/> is older than
+    /// this is dropped from <see cref="OnaPlotter.Services.AisStore"/>
+    /// entirely so it disappears from the chart, alarms, and HUD lists.
+    /// Default 10 min; clamp 1..240. Lower bound enforced at &gt;=
+    /// <see cref="AisInactiveMinutes"/> at the setter; a remove window
+    /// below inactive would skip the faded "still on chart" band and look
+    /// like a flicker to the helm.
+    /// </summary>
+    double AisRemoveMinutes { get; }
+
     /// <summary>Show the tide row + extras on the depth HUD card +
     /// Dashboard. Default true; helms in non-tidal waters (lakes,
     /// inland canals) or who run a server without a tide plugin
@@ -272,6 +296,8 @@ public interface IMapDisplaySettings
     Task SetShowDefaultHudAsync(bool value);
     Task SetOwnCogVectorMinutesAsync(double value);
     Task SetAisCogVectorMinutesAsync(double value);
+    Task SetAisInactiveMinutesAsync(double value);
+    Task SetAisRemoveMinutesAsync(double value);
     Task SetRadarRangeRingsEnabledAsync(bool value);
     Task SetRadarRangeRingsCountAsync(int value);
     Task SetRadarUseWireBearingAsync(bool value);

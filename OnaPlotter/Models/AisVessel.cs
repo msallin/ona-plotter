@@ -70,7 +70,29 @@ public sealed class AisVessel
     /// <see cref="LengthOverallMeters"/>.</summary>
     public double? BeamMeters { get; set; }
 
+    /// <summary>
+    /// Last delta-arrival time, bumped on every <see cref="Apply"/> regardless
+    /// of path. Useful for diagnostics, NOT for staleness UI - some SK plugins
+    /// keep emitting derived paths (distance-to-self, sensors.ais.*) for ghost
+    /// vessels long after the underlying AIS transponder stopped, which would
+    /// reset this clock and make a stale vessel look fresh. Use
+    /// <see cref="LastAisSeen"/> for staleness decisions.
+    /// </summary>
     public DateTime LastSeen { get; set; }
+
+    /// <summary>
+    /// Wall-clock instant of the most recent delta that carried genuine AIS
+    /// evidence: a position fix, motion field (COG / SOG / HDG), navigation
+    /// state, or AIS static data (name / MMSI / callsign / dimensions /
+    /// ship-type). Falls back to delta-arrival time when the SK update has no
+    /// timestamp. Drives map staleness fade, label suppression, and store
+    /// pruning. Updating it on non-AIS paths (sensors.* / synthesised
+    /// distance-to-self / plugin derivatives) would make ghost vessels look
+    /// fresh whenever a plugin kept publishing for them, so the gate in
+    /// <see cref="Apply"/> only advances this clock for paths in the
+    /// AIS-evidence whitelist.
+    /// </summary>
+    public DateTime LastAisSeen { get; set; }
 
     /// <summary>One-shot guard for the wire-side `buddy` delta drop
     /// log. Per-vessel field so one offender doesn't suppress the
@@ -80,18 +102,78 @@ public sealed class AisVessel
     /// log entry, which is what we want for forensics).</summary>
     private bool _buddyDropLogged;
 
+    /// <summary>
+    /// SignalK paths that count as "real AIS evidence" for the purpose of
+    /// <see cref="LastAisSeen"/>. Anything else (sensors.*, derived chips,
+    /// plugin-synthesised paths) is allowed through Apply but does NOT bump
+    /// the staleness clock, so a ghost vessel that some plugin keeps
+    /// publishing for is still allowed to fade out and get pruned.
+    ///
+    /// Mirrors the cases in <see cref="Apply"/>. When adding a new AIS-derived
+    /// path there: also add it here, otherwise the path arriving in isolation
+    /// won't refresh the vessel's staleness.
+    /// </summary>
+    private static readonly HashSet<string> AisEvidencePaths = new(StringComparer.Ordinal)
+    {
+        OnaPlotter.Utilities.SkPaths.Navigation.Position, "position",
+        OnaPlotter.Utilities.SkPaths.Navigation.HeadingTrue,
+        OnaPlotter.Utilities.SkPaths.Navigation.CourseOverGroundTrue, "course",
+        OnaPlotter.Utilities.SkPaths.Navigation.SpeedOverGround, "speed",
+        OnaPlotter.Utilities.SkPaths.Navigation.State,
+        "name", "mmsi", "communication.callsignVhf",
+        "design.aisShipType",
+        "design.length", "design.length.overall",
+        "design.beam",
+    };
+
     public AisVessel(string context)
     {
         Context = context;
         LastSeen = DateTime.UtcNow;
+        // Default MinValue so the FIRST AIS-evidence delta always sets
+        // the clock, even if its wire timestamp is in the past (typical:
+        // ~hundreds of ms of network + SK-server lag). A `now` default
+        // combined with the monotonic-max gate in Apply would reject
+        // every wire timestamp behind the clock and pin staleness to
+        // construction time, which is wrong. A vessel that never receives
+        // an AIS-evidence delta stays at MinValue and gets pruned, which
+        // is the desired behaviour for plugin-only synthetic contexts.
+        LastAisSeen = DateTime.MinValue;
     }
 
     /// <summary>
     /// Applies a SignalK path/value pair. Returns true if the value was recognized.
     /// </summary>
-    public bool Apply(string path, object? rawValue)
+    /// <param name="path">SK path of the value being applied.</param>
+    /// <param name="rawValue">Value payload (boxed primitive or JsonElement).</param>
+    /// <param name="skTimestamp">Wall-clock instant from the parent SK update's
+    /// <c>timestamp</c> field, when available. Used as the source of truth for
+    /// <see cref="LastAisSeen"/> so the staleness clock tracks when the AIS
+    /// transponder transmitted, not when the delta happened to arrive at the
+    /// plotter. Pass null when the wire didn't carry one (radar legacy
+    /// shape, test fixtures); the gate falls back to <c>DateTime.UtcNow</c>.</param>
+    public bool Apply(string path, object? rawValue, DateTime? skTimestamp = null)
     {
         LastSeen = DateTime.UtcNow;
+
+        // Only advance the staleness clock when this delta carries actual AIS
+        // evidence (see AisEvidencePaths). The empty-path identity-object
+        // branch below recurses through Apply for each sub-key, so leaves of
+        // that recursion hit this gate independently and the parent doesn't
+        // need to whitelist itself.
+        //
+        // Monotonic max: SK servers in the wild emit AIS static fields as
+        // SEPARATE deltas (name, mmsi, callsign each with their own update
+        // timestamp) and the wall-clock order isn't guaranteed - a republish
+        // of mmsi can carry an older timestamp than the most recent name.
+        // We want the staleness clock to track "the latest moment we have
+        // AIS evidence", so we only advance forward; an older-timestamped
+        // delta on a different field can't drag the clock backward.
+        if (AisEvidencePaths.Contains(path))
+        {
+            var ts = skTimestamp ?? DateTime.UtcNow;
+            if (ts > LastAisSeen) LastAisSeen = ts;
+        }
 
         // Empty-path deltas carry an object payload that's a partial vessel
         // identity snapshot, e.g. { name: "SALTY BREEZE", mmsi: "211...",
@@ -103,7 +185,7 @@ public sealed class AisVessel
         if (path.Length == 0 && rawValue is JsonElement identityEl
             && identityEl.ValueKind == JsonValueKind.Object)
         {
-            return FlattenAndApply("", identityEl, depth: 0);
+            return FlattenAndApply("", identityEl, depth: 0, skTimestamp);
         }
 
         switch (path)
@@ -154,7 +236,14 @@ public sealed class AisVessel
             case "name":
                 {
                     var parsed = TryGetString(rawValue);
-                    if (parsed is null) return false;      // null delta must NOT overwrite
+                    // null AND empty/whitespace must NOT overwrite a good
+                    // name. SK servers in the wild occasionally republish
+                    // identity with name="" (empty string is non-null so the
+                    // previous IsNullOrEmpty-free guard let it through),
+                    // which would knock the resolved displayName back to
+                    // the MMSI fallback and leave the on-chart label stuck
+                    // on the number. Treat blank as no-op.
+                    if (string.IsNullOrWhiteSpace(parsed)) return false;
                     Name = parsed;
                     return true;
                 }
@@ -162,7 +251,7 @@ public sealed class AisVessel
             case "mmsi":
                 {
                     var parsed = TryGetString(rawValue);
-                    if (parsed is null) return false;
+                    if (string.IsNullOrWhiteSpace(parsed)) return false;
                     Mmsi = parsed;
                     return true;
                 }
@@ -170,7 +259,7 @@ public sealed class AisVessel
             case "communication.callsignVhf":
                 {
                     var parsed = TryGetString(rawValue);
-                    if (parsed is null) return false;
+                    if (string.IsNullOrWhiteSpace(parsed)) return false;
                     Callsign = parsed;
                     return true;
                 }
@@ -341,7 +430,7 @@ public sealed class AisVessel
     // or buggy delta driving unbounded recursion.
     private const int MaxIdentityFlattenDepth = 4;
 
-    private bool FlattenAndApply(string prefix, JsonElement obj, int depth)
+    private bool FlattenAndApply(string prefix, JsonElement obj, int depth, DateTime? skTimestamp = null)
     {
         if (depth > MaxIdentityFlattenDepth) return false;
         bool anyChange = false;
@@ -354,12 +443,12 @@ public sealed class AisVessel
                 // switch take an object (design.aisShipType = { id, name }).
                 // Then recurse so deeper-nested scalars (rare but possible)
                 // also get dispatched.
-                anyChange |= Apply(fullPath, prop.Value);
-                anyChange |= FlattenAndApply(fullPath, prop.Value, depth + 1);
+                anyChange |= Apply(fullPath, prop.Value, skTimestamp);
+                anyChange |= FlattenAndApply(fullPath, prop.Value, depth + 1, skTimestamp);
             }
             else
             {
-                anyChange |= Apply(fullPath, prop.Value);
+                anyChange |= Apply(fullPath, prop.Value, skTimestamp);
             }
         }
         return anyChange;

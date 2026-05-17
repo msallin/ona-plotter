@@ -36,6 +36,7 @@ public class AisPushServiceTests
         public Task SetAtonsAsync(object[] atons) => Task.CompletedTask;
         public Task SetAtonsVisibleAsync(bool visible) => Task.CompletedTask;
         public Task SetAisLabelsVisibleAsync(bool visible) => Task.CompletedTask;
+        public Task SetAisInactiveMinutesAsync(double minutes) => Task.CompletedTask;
         public Task SetOwnMmsiAsync(string mmsi) => Task.CompletedTask;
         public Task SetOwnCallsignAsync(string callsign) => Task.CompletedTask;
         public Task SetHarborModeAsync(bool enabled) => Task.CompletedTask;
@@ -126,6 +127,38 @@ public class AisPushServiceTests
 
         // The moored vessel drops on the second push; the active one stays.
         await Assert.That(js.Pushes[1].Length).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task DisplayName_Transitions_From_Mmsi_To_Name_When_Name_Arrives()
+    {
+        // Helm-feedback: an AIS marker that initially shows the MMSI in
+        // its on-chart label is expected to flip to the vessel name once
+        // AIS Type 5 / 24 static delivers it on a subsequent delta. This
+        // pins the C# side of that transition - if `name` later stops
+        // overriding `mmsi` in the displayName fallback chain (rename,
+        // bug, future refactor), this test catches it before the JS
+        // layer sees the broken payload.
+        var store = new AisStore();
+        const string ctx = "vessels.urn:mrn:imo:mmsi:211234567";
+
+        // Tick 1: position-only, no name yet (typical first delta for an
+        // AIS target before the static message arrives).
+        var pos = JsonSerializer.SerializeToElement(new { latitude = 47.0, longitude = 8.0 });
+        store.Apply(ctx, "navigation.position", pos);
+        var js = new FakeAisJs();
+        var svc = NewService(store, js);
+        await svc.PushAsync(new NavigationData());
+        var firstName = js.Pushes[0][0].DisplayName;
+
+        // Tick 2: name delta arrives (AIS Type 5 static). MUST override
+        // the MMSI fallback on the next push.
+        store.Apply(ctx, "name", "Salty Breeze");
+        await svc.PushAsync(new NavigationData());
+        var secondName = js.Pushes[1][0].DisplayName;
+
+        await Assert.That(firstName).IsEqualTo("211234567");
+        await Assert.That(secondName).IsEqualTo("Salty Breeze");
     }
 
     [Test]
@@ -561,6 +594,7 @@ public class AisPushServiceTests
         public Task SetAtonsAsync(object[] atons) => Task.CompletedTask;
         public Task SetAtonsVisibleAsync(bool visible) => Task.CompletedTask;
         public Task SetAisLabelsVisibleAsync(bool visible) => Task.CompletedTask;
+        public Task SetAisInactiveMinutesAsync(double minutes) => Task.CompletedTask;
         public Task SetOwnMmsiAsync(string mmsi) => Task.CompletedTask;
         public Task SetOwnCallsignAsync(string callsign) => Task.CompletedTask;
         public Task SetHarborModeAsync(bool enabled) => Task.CompletedTask;
@@ -586,6 +620,7 @@ public class AisPushServiceTests
         public Task SetAtonsAsync(object[] atons) => Task.CompletedTask;
         public Task SetAtonsVisibleAsync(bool visible) => Task.CompletedTask;
         public Task SetAisLabelsVisibleAsync(bool visible) => Task.CompletedTask;
+        public Task SetAisInactiveMinutesAsync(double minutes) => Task.CompletedTask;
         public Task SetOwnMmsiAsync(string mmsi) => Task.CompletedTask;
         public Task SetOwnCallsignAsync(string callsign) => Task.CompletedTask;
         public Task SetHarborModeAsync(bool enabled) => Task.CompletedTask;

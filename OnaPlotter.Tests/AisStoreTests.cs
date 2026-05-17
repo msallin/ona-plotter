@@ -428,33 +428,30 @@ public class AisStoreTests
     public async Task GetVessels_AfterLongIdle_PrunesStaleEntries()
     {
         // Boats sitting at anchor in port watch the AIS list grow for
-        // hours. The store evicts entries whose LastSeen is older than
-        // 10 min during a throttled prune (every 2 min). A vessel that
-        // hasn't been seen for 15 min must drop off the snapshot.
+        // hours. The store evicts entries whose LastAisSeen is older than
+        // the AisRemoveMinutes setting (default 10 min) during a throttled
+        // prune (every 2 min). A vessel that hasn't been seen for 15 min
+        // must drop off the snapshot.
         //
-        // Reflection drives the LastSeen field directly because the
-        // wire-side interface only sets it through Apply() and we
-        // can't move the wall clock back to "12 minutes ago" without
-        // either real waits or model changes. The reflection is
-        // brittle by design: a rename should fail this test loudly so
-        // the prune contract gets an explicit follow-up.
+        // The parameterless ctor falls back to AisStore.DefaultRemoveMinutes
+        // (10) so this test is independent of the live settings instance.
+        // Pruning keys off LastAisSeen (not LastSeen) so plugin-emitted
+        // derived paths can't keep ghost vessels alive; we backdate that
+        // field directly. The store also keeps a private _lastPruneTime
+        // gating the 2-min throttle; we nudge that via reflection so the
+        // next GetVessels triggers a prune sweep.
         var store = new AisStore();
         var pos = System.Text.Json.JsonSerializer.SerializeToElement(new { latitude = 47.0, longitude = 8.0 });
         store.Apply("vessels.urn:mrn:imo:mmsi:stale-1", "navigation.position", pos);
         store.Apply("vessels.urn:mrn:imo:mmsi:stale-2", "navigation.position", pos);
         store.Apply("vessels.urn:mrn:imo:mmsi:fresh-1", "navigation.position", pos);
 
-        // Backdate two of the three vessels. LastSeen is a public
-        // setter so we can mutate without reflection. The store also
-        // keeps a private _lastPruneTime gating the 2-min throttle;
-        // we nudge that via reflection so the next GetVessels triggers
-        // a prune sweep.
         var staleCutoff = DateTime.UtcNow.AddMinutes(-15);
         foreach (var v in store.GetVessels())
         {
             if (v.Context.Contains("stale"))
             {
-                v.LastSeen = staleCutoff;
+                v.LastAisSeen = staleCutoff;
             }
         }
 
