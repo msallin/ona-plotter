@@ -6467,6 +6467,30 @@ html.night-mode-global body {
     height: 4px;
     border-radius: 0;
 }
+/* Active route: solid cyan line, weight 3 - matches the future-leg
+   stroke in activeRouteLayer.js. The passed-leg dotted variant lives
+   in .legend-passed-leg below so the helm reads the two legend lines
+   as "future" / "already crossed" - same vocabulary as the chart. */
+.legend-active-route {
+    background: transparent;
+    border-top: 3px solid var(--map-bearing);
+    margin-top: 8px;
+    height: 4px;
+    border-radius: 0;
+}
+/* Own ship trail: SOG-coloured gradient (slow blue -> mid green ->
+   fast yellow) so the swatch reads at a glance as "the rainbow
+   coloured trail behind own boat". Mirrors the palette in
+   trackLayer.js / serverTrackLayer.js. */
+.legend-own-trail {
+    background: linear-gradient(90deg,
+        #3b82f6 0 33%,
+        #22c55e 33% 66%,
+        #facc15 66% 100%);
+    height: 3px;
+    align-self: center;
+    border-radius: 2px;
+}
 /* Active-WP pulse: cyan filled circle matching .active-wp-pulse on the
    chart (the pulse uses --map-bearing, not --map-current any more -
    the violet was switched to cyan to read as the same "active

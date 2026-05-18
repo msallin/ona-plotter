@@ -120,6 +120,12 @@ public sealed class AppSettingsService : IAppSettings
     public double DepthAlarmThreshold { get; private set; } = 2.0;
     public double CpaAlarmThreshold { get; private set; } = 0.5;
     public double GuardZoneLookaheadMinutes { get; private set; } = 10.0;
+    /// <summary>How long (seconds) a CPA threat must stay inside the
+    /// guard zone before the audible alarm fires. Default 5 s so a
+    /// single-sample false positive (radar / AIS jitter at the
+    /// projection boundary) doesn't ring the klaxon. 0 disables
+    /// debouncing.</summary>
+    public double CpaDebounceSeconds { get; private set; } = 5.0;
     public double WindShiftAlarmThreshold { get; private set; } = 30.0;
     public double WindShiftLookbackMinutes { get; private set; } = 10.0;
     public double WindShiftMinTrueWindSpeed { get; private set; } = 5.0;
@@ -138,9 +144,9 @@ public sealed class AppSettingsService : IAppSettings
     public bool ExpandAllHud { get; private set; } = false;
     public string SailingMode { get; private set; } = "cruise";
     /// <summary>Own propulsion category for COLREGS Rule 18 priority.
-    /// "power" (default) or "sail". Stored as a string rather than an
+    /// "sail" (default) or "power". Stored as a string rather than an
     /// enum so persistence + the Settings select bind directly.</summary>
-    public string OwnVesselType { get; private set; } = "power";
+    public string OwnVesselType { get; private set; } = "sail";
     public bool KeepScreenAwake { get; private set; } = true;
     /// <summary>Default true: prefer server-side
     /// <c>notifications.navigation.*</c> from signalk-course-data
@@ -171,16 +177,16 @@ public sealed class AppSettingsService : IAppSettings
     /// <summary>Helm-configured "AIS inactive" threshold in minutes. When a
     /// target's last AIS-evidence delta is older than this, the chart fades
     /// the marker to the stale-floor opacity and hides its name label.
-    /// Default 5 min; clamp 1..240. See
+    /// Default 10 min; clamp 1..240. See
     /// <see cref="IMapDisplaySettings.AisInactiveMinutes"/>.</summary>
-    public double AisInactiveMinutes { get; private set; } = 5.0;
+    public double AisInactiveMinutes { get; private set; } = 10.0;
 
     /// <summary>Helm-configured "AIS remove" threshold in minutes. When a
     /// target's last AIS-evidence delta is older than this, the store
     /// drops it entirely so it vanishes from the chart and alarms. Default
-    /// 10 min; clamp 1..240. Setter clamps to &gt;= AisInactiveMinutes so
+    /// 30 min; clamp 1..240. Setter clamps to &gt;= AisInactiveMinutes so
     /// the faded band always exists before removal.</summary>
-    public double AisRemoveMinutes { get; private set; } = 10.0;
+    public double AisRemoveMinutes { get; private set; } = 30.0;
 
     /// <summary>Show the tide row + extras on the depth HUD +
     /// Dashboard. Default true.</summary>
@@ -407,6 +413,8 @@ public sealed class AppSettingsService : IAppSettings
             DepthAlarmThreshold = await LoadDouble("depthAlarmThreshold", 2.0);
             CpaAlarmThreshold = await LoadDouble("cpaAlarmThreshold", 0.5);
             GuardZoneLookaheadMinutes = await LoadDouble("guardZoneLookaheadMinutes", 10.0);
+            CpaDebounceSeconds = Math.Clamp(
+                await LoadDouble("cpaDebounceSeconds.v1", 5.0), 0.0, 60.0);
             // Outer ring is fixed at 2× the guard-zone radius via
             // Cpa.OuterRingMultiplier; no per-helm knob.
             WindShiftAlarmThreshold = await LoadDouble("windShiftAlarmThreshold", 30.0);
@@ -442,9 +450,9 @@ public sealed class AppSettingsService : IAppSettings
             // entry can't end up with remove < inactive (which would skip
             // the faded "still on chart" band entirely).
             AisInactiveMinutes = Math.Clamp(
-                await LoadDouble("aisInactiveMinutes.v1", 5.0), 1.0, 240.0);
+                await LoadDouble("aisInactiveMinutes.v1", 10.0), 1.0, 240.0);
             AisRemoveMinutes = Math.Clamp(
-                await LoadDouble("aisRemoveMinutes.v1", 10.0), 1.0, 240.0);
+                await LoadDouble("aisRemoveMinutes.v1", 30.0), 1.0, 240.0);
             if (AisRemoveMinutes < AisInactiveMinutes) AisRemoveMinutes = AisInactiveMinutes;
             TideVisible = await LoadBool("tideVisible.v1", true);
             RadarRangeRingsEnabled = await LoadBool("radarRangeRingsEnabled.v1", true);
@@ -856,6 +864,14 @@ public sealed class AppSettingsService : IAppSettings
         OnSettingsChanged?.Invoke();
     }
 
+    public async Task SetCpaDebounceSecondsAsync(double value)
+    {
+        CpaDebounceSeconds = Math.Clamp(value, 0.0, 60.0);
+        await Save("cpaDebounceSeconds.v1",
+            CpaDebounceSeconds.ToString("F1", CultureInfo.InvariantCulture));
+        OnSettingsChanged?.Invoke();
+    }
+
     public async Task SetWindShiftAlarmThresholdAsync(double value)
     {
         WindShiftAlarmThreshold = value;
@@ -1236,7 +1252,7 @@ public sealed class AppSettingsService : IAppSettings
     private static string NormalizeOwnVesselType(string? raw) => raw switch
     {
         "power" or "sail" => raw,
-        _ => "power",
+        _ => "sail",
     };
 
     public async Task SetOwnVesselTypeAsync(string value)

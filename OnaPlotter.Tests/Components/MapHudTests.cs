@@ -359,7 +359,7 @@ public class MapHudTests
         await Assert.That(extras.Contains("XTE")).IsFalse();
     }
 
-    // ---- HDG card: alternate heading reference, XTE, AP target M ----
+    // ---- HDG card: alternate heading reference, AP target ----
 
     [Test]
     public async Task Expanded_BottomRight_Shows_Alternate_Heading_True_When_Primary_Magnetic()
@@ -373,12 +373,14 @@ public class MapHudTests
 
         cut.Find(".hud-stack-br .hud-panel").Click();
 
-        var extras = cut.Find(".hud-stack-br .hud-extra").TextContent;
         // Primary HDG (mag, 080) lives on the .hud-value above the
-        // extras block; the alternate (true, 088 T) is what we expect
-        // to find in the details.
-        await Assert.That(extras).Contains("HDG T");
-        await Assert.That(extras).Contains("88");
+        // extras block; the alternate (true, 088°) carries the T
+        // reference in the dim .hud-unit chip beside the value.
+        var altRow = cut.FindAll(".hud-stack-br .hud-extra .hud-extra-row")[0];
+        await Assert.That(altRow.QuerySelector(".hud-extra-k")!.TextContent.Trim()).IsEqualTo("HDG");
+        var altValue = altRow.QuerySelector(".hud-extra-v")!;
+        await Assert.That(altValue.TextContent).Contains("88");
+        await Assert.That(altValue.QuerySelector(".hud-unit")!.TextContent.Trim()).IsEqualTo("T");
     }
 
     [Test]
@@ -393,16 +395,20 @@ public class MapHudTests
 
         cut.Find(".hud-stack-br .hud-panel").Click();
 
-        var extras = cut.Find(".hud-stack-br .hud-extra").TextContent;
-        await Assert.That(extras).Contains("HDG M");
-        await Assert.That(extras).Contains("108");
+        var altRow = cut.FindAll(".hud-stack-br .hud-extra .hud-extra-row")[0];
+        await Assert.That(altRow.QuerySelector(".hud-extra-k")!.TextContent.Trim()).IsEqualTo("HDG");
+        var altValue = altRow.QuerySelector(".hud-extra-v")!;
+        await Assert.That(altValue.TextContent).Contains("108");
+        await Assert.That(altValue.QuerySelector(".hud-unit")!.TextContent.Trim()).IsEqualTo("M");
     }
 
     [Test]
-    public async Task Expanded_BottomRight_Shows_Xte_When_Course_Active()
+    public async Task Expanded_BottomRight_Does_Not_Show_Xte()
     {
-        // XTE moved here from the SOG card because it's a heading-
-        // relative reading; pin it under the HDG details column.
+        // XTE used to live on the HDG card; it now lives on the route
+        // card alongside DTW / BRG / VMG (single source of truth for
+        // active-course numbers). Pin the removal so a future refactor
+        // can't silently put it back and duplicate the readout.
         using var ctx = new Bunit.TestContext();
         var data = new NavigationData();
         data.Apply("navigation.course.calcValues.crossTrackError", 42.0);
@@ -411,7 +417,7 @@ public class MapHudTests
         cut.Find(".hud-stack-br .hud-panel").Click();
 
         var extras = cut.Find(".hud-stack-br .hud-extra").TextContent;
-        await Assert.That(extras).Contains("XTE");
+        await Assert.That(extras.Contains("XTE")).IsFalse();
     }
 
     [Test]
@@ -426,9 +432,19 @@ public class MapHudTests
 
         cut.Find(".hud-stack-br .hud-panel").Click();
 
-        var extras = cut.Find(".hud-stack-br .hud-extra").TextContent;
-        await Assert.That(extras).Contains("AP tgt M");
-        await Assert.That(extras).Contains("90");
+        // Label drops the T/M suffix; the .hud-unit chip after the
+        // value carries the reference (so the degree sign stays white
+        // while the M dims to muted unit colour).
+        var rows = cut.FindAll(".hud-stack-br .hud-extra .hud-extra-row");
+        AngleSharp.Dom.IElement? apTgt = null;
+        foreach (var r in rows)
+        {
+            var k = r.QuerySelector(".hud-extra-k")?.TextContent.Trim();
+            var u = r.QuerySelector(".hud-extra-v .hud-unit")?.TextContent.Trim();
+            if (k == "AP tgt" && u == "M") { apTgt = r; break; }
+        }
+        await Assert.That(apTgt).IsNotNull();
+        await Assert.That(apTgt!.QuerySelector(".hud-extra-v")!.TextContent).Contains("90");
     }
 
     // ---- Anchor bearing source ----

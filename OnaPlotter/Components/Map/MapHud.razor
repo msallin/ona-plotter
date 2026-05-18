@@ -15,13 +15,7 @@
    DMS-formatted position below the decimal one. The panel stays docked
    in its corner; only its height grows, which avoids shoving the map
    controls around. Gated by ShowDefaultHud so a helm running an
-   external instrument cluster can declutter the chart.
-
-   VMG, Drift and XTE used to live here too. VMG is now part of the
-   Route detail card (single source of truth for active-course numbers);
-   Drift duplicated the HDG card's Drift row; XTE moved to the HDG
-   detail card where it sits next to the heading reference it's
-   relative to. *@
+   external instrument cluster can declutter the chart. *@
 @if (ShowDefaultHud)
 {
 <div class="hud-stack hud-stack-tl">
@@ -56,10 +50,6 @@
         @if (IsExpanded(CornerTopLeft))
         {
             <div class="hud-extra">
-                @* STW first: helms cruising under power want to see
-                   current effect (SOG vs STW) right under the SOG hero
-                   number. Dormant on installs without a paddlewheel /
-                   sonic-log transducer. *@
                 @if (Data.SpeedThroughWater is not null)
                 {
                     <div class="hud-extra-row" title="Speed through water (paddlewheel / sonic log). SOG-STW =~ current along track.">
@@ -549,8 +539,10 @@
            is in. With 15° magnetic variation in some cruising grounds
            that's the difference between the rocks and the channel.
            Derived from PreferMagneticHeading so the label always
-           matches the value actually being displayed. *@
-        <div class="hud-value">@Format.Degrees(Data.Heading)<span class="hud-unit">&deg;@(Data.Heading is null ? "" : (Data.PreferMagneticHeading ? "M" : "T"))</span></div>
+           matches the value actually being displayed. Degree symbol
+           sits inline (white) with the value; only the T/M suffix
+           dims to the muted unit colour. *@
+        <div class="hud-value">@Format.Degrees(Data.Heading)&deg;@if (Data.Heading is not null) {<span class="hud-unit">@(Data.PreferMagneticHeading ? "M" : "T")</span>}</div>
         @if (IsExpanded(CornerBottomRight))
         {
             <div class="hud-extra">
@@ -559,10 +551,7 @@
                    the chart" (Drift, XTE) -> "what is the autopilot
                    trying to make it do" (state, targets, error, rudder).
                    Helm scan path: confirm direction, confirm position
-                   relative to leg, confirm pilot is healthy.
-
-                   COG isn't repeated here - it already sits on the
-                   top-left card via the always-on COG row. *@
+                   relative to leg, confirm pilot is healthy. *@
 
                 @* Alternate heading reference: when the primary HDG
                    reads in the helm's preferred frame (T or M), the
@@ -579,8 +568,8 @@
                 @if (altHeadingRad is not null)
                 {
                     <div class="hud-extra-row" title="@(Data.PreferMagneticHeading ? "True heading - companion to the primary magnetic reading." : "Magnetic heading - companion to the primary true reading.")">
-                        <span class="hud-extra-k">HDG @altSuffix</span>
-                        <span class="hud-extra-v">@Format.Degrees(altHeadingRad)<span class="hud-unit">&deg;@altSuffix</span></span>
+                        <span class="hud-extra-k">HDG</span>
+                        <span class="hud-extra-v">@Format.Degrees(altHeadingRad)&deg;<span class="hud-unit">@altSuffix</span></span>
                     </div>
                 }
 
@@ -589,18 +578,6 @@
                     <div class="hud-extra-row" title="Signed delta between COG and HDG; rough leeway indicator.">
                         <span class="hud-extra-k">Drift</span>
                         <span class="hud-extra-v">@(lw > 0 ? "+" : "")@lw&deg;</span>
-                    </div>
-                }
-
-                @* XTE moved here from the SOG card. The cross-track
-                   number IS the boat's heading deviation from the leg
-                   line, so it reads naturally below the heading rows.
-                   Dormant when no course is active. *@
-                @if (Data.CrossTrackError is not null)
-                {
-                    <div class="hud-extra-row" title="Cross-track error: perpendicular distance off the active leg line. Green &lt;50 m, amber to 200 m, red above.">
-                        <span class="hud-extra-k">XTE</span>
-                        <span class="hud-extra-v @Format.XteClass(Data.CrossTrackError)">@Format.Xte(Data.CrossTrackError)</span>
                     </div>
                 }
 
@@ -625,27 +602,18 @@
                     }
                     else
                     {
-                        @* Render both AP target frames when published.
-                           Some AP heads emit the target on
-                           steering.autopilot.target.headingTrue, others
-                           on .headingMagnetic - we surface whichever the
-                           bus carries so a helm reading the plotter
-                           sees the same number the AP head shows. Both
-                           rows stay tight ("AP tgt T" / "AP tgt M") so
-                           the helm can tell them apart without
-                           guessing. *@
                         @if (Data.AutopilotTargetHeading is not null)
                         {
                             <div class="hud-extra-row" title="Autopilot target heading (true).">
-                                <span class="hud-extra-k">AP tgt T</span>
-                                <span class="hud-extra-v">@Format.Degrees(Data.AutopilotTargetHeading)<span class="hud-unit">&deg;T</span></span>
+                                <span class="hud-extra-k">AP tgt</span>
+                                <span class="hud-extra-v">@Format.Degrees(Data.AutopilotTargetHeading)&deg;<span class="hud-unit">T</span></span>
                             </div>
                         }
                         @if (Data.AutopilotTargetHeadingMagnetic is not null)
                         {
                             <div class="hud-extra-row" title="Autopilot target heading (magnetic).">
-                                <span class="hud-extra-k">AP tgt M</span>
-                                <span class="hud-extra-v">@Format.Degrees(Data.AutopilotTargetHeadingMagnetic)<span class="hud-unit">&deg;M</span></span>
+                                <span class="hud-extra-k">AP tgt</span>
+                                <span class="hud-extra-v">@Format.Degrees(Data.AutopilotTargetHeadingMagnetic)&deg;<span class="hud-unit">M</span></span>
                             </div>
                         }
                     }

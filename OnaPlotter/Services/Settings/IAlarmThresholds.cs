@@ -27,6 +27,17 @@ public interface IAlarmThresholds
     /// TCPA falls within this window trigger the CPA alarm.</summary>
     double GuardZoneLookaheadMinutes { get; }
 
+    /// <summary>How long a CPA threat must persist before it raises
+    /// the audible alarm (seconds). A target only triggers the banner
+    /// after its projected approach has stayed inside the guard zone
+    /// for this many seconds continuously. Suppresses the brief
+    /// "passed through the warning band on a single sample" flicker
+    /// that used to fire the klaxon, then auto-clear, then fire
+    /// again on the next geometry tick - a behaviour the helm reads
+    /// as the alarm being broken. Set to 0 to disable debouncing
+    /// (every detected threat raises immediately).</summary>
+    double CpaDebounceSeconds { get; }
+
     /// <summary>Wind-shift alarm threshold (degrees). Triggers when
     /// the running mean wind direction has shifted by more than this
     /// amount over <see cref="WindShiftLookbackMinutes"/>.</summary>
@@ -102,6 +113,7 @@ public interface IAlarmThresholds
     Task SetDepthAlarmThresholdAsync(double value);
     Task SetCpaAlarmThresholdAsync(double value);
     Task SetGuardZoneLookaheadMinutesAsync(double value);
+    Task SetCpaDebounceSecondsAsync(double value);
     Task SetWindShiftAlarmThresholdAsync(double value);
     Task SetWindShiftLookbackMinutesAsync(double value);
     Task SetWindShiftMinTrueWindSpeedAsync(double value);

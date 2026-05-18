@@ -94,6 +94,13 @@
                     <div class="hud-label">BRG</div>
                     <div class="hud-value route-value">@Format.Degrees(Snapshot.Bearing)<span class="hud-unit">&deg;</span></div>
                 </div>
+                @if (Snapshot.Xte is not null)
+                {
+                    <div class="route-info-item">
+                        <div class="hud-label">XTE</div>
+                        <div class="hud-value route-value @Format.XteClass(Snapshot.Xte)">@Format.Xte(Snapshot.Xte)</div>
+                    </div>
+                }
                 @if (Snapshot.Vmg is not null)
                 {
                     <div class="route-info-item">
@@ -116,19 +123,6 @@
                     <div class="route-info-item route-info-item-leg-time">
                         <div class="hud-label">ETA</div>
                         <div class="hud-value route-value">@Format.Eta(Snapshot.TimeToGo)</div>
-                    </div>
-                }
-                @* XTE numeric field: only in Big HUD mode. The XTE
-                   information competes with DTW / BRG / VMG for space
-                   in the small landscape layout, and the helm reading
-                   the smaller HUD typically wants the macro fields
-                   (distance / bearing / TTG). Big HUD mode adds the
-                   field back for cockpit-glance situational awareness. *@
-                @if (Snapshot.Xte is not null && BigHud)
-                {
-                    <div class="route-info-item">
-                        <div class="hud-label">XTE</div>
-                        <div class="hud-value route-value @Format.XteClass(Snapshot.Xte)">@Format.Xte(Snapshot.Xte)</div>
                     </div>
                 }
             </div>

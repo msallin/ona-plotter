@@ -194,7 +194,7 @@ public sealed class CpaAlarmRule : IAlarmRule
             // classifier so Rule 18 priority resolves the role
             // ("power gives way to sail") on the alarm banner the
             // same way the AIS popup does. Helm sets own type via
-            // IAppSettings.OwnVesselType ('power' default / 'sail');
+            // IAppSettings.OwnVesselType ('sail' default / 'power');
             // target type derives from design.aisShipType.
             var ownType = ctx.Settings.OwnVesselType == "sail"
                 ? Colregs.VesselType.Sail

@@ -81,6 +81,11 @@
                 <span class="legend-desc">Your planned track.</span>
             </li>
             <li>
+                <span class="legend-swatch legend-active-route"></span>
+                <span class="legend-name">Active route</span>
+                <span class="legend-desc">Currently navigating: cyan solid line for future legs, cyan dotted for legs already crossed. Numbered dots mark each waypoint; the next one pulses.</span>
+            </li>
+            <li>
                 <span class="legend-swatch legend-waypoint"></span>
                 <span class="legend-name">Waypoint</span>
                 <span class="legend-desc">Tap in the Layers panel to navigate.</span>
@@ -115,14 +120,9 @@
                 <span class="legend-desc">Port (red) + stbd (green) dashed lines from own-boat showing the close-hauled tacks that fetch the active windward waypoint.</span>
             </li>
             <li>
-                <span class="legend-swatch legend-local-track"></span>
-                <span class="legend-name">Local trail</span>
-                <span class="legend-desc">Recent ~83 min of own-boat track, coloured by SOG (blue slow &rarr; green &rarr; yellow fast). In-memory only.</span>
-            </li>
-            <li>
-                <span class="legend-swatch legend-server-track"></span>
-                <span class="legend-name">Server history</span>
-                <span class="legend-desc">Same SOG palette as the local trail, fetched from the SignalK history plugin for windows up to "all time". Toggle in Layers &rarr; Server history.</span>
+                <span class="legend-swatch legend-own-trail"></span>
+                <span class="legend-name">Own ship trail</span>
+                <span class="legend-desc">Own-boat track coloured by SOG (blue slow &rarr; green &rarr; yellow fast).</span>
             </li>
             @* The "previous WP -> next WP" white dashed leg line was
                removed (helm reported it as noise - no actionable info
