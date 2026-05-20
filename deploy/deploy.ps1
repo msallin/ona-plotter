@@ -1,13 +1,13 @@
 #!/usr/bin/env pwsh
-# Builds OnaPlotter as a SignalK webapp and deploys it to pi@openplotter.local.
+# Builds OnaPlotter as a SignalK webapp and deploys it to pi@home.ona.
 #
 # Usage:
-#   pwsh ./deploy/deploy.ps1                # default target: pi@openplotter.local
+#   pwsh ./deploy/deploy.ps1                # default target: pi@home.ona
 #   pwsh ./deploy/deploy.ps1 -Host user@host # custom target
 #   pwsh ./deploy/deploy.ps1 -SkipBuild     # skip dotnet publish (reuse prior build)
 
 param(
-    [string]$SshTarget = "pi@openplotter.local",
+    [string]$SshTarget = "pi@home.ona",
     [string]$WebappName = "signalk-onaplotter",
     [switch]$SkipBuild
 )
@@ -146,6 +146,6 @@ Write-Host "  1. Restart SignalK server:"
 Write-Host "     ssh $SshTarget 'sudo systemctl restart signalk'"
 Write-Host "     (or via the OpenPlotter UI)"
 Write-Host ""
-Write-Host "  2. Open: http://openplotter.local:3000/$WebappName/"
+Write-Host "  2. Open: http://home.ona:3000/$WebappName/"
 Write-Host "     (or from the SignalK Webapps admin page)"
 Write-Host ""
