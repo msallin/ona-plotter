@@ -2,6 +2,7 @@
 
 @page "/wind"
 @using OnaPlotter.Services
+@using OnaPlotter.Services.Api
 @using OnaPlotter.Models
 @implements IDisposable
 @inject SignalkClient SignalkClient
@@ -9,6 +10,7 @@
 @inject IPolarService Polar
 @inject IAppSettings Settings
 @inject INavigationAverages Avg
+@inject ITrackApi TrackApi
 
 <PageTitle>Wind</PageTitle>
 
@@ -655,6 +657,12 @@
         }
     }
 
+    /// <summary>Cancels the in-flight history seed when the page
+    /// unmounts. Without this, a slow / wedged server would keep the
+    /// fetch alive past navigation, then write into a disposed
+    /// component's render context on completion.</summary>
+    private CancellationTokenSource? _seedCts;
+
     protected override async Task OnInitializedAsync()
     {
         // Settings.InitializeAsync is idempotent; calling it here means
@@ -668,6 +676,34 @@
         RefreshData(fullRebuild: true);
         TrackBuffer.OnTrackUpdated += HandleTrackUpdated;
         await Polar.InitializeAsync();
+
+        // Pre-warm NavigationAverages from server history so the helm
+        // sees the recent shift trend + AWS chips immediately instead
+        // of after a 5-min stare. Fire-and-forget: a transport failure
+        // here must not block the page rendering; live deltas still
+        // flow. Seed for 3 h to match the longest history-window
+        // selector; resolution 5 s preserves enough variance for the
+        // gust/lull chips (30 s grain smooths sigma artificially low).
+        _seedCts = new CancellationTokenSource();
+        _ = SeedWindAsync(_seedCts.Token);
+    }
+
+    private async Task SeedWindAsync(CancellationToken ct)
+    {
+        try
+        {
+            var ok = await Avg.SeedWindAsync(
+                TrackApi,
+                window: TimeSpan.FromHours(3),
+                resolution: "5s",
+                ct: ct);
+            if (ok && !ct.IsCancellationRequested)
+            {
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (ObjectDisposedException) { }
     }
 
     /// <summary>
@@ -835,6 +871,8 @@
     public void Dispose()
     {
         TrackBuffer.OnTrackUpdated -= HandleTrackUpdated;
+        _seedCts?.Cancel();
+        _seedCts?.Dispose();
     }
 
     private static string F(double v) => v.ToString("F1");

@@ -65,6 +65,34 @@ public sealed class RollingDirectionSeries
         EvictOlderThan(now - MaxRetention);
     }
 
+    /// <summary>
+    /// Pre-load past samples in monotonic-ascending timestamp order
+    /// (history seed). All seeded samples carry weight 1.0; the
+    /// stationary-COG suppression used by live ingest doesn't apply
+    /// to history because the server already aggregated.
+    ///
+    /// <para>Same drop rules as <see cref="RollingScalarSeries.Seed"/>:
+    /// non-finite, future, out-of-order, and past-retention samples
+    /// are silently skipped. Idempotent under repeat calls.</para>
+    /// </summary>
+    public void Seed(IEnumerable<(DateTime Ts, double AngleRad)> samples)
+    {
+        ArgumentNullException.ThrowIfNull(samples);
+        var now = _time.GetUtcNow().UtcDateTime;
+        var cutoff = now - MaxRetention;
+        DateTime newest = _samples.Count > 0 ? _samples[^1].Ts : DateTime.MinValue;
+        foreach (var (ts, angle) in samples)
+        {
+            if (!double.IsFinite(angle)) continue;
+            if (ts > now) continue;
+            if (ts < cutoff) continue;
+            if (ts <= newest) continue;
+            _samples.Add(new Sample(ts, angle, 1.0));
+            newest = ts;
+        }
+        EvictOlderThan(cutoff);
+    }
+
     public int Count
     {
         get

@@ -672,6 +672,84 @@ public class TrackApiTests
     }
 
     [Test]
+    public async Task RichFetch_ParsesApparentWind_WhenColumnsPresent()
+    {
+        // The /wind page seeds NavigationAverages from server history;
+        // apparent-wind columns must populate TrackPoint.WindAngleApparent
+        // and WindSpeedApparent rather than the old hard-coded nulls.
+        string body = """
+        {
+            "values": [
+                {"path":"navigation.position","method":"first"},
+                {"path":"environment.wind.angleApparent","method":"average"},
+                {"path":"environment.wind.speedApparent","method":"average"}
+            ],
+            "data": [["2026-04-23T14:00:00Z", [-76.82, 24.60], 0.45, 7.3]]
+        }
+        """;
+        var pts = await HistoryApi(body)
+            .GetServerTrackPointsAsync(from: null, to: null, timespan: "1h");
+
+        await Assert.That(pts).IsNotNull();
+        await Assert.That(pts!.Length).IsEqualTo(1);
+        await Assert.That(pts[0].WindAngleApparent).IsEqualTo(0.45);
+        await Assert.That(pts[0].WindSpeedApparent).IsEqualTo(7.3);
+    }
+
+    [Test]
+    public async Task RichFetch_ParsesWindDirectionTrue_WhenColumnPresent()
+    {
+        // Compass-from TWD seeds the wind-page's shift-rate detector.
+        // The path is environment.wind.directionTrue, distinct from
+        // angleTrueWater (bow-relative) which already maps to
+        // WindAngleTrue.
+        string body = """
+        {
+            "values": [
+                {"path":"navigation.position","method":"first"},
+                {"path":"environment.wind.directionTrue","method":"average"}
+            ],
+            "data": [["2026-04-23T14:00:00Z", [-76.82, 24.60], 4.71]]
+        }
+        """;
+        var pts = await HistoryApi(body)
+            .GetServerTrackPointsAsync(from: null, to: null, timespan: "1h");
+
+        await Assert.That(pts).IsNotNull();
+        await Assert.That(pts!.Length).IsEqualTo(1);
+        await Assert.That(pts[0].WindDirectionTrue).IsEqualTo(4.71);
+        // angleTrue (bow-relative) is a separate column; absent here.
+        await Assert.That(pts[0].WindAngleTrue).IsNull();
+    }
+
+    [Test]
+    public async Task WindSeed_PathSet_RequestsApparentAnd_TrueDirectionAndSpeed()
+    {
+        // The WindRose page's seed call asks for the four wind paths
+        // it actually consumes. A regression that drops one would seed
+        // the wrong subset (e.g. AWS chips light up but Direction view
+        // stays empty) - hence pinning all four.
+        string? capturedQuery = null;
+        string body = """{"values":[{"path":"navigation.position","method":"first"}],"data":[["2026-04-23T14:00:00Z",[-76,24]]]}""";
+        var api = HistoryApi(body, req => { capturedQuery = req.RequestUri?.Query; });
+
+        await api.GetServerTrackPointsAsync(
+            from: null, to: null, timespan: "3h",
+            pathSet: TrackFetchPathSet.WindSeed);
+
+        await Assert.That(capturedQuery).IsNotNull();
+        await Assert.That(capturedQuery!).Contains("environment.wind.angleApparent");
+        await Assert.That(capturedQuery).Contains("environment.wind.speedApparent");
+        await Assert.That(capturedQuery).Contains("environment.wind.directionTrue");
+        await Assert.That(capturedQuery).Contains("environment.wind.speedTrue");
+        // Position is along for the ride because the parser requires it,
+        // but the "rich" channels (heading, COG, depth) stay off the wire.
+        await Assert.That(capturedQuery!).Contains("navigation.position");
+        await Assert.That(capturedQuery!.Contains("environment.depth.belowTransducer")).IsFalse();
+        await Assert.That(capturedQuery!.Contains("navigation.headingTrue")).IsFalse();
+    }
+
+    [Test]
     public async Task History_BadRequest_Returns_Null()
     {
         // signalk-server returns 400 (not 404) for /history/values when

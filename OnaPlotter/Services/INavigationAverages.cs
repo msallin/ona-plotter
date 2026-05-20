@@ -1,3 +1,4 @@
+using OnaPlotter.Services.Api;
 using OnaPlotter.Utilities;
 
 namespace OnaPlotter.Services;
@@ -78,4 +79,35 @@ public interface INavigationAverages
     /// <summary>30-second circular mean true wind angle (rad,
     /// bow-relative).</summary>
     double? TwaMean30Sec { get; }
+
+    /// <summary>
+    /// Pre-warm the wind rolling buffers (<see cref="Tws"/>,
+    /// <see cref="Aws"/>, <see cref="Twd"/>) from server history. Run
+    /// once on /wind page mount so the helm sees the recent shift
+    /// trend + gust/lull chips immediately instead of waiting for live
+    /// deltas to fill the windows.
+    ///
+    /// <para>Idempotent: each rolling buffer's Seed drops samples
+    /// older or equal to its newest existing timestamp, so repeated
+    /// calls (page-navigated-away-and-back, reconnect) merge cleanly
+    /// without double-counting.</para>
+    ///
+    /// <para>Silent on transport failure (returns false) because a
+    /// missing history seed should NEVER block the page rendering -
+    /// live data still flows.</para>
+    /// </summary>
+    /// <param name="trackApi">History API client.</param>
+    /// <param name="window">How far back to fetch. Default 3 h matches
+    /// the longest WindRose history-window selector.</param>
+    /// <param name="resolution">Server sampling cadence. 5 s gives
+    /// enough resolution for the gust / variance chips; coarser
+    /// resolutions smooth the variance estimate low.</param>
+    /// <param name="ct">Cancellation token (page unmount).</param>
+    /// <returns>True when at least one sample landed; false on a
+    /// transport failure or empty response.</returns>
+    Task<bool> SeedWindAsync(
+        ITrackApi trackApi,
+        TimeSpan? window = null,
+        string resolution = "5s",
+        CancellationToken ct = default);
 }

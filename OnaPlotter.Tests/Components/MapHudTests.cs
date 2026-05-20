@@ -49,6 +49,15 @@ public class MapHudTests
         public double? CogMagneticMean30Sec => null;
         public double? AwaMean30Sec => null;
         public double? TwaMean30Sec => null;
+
+        // HUD tests don't exercise the seed surface; satisfy the
+        // interface with a no-op that returns false (no data seeded).
+        public Task<bool> SeedWindAsync(
+            OnaPlotter.Services.Api.ITrackApi trackApi,
+            TimeSpan? window = null,
+            string resolution = "5s",
+            CancellationToken ct = default)
+            => Task.FromResult(false);
     }
 
     private static IRenderedComponent<MapHud> Render(Bunit.TestContext ctx, NavigationData data)

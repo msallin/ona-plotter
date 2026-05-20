@@ -195,4 +195,143 @@ public class RollingScalarSeriesTests
         var snap = s.SnapshotIn(TimeSpan.FromMinutes(2));
         await Assert.That(snap.Count).IsEqualTo(0);
     }
+
+    // - Seed -----------------------------------------------------
+
+    [Test]
+    public async Task Seed_PopulatesBuffer_FromPastTimestamps()
+    {
+        // History seed lands samples at their server timestamps; the
+        // mean over the seeded window reads them back. Pinned because
+        // the wind-page seed depends on past-stamp insertion working.
+        var clock = NewClock();
+        var now = clock.GetUtcNow().UtcDateTime;
+        var s = new RollingScalarSeries(TimeSpan.FromMinutes(60), clock);
+        s.Seed(new[]
+        {
+            (now - TimeSpan.FromMinutes(30), 6.0),
+            (now - TimeSpan.FromMinutes(20), 8.0),
+            (now - TimeSpan.FromMinutes(10), 10.0),
+        });
+
+        await Assert.That(s.Count).IsEqualTo(3);
+        // Warmup ratio 0 because the seed itself answers "we have data
+        // older than the window"; coverage is wide.
+        await Assert.That(s.Mean(TimeSpan.FromMinutes(60), warmupRatio: 0)).IsEqualTo(8.0);
+    }
+
+    [Test]
+    public async Task Seed_DropsFutureSamples()
+    {
+        // A clock-skewed history server should never push the buffer
+        // past "now" - the newest-to-oldest scan would early-break in
+        // the wrong place. Future samples drop silently.
+        var clock = NewClock();
+        var now = clock.GetUtcNow().UtcDateTime;
+        var s = new RollingScalarSeries(TimeSpan.FromMinutes(60), clock);
+        s.Seed(new[]
+        {
+            (now - TimeSpan.FromMinutes(5), 5.0),
+            (now + TimeSpan.FromMinutes(1), 999.0),
+        });
+
+        await Assert.That(s.Count).IsEqualTo(1);
+        await Assert.That(s.Mean(TimeSpan.FromMinutes(60), warmupRatio: 0)).IsEqualTo(5.0);
+    }
+
+    [Test]
+    public async Task Seed_DropsOutOfOrderAndDuplicateTimestamps()
+    {
+        // Mean / Stats walk newest -> oldest and break on the first
+        // sample older than the cutoff. If the buffer wasn't monotonic
+        // an out-of-order sample beyond the break point would be
+        // silently excluded from the mean - the worst kind of bug.
+        var clock = NewClock();
+        var now = clock.GetUtcNow().UtcDateTime;
+        var s = new RollingScalarSeries(TimeSpan.FromMinutes(60), clock);
+        s.Seed(new[]
+        {
+            (now - TimeSpan.FromMinutes(10), 10.0),
+            (now - TimeSpan.FromMinutes(20), 20.0),  // earlier than the previous -> dropped
+            (now - TimeSpan.FromMinutes(10), 99.0),  // duplicate ts -> dropped
+            (now - TimeSpan.FromMinutes(5),  30.0),
+        });
+
+        await Assert.That(s.Count).IsEqualTo(2);
+        await Assert.That(s.Mean(TimeSpan.FromMinutes(60), warmupRatio: 0)).IsEqualTo(20.0);
+    }
+
+    [Test]
+    public async Task Seed_DropsSamplesPastRetention()
+    {
+        var clock = NewClock();
+        var now = clock.GetUtcNow().UtcDateTime;
+        var s = new RollingScalarSeries(TimeSpan.FromMinutes(10), clock);
+        s.Seed(new[]
+        {
+            (now - TimeSpan.FromMinutes(15), 99.0),   // older than retention -> dropped
+            (now - TimeSpan.FromMinutes(5),   5.0),
+        });
+
+        await Assert.That(s.Count).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task Seed_DropsNonFinite()
+    {
+        var clock = NewClock();
+        var now = clock.GetUtcNow().UtcDateTime;
+        var s = new RollingScalarSeries(TimeSpan.FromMinutes(10), clock);
+        s.Seed(new[]
+        {
+            (now - TimeSpan.FromMinutes(3), 5.0),
+            (now - TimeSpan.FromMinutes(2), double.NaN),
+            (now - TimeSpan.FromMinutes(1), double.PositiveInfinity),
+        });
+
+        await Assert.That(s.Count).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task Seed_ThenAdd_LiveSamplePreservesOrdering()
+    {
+        // The page seeds at mount, then live deltas append via Add.
+        // Mean over a window straddling both regions must include all
+        // of them - this is the seam where seed and live data meet.
+        var clock = NewClock();
+        var now = clock.GetUtcNow().UtcDateTime;
+        var s = new RollingScalarSeries(TimeSpan.FromMinutes(60), clock);
+        s.Seed(new[]
+        {
+            (now - TimeSpan.FromMinutes(10), 4.0),
+            (now - TimeSpan.FromSeconds(30), 6.0),
+        });
+        // Live sample arrives a moment later.
+        clock.Advance(TimeSpan.FromSeconds(1));
+        s.Add(8.0);
+
+        await Assert.That(s.Count).IsEqualTo(3);
+        await Assert.That(s.Mean(TimeSpan.FromMinutes(60), warmupRatio: 0)).IsEqualTo(6.0);
+    }
+
+    [Test]
+    public async Task Seed_TwiceIsIdempotent()
+    {
+        // A second seed call with the same data must not double-count.
+        // Each sample's timestamp <= existing newest fails the order
+        // check, so re-seeding is a no-op.
+        var clock = NewClock();
+        var now = clock.GetUtcNow().UtcDateTime;
+        var s = new RollingScalarSeries(TimeSpan.FromMinutes(60), clock);
+        var batch = new[]
+        {
+            (now - TimeSpan.FromMinutes(10), 4.0),
+            (now - TimeSpan.FromMinutes(5),  6.0),
+        };
+        s.Seed(batch);
+        s.Seed(batch);
+
+        await Assert.That(s.Count).IsEqualTo(2);
+        await Assert.That(s.Mean(TimeSpan.FromMinutes(60), warmupRatio: 0)).IsEqualTo(5.0);
+    }
 }

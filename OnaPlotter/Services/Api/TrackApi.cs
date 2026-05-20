@@ -47,9 +47,24 @@ public sealed class TrackApi : ITrackApi
         OnaPlotter.Utilities.SkPaths.Navigation.SpeedOverGround,
     ];
 
+    /// <summary>Wind-seed path set: drives the WindRose page's history
+    /// chart + AWS chips by pre-warming the NavigationAverages rolling
+    /// buffers from server history. Position is included because the
+    /// parser still requires it; the four wind columns are what the
+    /// caller actually consumes.</summary>
+    private static readonly string[] WindSeedPaths =
+    [
+        OnaPlotter.Utilities.SkPaths.Navigation.Position,
+        OnaPlotter.Utilities.SkPaths.Environment.Wind.AngleApparent,
+        OnaPlotter.Utilities.SkPaths.Environment.Wind.SpeedApparent,
+        OnaPlotter.Utilities.SkPaths.Environment.Wind.DirectionTrue,
+        OnaPlotter.Utilities.SkPaths.Environment.Wind.SpeedTrue,
+    ];
+
     private static string[] PathsFor(TrackFetchPathSet pathSet) => pathSet switch
     {
         TrackFetchPathSet.MapTrack => MapTrackPaths,
+        TrackFetchPathSet.WindSeed => WindSeedPaths,
         _ => RichPaths,
     };
 
@@ -227,7 +242,9 @@ public sealed class TrackApi : ITrackApi
         // can reorder; can omit paths the provider doesn't have. -1
         // means "this path was not in the response", and the parser
         // falls back to null for the corresponding TrackPoint field.
-        int posIdx = -1, sogIdx = -1, cogIdx = -1, hdgIdx = -1, twsIdx = -1, twaIdx = -1, depthIdx = -1;
+        int posIdx = -1, sogIdx = -1, cogIdx = -1, hdgIdx = -1,
+            twsIdx = -1, twaIdx = -1, depthIdx = -1,
+            awaIdx = -1, awsIdx = -1, twdIdx = -1;
         int colNum = 0;
         foreach (var v in values.EnumerateArray())
         {
@@ -244,6 +261,9 @@ public sealed class TrackApi : ITrackApi
                     case OnaPlotter.Utilities.SkPaths.Navigation.HeadingTrue: hdgIdx = colNum; break;
                     case OnaPlotter.Utilities.SkPaths.Environment.Wind.SpeedTrue: twsIdx = colNum; break;
                     case OnaPlotter.Utilities.SkPaths.Environment.Wind.AngleTrueWater: twaIdx = colNum; break;
+                    case OnaPlotter.Utilities.SkPaths.Environment.Wind.AngleApparent: awaIdx = colNum; break;
+                    case OnaPlotter.Utilities.SkPaths.Environment.Wind.SpeedApparent: awsIdx = colNum; break;
+                    case OnaPlotter.Utilities.SkPaths.Environment.Wind.DirectionTrue: twdIdx = colNum; break;
                     case OnaPlotter.Utilities.SkPaths.Environment.Depth.BelowTransducer: depthIdx = colNum; break;
                 }
             }
@@ -280,11 +300,12 @@ public sealed class TrackApi : ITrackApi
                 SpeedOverGround: TryGetNumber(entry, sogIdx),
                 CourseOverGround: TryGetNumber(entry, cogIdx),
                 Heading: TryGetNumber(entry, hdgIdx),
-                WindAngleApparent: null,        // not fetched - the AWS/AWA sensors give no useful history at 30 s grain
-                WindSpeedApparent: null,
+                WindAngleApparent: TryGetNumber(entry, awaIdx),
+                WindSpeedApparent: TryGetNumber(entry, awsIdx),
                 WindAngleTrue: TryGetNumber(entry, twaIdx),
                 WindSpeedTrue: TryGetNumber(entry, twsIdx),
-                Depth: TryGetNumber(entry, depthIdx)));
+                Depth: TryGetNumber(entry, depthIdx),
+                WindDirectionTrue: TryGetNumber(entry, twdIdx)));
         }
         return points.Count == 0 ? null : [.. points];
     }

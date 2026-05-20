@@ -211,4 +211,86 @@ public class RollingDirectionSeriesTests
         await Assert.That(Math.Abs(snap[0].Value - Pi / 2)).IsLessThan(1e-9);
         await Assert.That(Math.Abs(snap[1].Value - Pi)).IsLessThan(1e-9);
     }
+
+    // - Seed -----------------------------------------------------
+
+    [Test]
+    public async Task Seed_PopulatesBuffer_FromPastTimestamps()
+    {
+        // History seed: drop past samples in at their server timestamps.
+        // Circular mean over the seeded window must read them back.
+        var clock = NewClock();
+        var now = clock.GetUtcNow().UtcDateTime;
+        var s = new RollingDirectionSeries(TimeSpan.FromMinutes(60), clock);
+        s.Seed(new[]
+        {
+            (now - TimeSpan.FromMinutes(20), 0.0),         // north
+            (now - TimeSpan.FromMinutes(10), Pi / 2),       // east
+        });
+
+        await Assert.That(s.Count).IsEqualTo(2);
+        // Mean of {0, π/2} on the unit circle is π/4 (NE).
+        await AssertAngleNearAsync(s.Mean(TimeSpan.FromMinutes(60), warmupRatio: 0), Pi / 4);
+    }
+
+    [Test]
+    public async Task Seed_DropsFutureSamples()
+    {
+        var clock = NewClock();
+        var now = clock.GetUtcNow().UtcDateTime;
+        var s = new RollingDirectionSeries(TimeSpan.FromMinutes(60), clock);
+        s.Seed(new[]
+        {
+            (now - TimeSpan.FromMinutes(5), Pi / 2),
+            (now + TimeSpan.FromMinutes(1), 0.0),
+        });
+
+        await Assert.That(s.Count).IsEqualTo(1);
+        await AssertAngleNearAsync(s.Mean(TimeSpan.FromMinutes(60), warmupRatio: 0), Pi / 2);
+    }
+
+    [Test]
+    public async Task Seed_DropsOutOfOrderTimestamps()
+    {
+        // Same monotonicity contract as the scalar series: out-of-order
+        // samples drop silently so the early-break query stays correct.
+        var clock = NewClock();
+        var now = clock.GetUtcNow().UtcDateTime;
+        var s = new RollingDirectionSeries(TimeSpan.FromMinutes(60), clock);
+        s.Seed(new[]
+        {
+            (now - TimeSpan.FromMinutes(10), 0.0),
+            (now - TimeSpan.FromMinutes(20), Pi),  // earlier -> dropped
+            (now - TimeSpan.FromMinutes(5),  Pi / 2),
+        });
+
+        await Assert.That(s.Count).IsEqualTo(2);
+    }
+
+    [Test]
+    public async Task Seed_EnablesShiftRate_OnHistoricalData()
+    {
+        // The /wind page's shift-rate readout needs 5+ samples in the
+        // window. Without seed it stays "Awaiting samples" for the first
+        // few minutes; with seed it's live from page mount. Pin a
+        // veering pattern and check the slope sign + magnitude.
+        var clock = NewClock();
+        var now = clock.GetUtcNow().UtcDateTime;
+        var s = new RollingDirectionSeries(TimeSpan.FromMinutes(60), clock);
+        // 5 samples spanning the last 5 minutes, veering 0 -> 20 deg.
+        var seed = new (DateTime Ts, double AngleRad)[]
+        {
+            (now - TimeSpan.FromMinutes(5),   0    * Pi / 180),
+            (now - TimeSpan.FromMinutes(4),   5    * Pi / 180),
+            (now - TimeSpan.FromMinutes(3),  10    * Pi / 180),
+            (now - TimeSpan.FromMinutes(2),  15    * Pi / 180),
+            (now - TimeSpan.FromMinutes(1),  20    * Pi / 180),
+        };
+        s.Seed(seed);
+
+        var rate = s.ShiftRateDegPerMin(TimeSpan.FromMinutes(5), warmupRatio: 0);
+        await Assert.That(rate).IsNotNull();
+        // 20° over 4 minutes = +5°/min (positive = veering).
+        await Assert.That(Math.Abs(rate!.Value - 5.0)).IsLessThan(0.5);
+    }
 }

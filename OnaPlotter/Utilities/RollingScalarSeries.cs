@@ -65,6 +65,53 @@ public sealed class RollingScalarSeries
         EvictOlderThan(now - MaxRetention);
     }
 
+    /// <summary>
+    /// Pre-load past samples in monotonic-ascending timestamp order,
+    /// e.g. from a SignalK history fetch. Used to warm the buffer at
+    /// page mount so consumers see a populated trend straight away
+    /// instead of waiting minutes for live deltas to fill the window.
+    ///
+    /// <para>Constraints (enforced by silent drop):
+    /// <list type="bullet">
+    ///   <item>Non-finite values dropped (same rule as <see cref="Add"/>).</item>
+    ///   <item>Future timestamps (after now) dropped - a seed should
+    ///   never insert past the present, and the query loop relies on
+    ///   monotonicity for early-break correctness.</item>
+    ///   <item>Out-of-order or older-than-the-newest-existing samples
+    ///   dropped - newest-to-oldest scans in <see cref="Mean"/> /
+    ///   <see cref="Stats"/> break on the first sample older than the
+    ///   cutoff; out-of-order entries would silently exclude valid
+    ///   data from the average.</item>
+    ///   <item>Samples older than <see cref="MaxRetention"/> dropped -
+    ///   the eviction sweep would just discard them anyway.</item>
+    /// </list></para>
+    ///
+    /// <para>Idempotent: calling Seed twice with overlapping ranges
+    /// produces the same effective state because each new sample must
+    /// be strictly newer than the previous newest. Callers don't need
+    /// a "already seeded?" gate.</para>
+    /// </summary>
+    public void Seed(IEnumerable<(DateTime Ts, double Value)> samples)
+    {
+        ArgumentNullException.ThrowIfNull(samples);
+        var now = _time.GetUtcNow().UtcDateTime;
+        var cutoff = now - MaxRetention;
+        DateTime newest = _samples.Count > 0 ? _samples[^1].ts : DateTime.MinValue;
+        foreach (var (ts, value) in samples)
+        {
+            if (!double.IsFinite(value)) continue;
+            if (ts > now) continue;
+            if (ts < cutoff) continue;
+            if (ts <= newest) continue;
+            _samples.Add((ts, value));
+            newest = ts;
+        }
+        // Eviction normally happens inline with Add; for Seed we do one
+        // sweep at the end so a bulk fill doesn't run the eviction
+        // bookkeeping N times.
+        EvictOlderThan(cutoff);
+    }
+
     /// <summary>Number of samples retained. Useful for tests and
     /// the warmup-ratio gate at the call site.</summary>
     public int Count

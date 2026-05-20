@@ -1,4 +1,5 @@
 using OnaPlotter.Models;
+using OnaPlotter.Services.Api;
 using OnaPlotter.Utilities;
 
 namespace OnaPlotter.Services;
@@ -125,6 +126,98 @@ public sealed class NavigationAverages : INavigationAverages, IDisposable
             if (d.CourseOverGroundMagnetic is double cogMag) CogMagnetic.Add(cogMag, weight);
         }
         if (d.CourseNextPointVmg is double vmg) Vmg.Add(vmg);
+    }
+
+    /// <inheritdoc/>
+    public Task<bool> SeedWindAsync(
+        ITrackApi trackApi,
+        TimeSpan? window = null,
+        string resolution = "5s",
+        CancellationToken ct = default)
+    {
+        if (_disposed) return Task.FromResult(false);
+        return SeedWindBuffersAsync(
+            Aws, Tws, Twd,
+            trackApi,
+            window ?? TimeSpan.FromHours(3),
+            resolution,
+            ct);
+    }
+
+    /// <summary>Production + test entry point: fetch wind history and
+    /// feed the supplied buffers. Static so unit tests can drive the
+    /// pipeline with their own buffers + a stub <see cref="ITrackApi"/>
+    /// without standing up a full <see cref="SignalkClient"/>.</summary>
+    internal static async Task<bool> SeedWindBuffersAsync(
+        RollingScalarSeries aws,
+        RollingScalarSeries tws,
+        RollingDirectionSeries twd,
+        ITrackApi trackApi,
+        TimeSpan window,
+        string resolution,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(trackApi);
+
+        // History API expects relative shorthand (3h / 30m / 5s); the
+        // request side hands this off to TrackApi.ToIsoDuration which
+        // produces PT3H etc.
+        string timespan = ToShorthand(window);
+
+        TrackPoint[]? points;
+        try
+        {
+            points = await trackApi.GetServerTrackPointsAsync(
+                from: null, to: null,
+                timespan: timespan,
+                resolution: resolution,
+                pathSet: TrackFetchPathSet.WindSeed,
+                ct: ct);
+        }
+        catch (OperationCanceledException) { return false; }
+
+        if (points is null || points.Length == 0) return false;
+
+        // Each buffer gets only the samples it can use. The rolling
+        // buffers themselves drop out-of-order / future / past-retention
+        // samples so the projection here is unconditional.
+        aws.Seed(SelectScalar(points, p => p.WindSpeedApparent));
+        tws.Seed(SelectScalar(points, p => p.WindSpeedTrue));
+        twd.Seed(SelectAngle(points, p => p.WindDirectionTrue));
+
+        return true;
+    }
+
+    /// <summary>Convert a TimeSpan to the History API's relative
+    /// shorthand (Ns / Nm / Nh / Nd). Picks the coarsest exact unit
+    /// so a 3-hour window goes out as "3h", not "180m" or "10800s".</summary>
+    private static string ToShorthand(TimeSpan span)
+    {
+        if (span.TotalDays >= 1 && span.TotalDays == Math.Floor(span.TotalDays))
+            return $"{(int)span.TotalDays}d";
+        if (span.TotalHours >= 1 && span.TotalHours == Math.Floor(span.TotalHours))
+            return $"{(int)span.TotalHours}h";
+        if (span.TotalMinutes >= 1 && span.TotalMinutes == Math.Floor(span.TotalMinutes))
+            return $"{(int)span.TotalMinutes}m";
+        return $"{Math.Max(1, (int)span.TotalSeconds)}s";
+    }
+
+    private static IEnumerable<(DateTime Ts, double Value)> SelectScalar(
+        TrackPoint[] points, Func<TrackPoint, double?> pick)
+    {
+        foreach (var p in points)
+        {
+            if (pick(p) is double v) yield return (p.Timestamp, v);
+        }
+    }
+
+    private static IEnumerable<(DateTime Ts, double AngleRad)> SelectAngle(
+        TrackPoint[] points, Func<TrackPoint, double?> pick)
+    {
+        foreach (var p in points)
+        {
+            if (pick(p) is double v) yield return (p.Timestamp, v);
+        }
     }
 
     public void Dispose()

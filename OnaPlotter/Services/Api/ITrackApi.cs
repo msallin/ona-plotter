@@ -90,6 +90,14 @@ public enum TrackFetchPathSet
     /// Default so an unsuspecting new caller gets the full shape
     /// rather than a half-populated <see cref="TrackPoint"/>.</summary>
     Rich,
+    /// <summary>Position + apparent wind angle + apparent wind speed +
+    /// true wind direction + true wind speed. Used by the WindRose
+    /// page to pre-warm <see cref="OnaPlotter.Services.INavigationAverages"/>
+    /// at page mount so the helm sees the recent shift trend + the
+    /// gust/lull/mean chips immediately instead of after a 5-min
+    /// stare. Position is along for the ride because the parser
+    /// rejects rows without a fix.</summary>
+    WindSeed,
 }
 
 // TrackBbox is now in OnaPlotter.Models (see TrackBbox.cs).

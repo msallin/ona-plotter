@@ -105,6 +105,18 @@ public class NavigationAveragesTests
         public double? AwaMean30Sec => Awa.Mean(TimeSpan.FromSeconds(30));
         public double? TwaMean30Sec => Twa.Mean(TimeSpan.FromSeconds(30));
 
+        public Task<bool> SeedWindAsync(
+            OnaPlotter.Services.Api.ITrackApi trackApi,
+            TimeSpan? window = null,
+            string resolution = "5s",
+            CancellationToken ct = default)
+            => NavigationAverages.SeedWindBuffersAsync(
+                Aws, Tws, Twd,
+                trackApi,
+                window ?? TimeSpan.FromHours(3),
+                resolution,
+                ct);
+
         // Mirror of NavigationAverages.Sample to keep the unit-test
         // sampler in lockstep with production logic. Any change to
         // production must also land here - a parity test would
@@ -238,5 +250,165 @@ public class NavigationAveragesTests
         await Assert.That(h.Avg.TwsMean10Min).IsEqualTo(7.0);
         // 1-min mean = only the 9 sample (t=8min, the 5 sample is past the window)
         await Assert.That(h.Avg.TwsMean1Min).IsEqualTo(9.0);
+    }
+
+    // - SeedWindAsync ------------------------------------------------
+
+    /// <summary>Stub ITrackApi for seed-pipeline tests: returns a
+    /// canned TrackPoint[] (or null) and remembers which call shape
+    /// was used so tests can assert the request side.</summary>
+    private sealed class StubTrackApi : OnaPlotter.Services.Api.ITrackApi
+    {
+        private readonly OnaPlotter.Models.TrackPoint[]? _points;
+        public OnaPlotter.Services.Api.TrackFetchPathSet? LastPathSet { get; private set; }
+        public string? LastTimespan { get; private set; }
+        public string? LastResolution { get; private set; }
+
+        public StubTrackApi(OnaPlotter.Models.TrackPoint[]? points) { _points = points; }
+
+        public Task<double[][]?> GetServerTrackAsync(
+            string timespan = "1d", string resolution = "1m", CancellationToken ct = default)
+            => Task.FromResult<double[][]?>(null);
+
+        public Task<OnaPlotter.Models.TrackPoint[]?> GetServerTrackPointsAsync(
+            DateTimeOffset? from, DateTimeOffset? to, string? timespan,
+            string resolution = "30s",
+            OnaPlotter.Models.TrackBbox? bbox = null,
+            OnaPlotter.Services.Api.TrackFetchPathSet pathSet = OnaPlotter.Services.Api.TrackFetchPathSet.Rich,
+            CancellationToken ct = default)
+        {
+            LastPathSet = pathSet;
+            LastTimespan = timespan;
+            LastResolution = resolution;
+            return Task.FromResult(_points);
+        }
+    }
+
+    [Test]
+    public async Task SeedWindAsync_FeedsAllThreeWindBuffers()
+    {
+        // Server returns three TrackPoints carrying AWS, TWS, TWD.
+        // After seeding, the rolling buffers must read back those
+        // values via Mean over the seeded window. Querying via the
+        // raw buffers with warmupRatio: 0 because the convenience
+        // 10-min / 1-min means trim or gate on warmup, which would
+        // mask the seed wiring under test.
+        var h = new SampleHarness();
+        var clock = h.Clock;
+        var now = clock.GetUtcNow().UtcDateTime;
+        var points = new[]
+        {
+            new OnaPlotter.Models.TrackPoint(
+                now - TimeSpan.FromMinutes(20), 47.4, 8.5, null, null, null,
+                null, WindSpeedApparent: 6.0, null, WindSpeedTrue: 5.0,
+                null, WindDirectionTrue: 0.0),
+            new OnaPlotter.Models.TrackPoint(
+                now - TimeSpan.FromMinutes(10), 47.4, 8.5, null, null, null,
+                null, WindSpeedApparent: 8.0, null, WindSpeedTrue: 7.0,
+                null, WindDirectionTrue: Math.PI / 2),
+        };
+        var api = new StubTrackApi(points);
+
+        var ok = await h.Avg.SeedWindAsync(api, TimeSpan.FromHours(1));
+
+        await Assert.That(ok).IsTrue();
+        await Assert.That(h.Avg.Aws.Mean(TimeSpan.FromMinutes(30), warmupRatio: 0))
+            .IsEqualTo(7.0);
+        await Assert.That(h.Avg.Tws.Mean(TimeSpan.FromMinutes(30), warmupRatio: 0))
+            .IsEqualTo(6.0);
+        // TWD circular mean of (0, π/2) is π/4.
+        var twd = h.Avg.Twd.Mean(TimeSpan.FromHours(1), warmupRatio: 0);
+        await Assert.That(twd).IsNotNull();
+        await Assert.That(Math.Abs(twd!.Value - Math.PI / 4)).IsLessThan(0.01);
+    }
+
+    [Test]
+    public async Task SeedWindAsync_RequestsWindSeedPathSet()
+    {
+        // The seed must use the focused WindSeed path set (4 wind paths
+        // + position), not the wider Rich set. Pin so a refactor that
+        // forgets the pathSet arg doesn't widen the request payload.
+        var h = new SampleHarness();
+        var api = new StubTrackApi(System.Array.Empty<OnaPlotter.Models.TrackPoint>());
+
+        await h.Avg.SeedWindAsync(api, TimeSpan.FromMinutes(30), resolution: "10s");
+
+        await Assert.That(api.LastPathSet)
+            .IsEqualTo(OnaPlotter.Services.Api.TrackFetchPathSet.WindSeed);
+        await Assert.That(api.LastTimespan).IsEqualTo("30m");
+        await Assert.That(api.LastResolution).IsEqualTo("10s");
+    }
+
+    [Test]
+    public async Task SeedWindAsync_NullResponse_ReturnsFalse()
+    {
+        // Server has no history (provider missing / empty window):
+        // the seed quietly returns false. The page can still render
+        // live data; the seed was a best-effort warmup.
+        var h = new SampleHarness();
+        var api = new StubTrackApi(null);
+
+        var ok = await h.Avg.SeedWindAsync(api);
+
+        await Assert.That(ok).IsFalse();
+        await Assert.That(h.Avg.Aws.Count).IsEqualTo(0);
+        await Assert.That(h.Avg.Tws.Count).IsEqualTo(0);
+        await Assert.That(h.Avg.Twd.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task SeedWindAsync_PartialColumns_FeedsOnlyPopulatedBuffers()
+    {
+        // A server with only AWA/AWS in history (no derived TWD/TWS):
+        // the seed populates the AWS buffer alone. TWD + TWS stay
+        // empty until live deltas arrive. Pinned because mid-flight
+        // a future plugin install would shift this and the page must
+        // pick up new channels without code changes.
+        var h = new SampleHarness();
+        var now = h.Clock.GetUtcNow().UtcDateTime;
+        var points = new[]
+        {
+            new OnaPlotter.Models.TrackPoint(
+                now - TimeSpan.FromMinutes(5), 47.4, 8.5, null, null, null,
+                null, WindSpeedApparent: 4.0, null, WindSpeedTrue: null,
+                null, WindDirectionTrue: null),
+        };
+        var api = new StubTrackApi(points);
+
+        var ok = await h.Avg.SeedWindAsync(api);
+
+        await Assert.That(ok).IsTrue();
+        await Assert.That(h.Avg.Aws.Count).IsEqualTo(1);
+        await Assert.That(h.Avg.Tws.Count).IsEqualTo(0);
+        await Assert.That(h.Avg.Twd.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task SeedWindAsync_FollowedByLive_MaintainsMonotonicity()
+    {
+        // Seed lays down past samples; live ingest then keeps adding
+        // forward. The combined buffer's mean must include all samples.
+        // Query via the raw buffer with warmupRatio: 0 because the
+        // convenience AwsMean10Min would gate on 50% window coverage
+        // here (only ~2 min of data vs a 10-min window).
+        var h = new SampleHarness();
+        var now = h.Clock.GetUtcNow().UtcDateTime;
+        var points = new[]
+        {
+            new OnaPlotter.Models.TrackPoint(
+                now - TimeSpan.FromMinutes(2), 47.4, 8.5, null, null, null,
+                null, WindSpeedApparent: 4.0, null, WindSpeedTrue: null,
+                null, null),
+        };
+        var api = new StubTrackApi(points);
+        await h.Avg.SeedWindAsync(api);
+
+        // Live tick a moment later.
+        h.Clock.Advance(TimeSpan.FromSeconds(1));
+        h.Nav.Apply("environment.wind.speedApparent", 6.0);
+        h.Sample();
+
+        await Assert.That(h.Avg.Aws.Mean(TimeSpan.FromMinutes(10), warmupRatio: 0))
+            .IsEqualTo(5.0);
     }
 }
