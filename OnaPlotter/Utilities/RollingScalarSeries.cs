@@ -71,45 +71,73 @@ public sealed class RollingScalarSeries
     /// page mount so consumers see a populated trend straight away
     /// instead of waiting minutes for live deltas to fill the window.
     ///
+    /// <para>Seed fills the gap BEFORE the oldest existing sample.
+    /// Buffers in this codebase are singletons that ingest live deltas
+    /// from app startup, so by the time a page mounts and calls Seed
+    /// there are already live samples in the buffer that are newer
+    /// than every historical sample the server returns. Inserting at
+    /// the front preserves the global monotonic-ascending order the
+    /// newest-to-oldest scan in <see cref="Mean"/> / <see cref="Stats"/>
+    /// depends on.</para>
+    ///
     /// <para>Constraints (enforced by silent drop):
     /// <list type="bullet">
     ///   <item>Non-finite values dropped (same rule as <see cref="Add"/>).</item>
-    ///   <item>Future timestamps (after now) dropped - a seed should
-    ///   never insert past the present, and the query loop relies on
-    ///   monotonicity for early-break correctness.</item>
-    ///   <item>Out-of-order or older-than-the-newest-existing samples
-    ///   dropped - newest-to-oldest scans in <see cref="Mean"/> /
-    ///   <see cref="Stats"/> break on the first sample older than the
-    ///   cutoff; out-of-order entries would silently exclude valid
-    ///   data from the average.</item>
+    ///   <item>Future timestamps dropped - a seed must never insert
+    ///   past the present.</item>
+    ///   <item>Samples at-or-after the oldest existing buffer sample
+    ///   skipped - that region is owned by live ingest; a historical
+    ///   sample there would either duplicate live data or land
+    ///   out-of-order.</item>
+    ///   <item>Out-of-order samples within the seed source skipped -
+    ///   the source is expected to be ascending; entries that violate
+    ///   that are defensive drops, not errors.</item>
     ///   <item>Samples older than <see cref="MaxRetention"/> dropped -
-    ///   the eviction sweep would just discard them anyway.</item>
+    ///   the eviction sweep would discard them anyway.</item>
     /// </list></para>
     ///
-    /// <para>Idempotent: calling Seed twice with overlapping ranges
-    /// produces the same effective state because each new sample must
-    /// be strictly newer than the previous newest. Callers don't need
-    /// a "already seeded?" gate.</para>
+    /// <para>Idempotent on overlapping ranges: a repeat call sees the
+    /// already-seeded data as "existing oldest" and skips it. Widening
+    /// the seed window on a later call extends the buffer further back.</para>
     /// </summary>
     public void Seed(IEnumerable<(DateTime Ts, double Value)> samples)
     {
         ArgumentNullException.ThrowIfNull(samples);
         var now = _time.GetUtcNow().UtcDateTime;
         var cutoff = now - MaxRetention;
-        DateTime newest = _samples.Count > 0 ? _samples[^1].ts : DateTime.MinValue;
+        EvictOlderThan(cutoff);
+
+        // Anchor for "where the live region starts". Empty buffer ->
+        // MaxValue so every in-range historical sample qualifies.
+        DateTime oldestLive = _samples.Count > _head
+            ? _samples[_head].ts
+            : DateTime.MaxValue;
+
+        // Collect the in-range, in-order, before-live historical samples
+        // into a contiguous list so we can InsertRange once at the front.
+        var fresh = new List<(DateTime ts, double value)>();
+        DateTime prev = DateTime.MinValue;
         foreach (var (ts, value) in samples)
         {
             if (!double.IsFinite(value)) continue;
             if (ts > now) continue;
             if (ts < cutoff) continue;
-            if (ts <= newest) continue;
-            _samples.Add((ts, value));
-            newest = ts;
+            if (ts >= oldestLive) continue;
+            if (ts <= prev) continue;
+            fresh.Add((ts, value));
+            prev = ts;
         }
-        // Eviction normally happens inline with Add; for Seed we do one
-        // sweep at the end so a bulk fill doesn't run the eviction
-        // bookkeeping N times.
-        EvictOlderThan(cutoff);
+
+        if (fresh.Count == 0) return;
+
+        // Compact the dead prefix so InsertRange's index 0 lands at the
+        // actual oldest live sample, not at a stale evicted slot.
+        if (_head > 0)
+        {
+            _samples.RemoveRange(0, _head);
+            _head = 0;
+        }
+        _samples.InsertRange(0, fresh);
     }
 
     /// <summary>Number of samples retained. Useful for tests and

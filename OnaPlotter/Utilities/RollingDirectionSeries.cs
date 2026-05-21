@@ -71,26 +71,43 @@ public sealed class RollingDirectionSeries
     /// stationary-COG suppression used by live ingest doesn't apply
     /// to history because the server already aggregated.
     ///
-    /// <para>Same drop rules as <see cref="RollingScalarSeries.Seed"/>:
-    /// non-finite, future, out-of-order, and past-retention samples
-    /// are silently skipped. Idempotent under repeat calls.</para>
+    /// <para>Same merge contract as <see cref="RollingScalarSeries.Seed"/>:
+    /// inserts in the gap BEFORE the oldest existing live sample so
+    /// the buffer stays monotonic-ascending even when live ingest has
+    /// already populated the tail.</para>
     /// </summary>
     public void Seed(IEnumerable<(DateTime Ts, double AngleRad)> samples)
     {
         ArgumentNullException.ThrowIfNull(samples);
         var now = _time.GetUtcNow().UtcDateTime;
         var cutoff = now - MaxRetention;
-        DateTime newest = _samples.Count > 0 ? _samples[^1].Ts : DateTime.MinValue;
+        EvictOlderThan(cutoff);
+
+        DateTime oldestLive = _samples.Count > _head
+            ? _samples[_head].Ts
+            : DateTime.MaxValue;
+
+        var fresh = new List<Sample>();
+        DateTime prev = DateTime.MinValue;
         foreach (var (ts, angle) in samples)
         {
             if (!double.IsFinite(angle)) continue;
             if (ts > now) continue;
             if (ts < cutoff) continue;
-            if (ts <= newest) continue;
-            _samples.Add(new Sample(ts, angle, 1.0));
-            newest = ts;
+            if (ts >= oldestLive) continue;
+            if (ts <= prev) continue;
+            fresh.Add(new Sample(ts, angle, 1.0));
+            prev = ts;
         }
-        EvictOlderThan(cutoff);
+
+        if (fresh.Count == 0) return;
+
+        if (_head > 0)
+        {
+            _samples.RemoveRange(0, _head);
+            _head = 0;
+        }
+        _samples.InsertRange(0, fresh);
     }
 
     public int Count

@@ -384,6 +384,56 @@ public class NavigationAveragesTests
     }
 
     [Test]
+    public async Task SeedWindAsync_AfterLiveData_StillPopulatesHistory()
+    {
+        // The actual production sequence: NavigationAverages is a
+        // singleton that subscribes to live deltas at app startup, so
+        // the buffer ALWAYS has at least a few live samples by the
+        // time WindRose.razor mounts and fires the seed. Historical
+        // samples are timestamped in the past, so they're older than
+        // every live sample already in the buffer. Without the merge
+        // logic in Seed, the historical samples would silently drop.
+        var h = new SampleHarness();
+
+        // Live ingest first: two samples in the last few seconds.
+        h.Nav.Apply("environment.wind.speedApparent", 6.0);
+        h.Sample();
+        h.Clock.Advance(TimeSpan.FromSeconds(5));
+        h.Nav.Apply("environment.wind.speedApparent", 8.0);
+        h.Sample();
+
+        var nowAtSeed = h.Clock.GetUtcNow().UtcDateTime;
+
+        // Server's history goes back 30 minutes (i.e. well before the
+        // live samples we just ingested).
+        var points = new[]
+        {
+            new OnaPlotter.Models.TrackPoint(
+                nowAtSeed - TimeSpan.FromMinutes(30), 47.4, 8.5, null, null, null,
+                null, WindSpeedApparent: 4.0, null, null, null, null),
+            new OnaPlotter.Models.TrackPoint(
+                nowAtSeed - TimeSpan.FromMinutes(15), 47.4, 8.5, null, null, null,
+                null, WindSpeedApparent: 5.0, null, null, null, null),
+        };
+        var api = new StubTrackApi(points);
+
+        var ok = await h.Avg.SeedWindAsync(api);
+
+        await Assert.That(ok).IsTrue();
+        // All four samples (2 historical + 2 live) must be in the
+        // buffer, in monotonic ascending order.
+        var snap = h.Avg.Aws.SnapshotIn(TimeSpan.FromMinutes(35));
+        await Assert.That(snap.Count).IsEqualTo(4);
+        for (int i = 1; i < snap.Count; i++)
+        {
+            await Assert.That(snap[i].Time > snap[i - 1].Time).IsTrue();
+        }
+        // Mean across all four samples.
+        await Assert.That(h.Avg.Aws.Mean(TimeSpan.FromMinutes(35), warmupRatio: 0))
+            .IsEqualTo((4.0 + 5.0 + 6.0 + 8.0) / 4);
+    }
+
+    [Test]
     public async Task SeedWindAsync_FollowedByLive_MaintainsMonotonicity()
     {
         // Seed lays down past samples; live ingest then keeps adding
