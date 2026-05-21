@@ -129,13 +129,13 @@ public sealed class NavigationAverages : INavigationAverages, IDisposable
     }
 
     /// <inheritdoc/>
-    public Task<bool> SeedWindAsync(
+    public Task<TrackPoint[]?> SeedWindAsync(
         ITrackApi trackApi,
         TimeSpan? window = null,
         string resolution = "5s",
         CancellationToken ct = default)
     {
-        if (_disposed) return Task.FromResult(false);
+        if (_disposed) return Task.FromResult<TrackPoint[]?>(null);
         return SeedWindBuffersAsync(
             Aws, Tws, Twd,
             trackApi,
@@ -144,11 +144,14 @@ public sealed class NavigationAverages : INavigationAverages, IDisposable
             ct);
     }
 
-    /// <summary>Production + test entry point: fetch wind history and
-    /// feed the supplied buffers. Static so unit tests can drive the
-    /// pipeline with their own buffers + a stub <see cref="ITrackApi"/>
-    /// without standing up a full <see cref="SignalkClient"/>.</summary>
-    internal static async Task<bool> SeedWindBuffersAsync(
+    /// <summary>Production + test entry point: fetch wind history,
+    /// feed the supplied buffers, and return the parsed points so the
+    /// caller (WindRose) can render the polar scatter from the same
+    /// fetch without a second round-trip. Static so unit tests can
+    /// drive the pipeline with their own buffers + a stub
+    /// <see cref="ITrackApi"/> without standing up a full
+    /// <see cref="SignalkClient"/>.</summary>
+    internal static async Task<TrackPoint[]?> SeedWindBuffersAsync(
         RollingScalarSeries aws,
         RollingScalarSeries tws,
         RollingDirectionSeries twd,
@@ -174,9 +177,9 @@ public sealed class NavigationAverages : INavigationAverages, IDisposable
                 pathSet: TrackFetchPathSet.WindSeed,
                 ct: ct);
         }
-        catch (OperationCanceledException) { return false; }
+        catch (OperationCanceledException) { return null; }
 
-        if (points is null || points.Length == 0) return false;
+        if (points is null || points.Length == 0) return null;
 
         // Each buffer gets only the samples it can use. The rolling
         // buffers themselves drop out-of-order / future / past-retention
@@ -185,7 +188,7 @@ public sealed class NavigationAverages : INavigationAverages, IDisposable
         tws.Seed(SelectScalar(points, p => p.WindSpeedTrue));
         twd.Seed(SelectAngle(points, p => p.WindDirectionTrue));
 
-        return true;
+        return points;
     }
 
     /// <summary>Convert a TimeSpan to the History API's relative

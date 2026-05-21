@@ -692,15 +692,24 @@
     {
         try
         {
-            var ok = await Avg.SeedWindAsync(
+            var seeded = await Avg.SeedWindAsync(
                 TrackApi,
                 window: TimeSpan.FromHours(3),
                 resolution: "5s",
                 ct: ct);
-            if (ok && !ct.IsCancellationRequested)
-            {
-                await InvokeAsync(StateHasChanged);
-            }
+            if (seeded is null || ct.IsCancellationRequested) return;
+
+            // Also plot the seeded apparent-wind samples on the polar
+            // scatter. Going via the local windPoints list (not
+            // TrackBuffer) keeps these dots out of the Map page's live
+            // trail - they're historical and belong on the rose only.
+            // Live ingest after this point continues to append to the
+            // same list via RefreshData(fullRebuild: false), so seed +
+            // live cohabit without either wiping the other.
+            foreach (var pt in seeded)
+                AddWindPoint(windPoints, pt);
+
+            await InvokeAsync(StateHasChanged);
         }
         catch (OperationCanceledException) { }
         catch (ObjectDisposedException) { }

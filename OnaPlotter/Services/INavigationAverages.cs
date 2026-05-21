@@ -1,3 +1,4 @@
+using OnaPlotter.Models;
 using OnaPlotter.Services.Api;
 using OnaPlotter.Utilities;
 
@@ -103,9 +104,11 @@ public interface INavigationAverages
     /// enough resolution for the gust / variance chips; coarser
     /// resolutions smooth the variance estimate low.</param>
     /// <param name="ct">Cancellation token (page unmount).</param>
-    /// <returns>True when at least one sample landed; false on a
-    /// transport failure or empty response.</returns>
-    Task<bool> SeedWindAsync(
+    /// <returns>The parsed history points (also already ingested into
+    /// the rolling buffers) so the caller can use them for ancillary
+    /// rendering - WindRose plots them on the polar scatter without a
+    /// second fetch. Null on transport failure or empty response.</returns>
+    Task<TrackPoint[]?> SeedWindAsync(
         ITrackApi trackApi,
         TimeSpan? window = null,
         string resolution = "5s",

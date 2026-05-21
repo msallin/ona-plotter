@@ -105,7 +105,7 @@ public class NavigationAveragesTests
         public double? AwaMean30Sec => Awa.Mean(TimeSpan.FromSeconds(30));
         public double? TwaMean30Sec => Twa.Mean(TimeSpan.FromSeconds(30));
 
-        public Task<bool> SeedWindAsync(
+        public Task<OnaPlotter.Models.TrackPoint[]?> SeedWindAsync(
             OnaPlotter.Services.Api.ITrackApi trackApi,
             TimeSpan? window = null,
             string resolution = "5s",
@@ -309,9 +309,10 @@ public class NavigationAveragesTests
         };
         var api = new StubTrackApi(points);
 
-        var ok = await h.Avg.SeedWindAsync(api, TimeSpan.FromHours(1));
+        var seeded = await h.Avg.SeedWindAsync(api, TimeSpan.FromHours(1));
 
-        await Assert.That(ok).IsTrue();
+        await Assert.That(seeded).IsNotNull();
+        await Assert.That(seeded!.Length).IsEqualTo(2);
         await Assert.That(h.Avg.Aws.Mean(TimeSpan.FromMinutes(30), warmupRatio: 0))
             .IsEqualTo(7.0);
         await Assert.That(h.Avg.Tws.Mean(TimeSpan.FromMinutes(30), warmupRatio: 0))
@@ -340,17 +341,17 @@ public class NavigationAveragesTests
     }
 
     [Test]
-    public async Task SeedWindAsync_NullResponse_ReturnsFalse()
+    public async Task SeedWindAsync_NullResponse_ReturnsNull()
     {
         // Server has no history (provider missing / empty window):
-        // the seed quietly returns false. The page can still render
+        // the seed quietly returns null. The page can still render
         // live data; the seed was a best-effort warmup.
         var h = new SampleHarness();
         var api = new StubTrackApi(null);
 
-        var ok = await h.Avg.SeedWindAsync(api);
+        var seeded = await h.Avg.SeedWindAsync(api);
 
-        await Assert.That(ok).IsFalse();
+        await Assert.That(seeded).IsNull();
         await Assert.That(h.Avg.Aws.Count).IsEqualTo(0);
         await Assert.That(h.Avg.Tws.Count).IsEqualTo(0);
         await Assert.That(h.Avg.Twd.Count).IsEqualTo(0);
@@ -375,9 +376,10 @@ public class NavigationAveragesTests
         };
         var api = new StubTrackApi(points);
 
-        var ok = await h.Avg.SeedWindAsync(api);
+        var seeded = await h.Avg.SeedWindAsync(api);
 
-        await Assert.That(ok).IsTrue();
+        await Assert.That(seeded).IsNotNull();
+        await Assert.That(seeded!.Length).IsEqualTo(1);
         await Assert.That(h.Avg.Aws.Count).IsEqualTo(1);
         await Assert.That(h.Avg.Tws.Count).IsEqualTo(0);
         await Assert.That(h.Avg.Twd.Count).IsEqualTo(0);
@@ -417,9 +419,9 @@ public class NavigationAveragesTests
         };
         var api = new StubTrackApi(points);
 
-        var ok = await h.Avg.SeedWindAsync(api);
+        var seeded = await h.Avg.SeedWindAsync(api);
 
-        await Assert.That(ok).IsTrue();
+        await Assert.That(seeded).IsNotNull();
         // All four samples (2 historical + 2 live) must be in the
         // buffer, in monotonic ascending order.
         var snap = h.Avg.Aws.SnapshotIn(TimeSpan.FromMinutes(35));
