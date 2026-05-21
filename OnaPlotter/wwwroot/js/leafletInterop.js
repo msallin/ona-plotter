@@ -1157,7 +1157,18 @@ export function updatePosition(lat, lon, headingRad, cogRad, sogMs, headingTrueR
     // fresh numbers without a closed-over stale copy.
     boatMarker._onaSelfData = { lat, lon, headingRad, cogRad, sogMs };
 
-    boatMarker.setLatLng([lat, lon]);
+    // Boat marker position. Skip the DOM transform write when lat/lon
+    // are unchanged - Leaflet's setLatLng re-projects + writes a
+    // transform matrix even for identical inputs, and at idle in
+    // harbor the SK feed re-delivers the same fix on most ticks (a
+    // moored boat's GPS sample frequently lands on the same bytes
+    // after server-side coalescing). Mirror the equality cache the
+    // AIS layer uses for its target markers.
+    if (boatMarker._lastLat !== lat || boatMarker._lastLon !== lon) {
+        boatMarker.setLatLng([lat, lon]);
+        boatMarker._lastLat = lat;
+        boatMarker._lastLon = lon;
+    }
     rotateMarker(boatMarker, headingRad ?? cogRad);
 
     // Push the new boat fix into aisLayer.js (CPA prediction needs
@@ -1174,13 +1185,30 @@ export function updatePosition(lat, lon, headingRad, cogRad, sogMs, headingTrueR
         ? vectorEnd(lat, lon, cogRad, sogMs, ownCogMinutes)
         : null;
     if (end) {
-        boatVector.setLatLngs([[lat, lon], end]);
+        // Polyline endpoints change only when the boat or its COG/SOG
+        // moves; at rest in harbor most ticks re-emit identical
+        // coords. Leaflet's setLatLngs rebuilds the SVG path / canvas
+        // commands regardless of input identity, so the gate here cuts
+        // a per-tick repaint of the vector path that contributes
+        // nothing visible.
+        if (boatVector._lastLat !== lat || boatVector._lastLon !== lon
+            || boatVector._lastEndLat !== end[0] || boatVector._lastEndLon !== end[1]) {
+            boatVector.setLatLngs([[lat, lon], end]);
+            boatVector._lastLat = lat;
+            boatVector._lastLon = lon;
+            boatVector._lastEndLat = end[0];
+            boatVector._lastEndLon = end[1];
+        }
         // Tip dot at the vector end - mirrors aisLayer's vessel
         // vector tip so own + AIS vectors share the same visual
         // landmark ("boat will be here at +ownCogMinutes"). Same
         // shape: filled circle, MapColors.own, non-interactive.
         if (boatVectorTip) {
-            boatVectorTip.setLatLng(end);
+            if (boatVectorTip._lastEndLat !== end[0] || boatVectorTip._lastEndLon !== end[1]) {
+                boatVectorTip.setLatLng(end);
+                boatVectorTip._lastEndLat = end[0];
+                boatVectorTip._lastEndLon = end[1];
+            }
         } else {
             boatVectorTip = L.circleMarker(end, {
                 radius: 2.5,
@@ -1190,21 +1218,40 @@ export function updatePosition(lat, lon, headingRad, cogRad, sogMs, headingTrueR
                 weight: 1,
                 interactive: false,
             }).addTo(map);
+            boatVectorTip._lastEndLat = end[0];
+            boatVectorTip._lastEndLon = end[1];
         }
         // Label at vector tip: time and distance.
         const distNm = (sogMs * ownCogMinutes * 60) * NM_PER_METER;
         const label = `${ownCogMinutes.toFixed(0)}min / ${distNm.toFixed(1)}nm`;
         if (vectorLabel) {
-            vectorLabel.setLatLng(end);
-            vectorLabel.setContent(label);
+            if (vectorLabel._lastEndLat !== end[0] || vectorLabel._lastEndLon !== end[1]) {
+                vectorLabel.setLatLng(end);
+                vectorLabel._lastEndLat = end[0];
+                vectorLabel._lastEndLon = end[1];
+            }
+            // setContent reparses HTML on every call. The label string
+            // is `<minutes>min / <dist>nm`; minutes is a settings
+            // constant and dist rounds to 1 decimal, so at rest the
+            // string repeats tick after tick. Cache + diff so the
+            // tooltip DOM only re-renders on a real change.
+            if (vectorLabel._lastLabel !== label) {
+                vectorLabel.setContent(label);
+                vectorLabel._lastLabel = label;
+            }
         } else {
             vectorLabel = L.tooltip({
                 permanent: true, direction: 'right', offset: [6, 0],
                 className: 'vector-label'
             }).setLatLng(end).setContent(label).addTo(map);
+            vectorLabel._lastEndLat = end[0];
+            vectorLabel._lastEndLon = end[1];
+            vectorLabel._lastLabel = label;
         }
     } else {
         boatVector.setLatLngs([]);
+        boatVector._lastLat = boatVector._lastLon = null;
+        boatVector._lastEndLat = boatVector._lastEndLon = null;
         if (boatVectorTip) { map.removeLayer(boatVectorTip); boatVectorTip = null; }
         if (vectorLabel) { map.removeLayer(vectorLabel); vectorLabel = null; }
     }

@@ -39,6 +39,30 @@ let anchorTrailLayer = null;
 // in sync without the module reaching back into leafletInterop state.
 let selfLat = 0, selfLon = 0;
 
+// Cached inside/outside bucket from the previous setBoatPosition.
+// Anchor-circle restyle (the green<->red flip) only needs to fire on
+// the transition; without this cache every tick at anchor wrote a
+// setStyle({color, fillColor}) that re-emitted the same value and
+// invalidated the SVG/canvas layer for no visible change.
+let _lastInside = null;
+
+// Cache key for the boat<->anchor dashed line endpoints. Reset on
+// clearAnchor / dispose so a fresh watch redraws on the first fix
+// rather than incorrectly believing the previous endpoints are still
+// valid. Declared at module top so clearAnchor can reset it without
+// tripping the no-use-before-define lint rule.
+let _lastRadiusLineKey = null;
+
+// Min boat-tail movement (m) within the sample window before we
+// repaint the trail polyline. GPS noise at rest is bounded ~0.5 m;
+// updating the trail head and re-emitting setLatLngs on sub-half-
+// metre jitter rebuilds an N-point polyline (N grows to ~360 over
+// an hour at 10 s sampling) for a visual delta of zero pixels at
+// the zoom levels where the anchor circle is on screen. The next
+// sample event (>= ANCHOR_TRAIL_SAMPLE_MS) bypasses this gate so
+// the trail still extends on real motion.
+const ANCHOR_TRAIL_TAIL_EPSILON_M = 0.5;
+
 export function init(map, deps) {
     mapRef = map;
     colors = deps.colors;
@@ -58,8 +82,17 @@ export function setBoatPosition(lat, lon) {
         const all = anchorMarker.getLatLng();
         const dist = haversineMeters(lat, lon, all.lat, all.lng);
         const inside = dist <= anchorCircle.getRadius();
-        const acColor = inside ? colors.anchorOk : colors.anchorDrag;
-        anchorCircle.setStyle({ color: acColor, fillColor: acColor });
+        // Only restyle on the bucket transition. setStyle is not a
+        // no-op when the value matches: Leaflet's vector path writes
+        // every style attribute and invalidates the renderer layer
+        // even when the resulting paint is identical. At anchor in
+        // harbor, inside stays true for the whole watch; the every-
+        // tick setStyle was a recurring compositor wake-up.
+        if (inside !== _lastInside) {
+            _lastInside = inside;
+            const acColor = inside ? colors.anchorOk : colors.anchorDrag;
+            anchorCircle.setStyle({ color: acColor, fillColor: acColor });
+        }
     }
     updateAnchorTrail(lat, lon);
 }
@@ -88,6 +121,8 @@ export function setAnchor(lat, lon, radiusM) {
 
 export function clearAnchor() {
     anchorIncomplete = false;
+    _lastInside = null;
+    _lastRadiusLineKey = null;
     if (!mapRef) {
         anchorMarker = null; anchorCircle = null; anchorTrailLayer = null;
         anchorTrail.length = 0; anchorRadiusLine = null;
@@ -178,13 +213,32 @@ export function updateAnchorRadius(radiusM) {
 // against missing fix and against NaN sensor glitches (a divide-by-zero
 // upstream would otherwise leave the polyline in an invalid state and
 // break subsequent setLatLngs calls).
+//
+// Endpoint cache (_lastRadiusLineKey, declared at module top): anchor
+// lat/lon is static for the watch and selfLat/selfLon usually re-
+// arrives identical (or jitters within sub-metre GPS noise).
+// setLatLngs reprojects + rewrites the SVG/canvas command stream on
+// every call regardless of input - the cache collapses the per-tick
+// no-op to a single equality check.
 function redrawAnchorRadiusOverlay(anchorLat, anchorLon, _radiusM) {
     if (!mapRef) return;
     if (!Number.isFinite(selfLat) || !Number.isFinite(selfLon)
         || !Number.isFinite(anchorLat) || !Number.isFinite(anchorLon)) {
         if (anchorRadiusLine) { mapRef.removeLayer(anchorRadiusLine); anchorRadiusLine = null; }
+        _lastRadiusLineKey = null;
         return;
     }
+
+    // Round to 1e-6 (~11 cm at the equator). Below the displayable
+    // delta at any zoom where the anchor circle fits on the chart, so
+    // a skipped redraw is invisible. Real motion above the noise floor
+    // exceeds this and gets a fresh polyline.
+    const key = Math.round(selfLat * 1e6) + ','
+              + Math.round(selfLon * 1e6) + ','
+              + Math.round(anchorLat * 1e6) + ','
+              + Math.round(anchorLon * 1e6);
+    if (anchorRadiusLine && _lastRadiusLineKey === key) return;
+    _lastRadiusLineKey = key;
 
     if (!anchorRadiusLine) {
         anchorRadiusLine = L.polyline(
@@ -205,29 +259,47 @@ function updateAnchorTrail(lat, lon) {
         return;
     }
 
+    // Track whether the trail array structure or any visible coord
+    // changed this call; setLatLngs is skipped when it didn't, because
+    // re-emitting the same N-point polyline still triggers a vector-
+    // layer repaint on Leaflet.
+    let trailChanged = false;
+
     const now = Date.now();
     const last = anchorTrail[anchorTrail.length - 1];
     if (!last || now - last.t >= ANCHOR_TRAIL_SAMPLE_MS) {
         anchorTrail.push({ lat, lon, t: now });
-    } else {
-        // Within the sample window - update the latest point so the trail
-        // head follows the boat smoothly.
+        trailChanged = true;
+    } else if (haversineMeters(last.lat, last.lon, lat, lon) >= ANCHOR_TRAIL_TAIL_EPSILON_M) {
+        // Within the sample window - update the latest point so the
+        // trail head follows the boat smoothly. Gated on a 0.5 m
+        // epsilon so GPS-noise jitter at rest doesn't rebuild the
+        // polyline on every tick (next real sample event at
+        // ANCHOR_TRAIL_SAMPLE_MS will pick up any motion below the
+        // epsilon as part of a fresh point anyway).
         last.lat = lat; last.lon = lon;
+        trailChanged = true;
     }
 
     // Drop points outside the rolling window.
     const cutoff = now - ANCHOR_TRAIL_MINUTES * 60_000;
-    while (anchorTrail.length > 0 && anchorTrail[0].t < cutoff) anchorTrail.shift();
+    while (anchorTrail.length > 0 && anchorTrail[0].t < cutoff) {
+        anchorTrail.shift();
+        trailChanged = true;
+    }
 
     // Keep the radius line chasing the boat as it drifts. The anchor
     // position itself is static (set once) but the line endpoint
-    // shifts each tick.
+    // shifts each tick. redrawAnchorRadiusOverlay caches its own
+    // latlng key so the per-tick path is a no-op when the boat
+    // hasn't moved.
     if (anchorMarker) {
         const a = anchorMarker.getLatLng();
         const r = anchorCircle ? anchorCircle.getRadius() : 0;
         redrawAnchorRadiusOverlay(a.lat, a.lng, r);
     }
 
+    if (!trailChanged) return;
     if (anchorTrail.length < 2) return;
     const coords = anchorTrail.map(p => [p.lat, p.lon]);
     if (!anchorTrailLayer) {
@@ -247,6 +319,8 @@ export function dispose() {
     anchorRadiusLine = null;
     anchorTrail.length = 0;
     selfLat = 0; selfLon = 0;
+    _lastInside = null;
+    _lastRadiusLineKey = null;
     mapRef = null;
     colors = null;
 }

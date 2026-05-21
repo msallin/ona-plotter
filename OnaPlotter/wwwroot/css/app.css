@@ -7122,6 +7122,16 @@ main:has(.map-container.big-type) .alarm-hold-hint {
     transition: transform 0.5s ease-out;
     transform-origin: center center;
 }
+/* Slow-client (Raspi-class) override: the 500 ms ease-out keeps the
+   compositor hot for half a second after every applyMapRotation pass.
+   With the rotation gate at 1° the trigger cadence is bounded, but at
+   anchor in harbor a heading that wobbles across the 1° boundary
+   pegs the GPU continuously. Snap-rotate instead - the visual jump
+   is one frame and the helm reads "course-up is following heading"
+   either way. Desktop / iPad keep the smooth feel. */
+html[data-slow-client="1"] #mapDiv {
+    transition: none;
+}
 
 /* ===== History page layout =====
    Top toolbar (filters + view toggle) sits at the top so changing

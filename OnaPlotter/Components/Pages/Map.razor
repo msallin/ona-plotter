@@ -1922,7 +1922,7 @@
         await PushChartFilterAsync();
         Settings.OnSettingsChanged += HandleSettingsChanged;
 
-        SignalkClient.OnDataChanged += HandleDataChanged;
+        SignalkClient.OnDataChanged += HandleDataChangedThrottled;
         SignalkClient.OnConnectionChanged += HandleConnectionChanged;
 
         // ResourceStore subscriptions (per-id delta + REST reconcile)
@@ -2439,9 +2439,15 @@
     // in their native form, gets value-equality for free, and is a stack-
     // local on the comparison path - zero per-tick heap traffic.
     //
-    // Quantisation matches the original key's :Fn suffixes so the render
-    // gate fires at the same granularity as before (e.g. SOG only
-    // triggers a render when it moves by >=0.01 m/s).
+    // Quantisation is tuned to "below the helm's visible threshold" for
+    // each channel: angles to ~0.6° (Q rad 2 = 0.01 rad), speeds to
+    // ~0.2 kt (Q m/s 1 = 0.1 m/s). Tighter resolution makes the gate
+    // fire on every tick under typical sensor noise (a fluxgate compass
+    // wobbles ~0.1°, GPS-derived SOG jitters ~0.02 kt at rest), forcing
+    // a full MapHud re-render and its SVG dial / compass rose paint for
+    // changes the helm cannot see. On a Raspi at idle in harbor this
+    // was the dominant GPU consumer; coarsening here collapses most
+    // ticks to a no-render no-op.
     private HudSnapshot _lastHudSnapshot;
 
     private readonly record struct HudSnapshot(
@@ -2465,18 +2471,18 @@
     }
 
     private HudSnapshot BuildHudSnapshot() => new(
-        Q(Data.SpeedOverGround, 2),
-        Q(Data.CourseOverGround, 3),
-        Q(Data.Heading, 3),
+        Q(Data.SpeedOverGround, 1),
+        Q(Data.CourseOverGround, 2),
+        Q(Data.Heading, 2),
         Q(Data.Depth, 1),
-        Q(Data.WindAngleApparent, 3),
-        Q(Data.WindSpeedApparent, 2),
-        Q(Data.WindAngleTrue, 3),
-        Q(Data.WindSpeedTrue, 2),
-        Q(Data.WindDirectionTrue, 3),
+        Q(Data.WindAngleApparent, 2),
+        Q(Data.WindSpeedApparent, 1),
+        Q(Data.WindAngleTrue, 2),
+        Q(Data.WindSpeedTrue, 1),
+        Q(Data.WindDirectionTrue, 2),
         Q(Data.CourseNextPointDistance, 0),
         Q(Data.CourseNextPointBearing, 2),
-        Q(Data.CourseNextPointVmg, 2),
+        Q(Data.CourseNextPointVmg, 1),
         Q(Data.CourseNextPointTimeToGo, 0),
         Q(Data.AnchorCurrentRadius, 1),
         Q(Data.AnchorMaxRadius, 1),
@@ -2521,7 +2527,77 @@
     /// hasn't landed yet, and the seed's own <c>OnDataChanged</c> (now
     /// subscribed) handles the late case.
     /// </summary>
-    private void KickInitialDataSyncAfterSubscribe() => HandleDataChanged();
+    private void KickInitialDataSyncAfterSubscribe()
+    {
+        // Seed the throttle's last-fire timestamp so the FIRST delta
+        // after this kick still respects the trailing-fire window
+        // rather than firing a redundant immediate pass on the very
+        // next OnDataChanged. Without this seed the throttle would
+        // fire twice in quick succession on first connect (the kick,
+        // then the next delta inside the leading-edge window).
+        _lastHandleDataTicks = Environment.TickCount64;
+        HandleDataChanged();
+    }
+
+    /// <summary>
+    /// Min ms between full HandleDataChanged passes. SignalK deltas
+    /// land per-path at policy=ideal, so a well-instrumented vessel
+    /// publishing position + SOG + COG + heading + wind + depth fires
+    /// 5-10 separate <c>OnDataChanged</c> events per second even when
+    /// nothing visible is moving. Each pass crosses the JS bridge for
+    /// <c>applyFrame</c>, runs the anchor / active-route diff-and-push
+    /// pipeline, and may trigger a Blazor re-render. 150 ms is below
+    /// the helm's "felt" responsiveness threshold (the COG vector and
+    /// compass needle don't move faster than ~6 Hz visibly anyway) and
+    /// collapses the typical burst to one paint per window.
+    /// <para>
+    /// The throttle is page-local: MainLayout (stale check), Alarm
+    /// pipeline, and NavigationAverages subscribe to OnDataChanged
+    /// directly and stay snappy. Only the Map page's heavyweight
+    /// render fan-out is gated.
+    /// </para>
+    /// </summary>
+    private const long HandleDataChangedThrottleMs = 150;
+    private long _lastHandleDataTicks;
+    private int _handleDataPending;
+
+    /// <summary>
+    /// Leading + trailing throttle wrapper around <see cref="HandleDataChanged"/>.
+    /// First delta in a quiet period fires immediately; subsequent deltas
+    /// inside the <see cref="HandleDataChangedThrottleMs"/> window are
+    /// coalesced into a single trailing fire that lands at the end of
+    /// the window. <see cref="_handleDataPending"/> is an
+    /// <see cref="Interlocked"/>-guarded CAS flag so only one trailing
+    /// scheduler is parked at a time even if the SignalK receive loop
+    /// surfaces multiple deltas concurrently.
+    /// </summary>
+    private void HandleDataChangedThrottled()
+    {
+        long now = Environment.TickCount64;
+        long elapsed = now - _lastHandleDataTicks;
+        if (elapsed >= HandleDataChangedThrottleMs)
+        {
+            _lastHandleDataTicks = now;
+            HandleDataChanged();
+            return;
+        }
+        if (Interlocked.CompareExchange(ref _handleDataPending, 1, 0) != 0) return;
+        _ = ScheduleTrailingHandleDataAsync((int)(HandleDataChangedThrottleMs - elapsed));
+    }
+
+    private async Task ScheduleTrailingHandleDataAsync(int delayMs)
+    {
+        try { await Task.Delay(delayMs); }
+        catch { /* clock weirdness; drain anyway below */ }
+        _handleDataPending = 0;
+        // Page may have torn down while the delay was parked. The
+        // existing entry guard in HandleDataChanged would bail too,
+        // but checking here avoids spinning up an async void for
+        // nothing.
+        if (!mapInitialized) return;
+        _lastHandleDataTicks = Environment.TickCount64;
+        HandleDataChanged();
+    }
 
     private async void HandleDataChanged()
     {
@@ -4960,7 +5036,7 @@
         // disposed module and throw "addLayer on null" in the browser
         // console.
         mapInitialized = false;
-        SignalkClient.OnDataChanged -= HandleDataChanged;
+        SignalkClient.OnDataChanged -= HandleDataChangedThrottled;
         SignalkClient.OnConnectionChanged -= HandleConnectionChanged;
         ResourceStore.OnRouteChanged -= HandleRouteChangedFromStore;
         ResourceStore.OnRouteRemoved -= HandleRouteRemovedFromStore;
