@@ -113,6 +113,57 @@ public class TripSummaryTests
         await Assert.That(text).Contains("To: 34.00000°S 151.50000°W");
     }
 
+    [Test]
+    public async Task Build_AllWindFieldsPresent_EmitsTwsTwdAwsLines()
+    {
+        // 7.717 m/s ≈ 15.0 kn, 10.288 m/s ≈ 20.0 kn for clean kn-rounded
+        // assertions through Format.Speed.
+        var s = MakeSegment(
+            twsAvgMs: 7.717,
+            twsMaxMs: 10.288,
+            twdAvgRad: 3 * Math.PI / 2,    // 270° = westerly
+            awsAvgMs: 9.0,                  // ~17.5 kn
+            awsMaxMs: 12.0);                // ~23.3 kn
+        var text = TripSummary.Build("Trip", s);
+
+        await Assert.That(text).Contains("TWS: avg 15.0 kn, max 20.0 kn");
+        await Assert.That(text).Contains("Avg TWD: 270°");
+        await Assert.That(text).Contains("AWS: avg 17.5 kn, max 23.3 kn");
+    }
+
+    [Test]
+    public async Task Build_NoWindSamples_OmitsAllWindLines()
+    {
+        // Boat without a wind transducer (or a history backend that
+        // doesn't record the wind paths). Nothing about wind should
+        // make it into the share text.
+        var s = MakeSegment(
+            twsAvgMs: null, twsMaxMs: null, twdAvgRad: null,
+            awsAvgMs: null, awsMaxMs: null);
+        var text = TripSummary.Build("Trip", s);
+
+        await Assert.That(text).DoesNotContain("TWS:");
+        await Assert.That(text).DoesNotContain("AWS:");
+        await Assert.That(text).DoesNotContain("TWD:");
+    }
+
+    [Test]
+    public async Task Build_OnlyApparentWind_EmitsAwsLineOnly()
+    {
+        // Server records apparent wind but no derived TWS / TWD
+        // (missing signalk-derived-data plugin). The share text should
+        // skip the TWS line entirely but still surface the AWS bullet
+        // so the recipient sees SOME wind information.
+        var s = MakeSegment(
+            twsAvgMs: null, twsMaxMs: null, twdAvgRad: null,
+            awsAvgMs: 5.0, awsMaxMs: 8.0);   // 9.7 kn / 15.6 kn
+        var text = TripSummary.Build("Trip", s);
+
+        await Assert.That(text).DoesNotContain("TWS:");
+        await Assert.That(text).DoesNotContain("TWD:");
+        await Assert.That(text).Contains("AWS: avg 9.7 kn, max 15.6 kn");
+    }
+
     /// <summary>Helper to build a moving TrackSegment with realistic
     /// defaults; named arguments at the call site override only the
     /// dimensions a given test cares about.</summary>
@@ -122,7 +173,10 @@ public class TripSummaryTests
         double distanceM = 5000,
         TimeSpan? duration = null,
         double? sogAvgMs = 5.0, double? sogMinMs = 0.5, double? sogMaxMs = 7.0,
-        double? depthMinM = 4.2)
+        double? depthMinM = 4.2,
+        double? twsAvgMs = null, double? twsMaxMs = null,
+        double? twdAvgRad = null,
+        double? awsAvgMs = null, double? awsMaxMs = null)
     {
         var start = new DateTime(2026, 5, 13, 14, 30, 0, DateTimeKind.Utc);
         var end = start + (duration ?? TimeSpan.FromMinutes(45));
@@ -135,9 +189,13 @@ public class TripSummaryTests
             SogAvgMs: sogAvgMs,
             SogMaxMs: sogMaxMs,
             SogMinMs: sogMinMs,
-            WindSpeedAvgMs: null,
+            WindSpeedAvgMs: twsAvgMs,
             IsStationary: false,
             PointCount: 100,
-            DepthMinM: depthMinM);
+            DepthMinM: depthMinM,
+            WindSpeedTrueMaxMs: twsMaxMs,
+            WindSpeedApparentAvgMs: awsAvgMs,
+            WindSpeedApparentMaxMs: awsMaxMs,
+            WindDirectionTrueAvgRad: twdAvgRad);
     }
 }

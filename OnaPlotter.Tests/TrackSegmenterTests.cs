@@ -15,7 +15,8 @@ public class TrackSegmenterTests
     /// classification can be inferred from inter-sample distance even
     /// when SOG isn't supplied.</summary>
     private static TrackPoint Pt(DateTime t0, TimeSpan offset, double lat, double lon,
-        double? sog = null, double? tws = null)
+        double? sog = null, double? tws = null,
+        double? aws = null, double? twdRad = null)
     {
         return new TrackPoint(
             Timestamp: t0 + offset,
@@ -25,9 +26,11 @@ public class TrackSegmenterTests
             CourseOverGround: null,
             Heading: null,
             WindAngleApparent: null,
-            WindSpeedApparent: null,
+            WindSpeedApparent: aws,
             WindAngleTrue: null,
-            WindSpeedTrue: tws);
+            WindSpeedTrue: tws,
+            Depth: null,
+            WindDirectionTrue: twdRad);
     }
 
     private static readonly DateTime T0 =
@@ -445,5 +448,90 @@ public class TrackSegmenterTests
         // 30 jitter hops at ±5 m = at most ~150 m total walk. Roomy
         // upper bound to stay tolerant of RNG seed swings.
         await Assert.That(segs[0].DistanceMetres).IsLessThan(500);
+    }
+
+    [Test]
+    public async Task Aggregates_WindMaxAvg_And_CircularTwd_FromHistorySamples()
+    {
+        // A 5-minute moving leg with TWS rising from 8 -> 12 m/s,
+        // AWS rising from 9 -> 14, and TWD wrapping across north
+        // (350° -> 10°). The aggregator must:
+        //   - capture peak TWS = 12 and peak AWS = 14
+        //   - compute avg TWS / AWS as the arithmetic mean over
+        //     samples (10 m/s / 11.5 m/s respectively)
+        //   - compute TWD circular mean ≈ 0° (i.e. ~0 rad), NOT the
+        //     180°-off linear midpoint of 350 and 10.
+        const double sog = 3.0;   // m/s = well above moving threshold
+        double lat = 47.4;
+        var pts = new List<TrackPoint>();
+        double[] twsValues = [8.0, 9.0, 10.0, 11.0, 12.0];
+        double[] awsValues = [9.0, 10.5, 11.5, 13.0, 14.0];
+        // TWD samples bracketing north: 350, 355, 0, 5, 10 (degrees).
+        double[] twdDeg = [350.0, 355.0, 0.0, 5.0, 10.0];
+        // 5 anchor samples at i = 0, 15, 30, 45, 60; intermediate
+        // points carry no wind so the aggregator sees the 5 explicit
+        // values only. Loop extends past 60 so the final anchor
+        // (i=60) actually lands.
+        for (int i = 0; i <= 60; i++)
+        {
+            double? tws = null, aws = null, twd = null;
+            if (i % 15 == 0)
+            {
+                int k = i / 15;
+                tws = twsValues[k];
+                aws = awsValues[k];
+                twd = twdDeg[k] * Math.PI / 180.0;
+            }
+            pts.Add(Pt(T0, TimeSpan.FromSeconds(i * 10), lat, 8.5,
+                sog: sog, tws: tws, aws: aws, twdRad: twd));
+            lat += 0.0001;   // walk position so distance > 0
+        }
+
+        var segs = TrackSegmenter.Segment(pts);
+        await Assert.That(segs.Length).IsEqualTo(1);
+        var s = segs[0];
+        await Assert.That(s.IsStationary).IsFalse();
+
+        // True wind aggregates: 5 samples 8/9/10/11/12 -> avg 10, max 12.
+        await Assert.That(s.WindSpeedAvgMs).IsEqualTo(10.0);
+        await Assert.That(s.WindSpeedTrueMaxMs).IsEqualTo(12.0);
+
+        // Apparent wind: 9/10.5/11.5/13/14 -> avg 11.6, max 14.
+        await Assert.That(s.WindSpeedApparentAvgMs).IsNotNull();
+        await Assert.That(Math.Abs(s.WindSpeedApparentAvgMs!.Value - 11.6)).IsLessThan(0.001);
+        await Assert.That(s.WindSpeedApparentMaxMs).IsEqualTo(14.0);
+
+        // TWD: linear mean of {350, 355, 0, 5, 10} is 144° (broken);
+        // circular mean is ~0°. atan2 returns radians in [-π, π], so
+        // we accept either ~0 or ~2π after the normalisation step.
+        await Assert.That(s.WindDirectionTrueAvgRad).IsNotNull();
+        double twdDegrees = s.WindDirectionTrueAvgRad!.Value * 180.0 / Math.PI;
+        // Normalise to [0, 360) and check the angular distance to 0
+        // (or equivalently 360) is small.
+        if (twdDegrees > 180) twdDegrees -= 360;
+        await Assert.That(Math.Abs(twdDegrees)).IsLessThan(1.0);
+    }
+
+    [Test]
+    public async Task Aggregates_NullWind_LeavesAggregatesNull()
+    {
+        // A leg where the points carry no wind samples at all (boat
+        // without a wind transducer; or the server's history has no
+        // wind columns). All wind aggregates must remain null - the
+        // UI elides those rows rather than rendering 0 or "—" with
+        // a misleading value behind it.
+        var pts = new List<TrackPoint>();
+        for (int i = 0; i <= 20; i++)
+            pts.Add(Pt(T0, TimeSpan.FromMinutes(i), 47.4 + i * 0.001, 8.5, sog: 3.0));
+
+        var segs = TrackSegmenter.Segment(pts);
+        await Assert.That(segs.Length).IsEqualTo(1);
+        var s = segs[0];
+
+        await Assert.That(s.WindSpeedAvgMs).IsNull();
+        await Assert.That(s.WindSpeedTrueMaxMs).IsNull();
+        await Assert.That(s.WindSpeedApparentAvgMs).IsNull();
+        await Assert.That(s.WindSpeedApparentMaxMs).IsNull();
+        await Assert.That(s.WindDirectionTrueAvgRad).IsNull();
     }
 }

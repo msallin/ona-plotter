@@ -48,6 +48,24 @@ namespace OnaPlotter.Models;
 /// For a moving segment this is the closest-to-grounding moment of
 /// the leg; the helm uses it to confirm the passage stayed clear of
 /// charted minimums.</param>
+/// <param name="WindSpeedTrueMaxMs">Peak true wind speed observed
+/// during the segment. Helm reads it as the leg's "biggest gust" -
+/// the bragging-rights number a passage recap actually wants
+/// alongside the trip's mean TWS.</param>
+/// <param name="WindSpeedApparentAvgMs">Mean apparent wind speed
+/// over samples whose AWS was present. Null when no AWS samples
+/// landed (boat without a wind transducer; or a history backend
+/// that doesn't record <c>environment.wind.speedApparent</c>).</param>
+/// <param name="WindSpeedApparentMaxMs">Peak apparent wind speed.
+/// Useful when the helm sailed close-hauled (AWS &gt;&gt; TWS) and
+/// wants to remember "how loaded was the rig at peak".</param>
+/// <param name="WindDirectionTrueAvgRad">Circular mean of true wind
+/// direction (radians, 0..2π, compass-from). Computed via
+/// sin/cos vector average so a stable wind reads cleanly through
+/// the 350°/10° wrap. A passage with a 180° shift produces a
+/// midpoint that's still informative directionally; the helm
+/// reading "270°" knows that's the leg's "average wind from".
+/// Null when no samples carried <c>environment.wind.directionTrue</c>.</param>
 public sealed record TrackSegment(
     DateTime StartUtc,
     DateTime EndUtc,
@@ -64,7 +82,11 @@ public sealed record TrackSegment(
     int PointCount,
     double? DepthAvgM = null,
     double? DepthMaxM = null,
-    double? DepthMinM = null)
+    double? DepthMinM = null,
+    double? WindSpeedTrueMaxMs = null,
+    double? WindSpeedApparentAvgMs = null,
+    double? WindSpeedApparentMaxMs = null,
+    double? WindDirectionTrueAvgRad = null)
 {
     /// <summary>Wall-clock duration. Computed; kept off the parameter
     /// list because <c>StartUtc</c> + <c>EndUtc</c> already carry it.</summary>

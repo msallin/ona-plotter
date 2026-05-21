@@ -34,6 +34,19 @@ public static class StatsAggregator
         int tripCount = 0;
         double? maxTripDist = null;
         double? maxSog = null;
+        double? maxTws = null;
+        double? maxAws = null;
+        // Duration-weighted wind averages: each segment contributes
+        // its own avg * its duration to the numerator, the duration
+        // alone to the denominator. A 6 h passage at 15 kn TWS counts
+        // 6 times more than a 1 h dinghy hop at 8 kn, which matches
+        // the "what was the season's wind like" question. Restricted
+        // to moving segments because a stationary dwell at anchor
+        // doesn't sail through the same air-mass picture - the helm
+        // reading this stat wants "wind I sailed in", not "wind
+        // while moored at the pontoon".
+        double twsAvgNumerator = 0, twsAvgDenominator = 0;
+        double awsAvgNumerator = 0, awsAvgDenominator = 0;
 
         foreach (var s in segments)
         {
@@ -50,15 +63,37 @@ public static class StatsAggregator
                 {
                     maxTripDist = s.DistanceMetres;
                 }
+                if (s.WindSpeedAvgMs is double twsAvg)
+                {
+                    double sec = s.Duration.TotalSeconds;
+                    twsAvgNumerator += twsAvg * sec;
+                    twsAvgDenominator += sec;
+                }
+                if (s.WindSpeedApparentAvgMs is double awsAvg)
+                {
+                    double sec = s.Duration.TotalSeconds;
+                    awsAvgNumerator += awsAvg * sec;
+                    awsAvgDenominator += sec;
+                }
             }
-            // Peak SOG considers all segments - a momentary surge
-            // recorded inside a stationary "ferry-wash bobbing"
-            // segment is still a real observed speed, useful for the
-            // "max boat speed this season" line.
+            // Peak SOG / TWS / AWS consider all segments - a momentary
+            // surge recorded inside a stationary "ferry-wash bobbing"
+            // segment is still a real observed value, useful for the
+            // "max boat speed / biggest gust this season" line.
             if (s.SogMaxMs is double sogMax
                 && (maxSog is null || sogMax > maxSog.Value))
             {
                 maxSog = sogMax;
+            }
+            if (s.WindSpeedTrueMaxMs is double twsMax
+                && (maxTws is null || twsMax > maxTws.Value))
+            {
+                maxTws = twsMax;
+            }
+            if (s.WindSpeedApparentMaxMs is double awsMax
+                && (maxAws is null || awsMax > maxAws.Value))
+            {
+                maxAws = awsMax;
             }
         }
 
@@ -79,6 +114,11 @@ public static class StatsAggregator
         // chronological order from TrackSegmenter, so no resort.
         double? best24h = ComputeBest24hMetres(segments);
 
+        double? avgTws = twsAvgDenominator > 0
+            ? twsAvgNumerator / twsAvgDenominator : (double?)null;
+        double? avgAws = awsAvgDenominator > 0
+            ? awsAvgNumerator / awsAvgDenominator : (double?)null;
+
         return new StatsTotals(
             From: from,
             To: to,
@@ -90,7 +130,11 @@ public static class StatsAggregator
             MaxTripDistanceMetres: maxTripDist,
             MaxSogMs: maxSog,
             AvgSogMs: avgSogMs,
-            Best24hMetres: best24h);
+            Best24hMetres: best24h,
+            AvgTwsMs: avgTws,
+            MaxTwsMs: maxTws,
+            AvgAwsMs: avgAws,
+            MaxAwsMs: maxAws);
     }
 
     /// <summary>Aggregate the supplied segments into per-day rows.

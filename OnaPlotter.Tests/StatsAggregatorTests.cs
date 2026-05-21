@@ -16,15 +16,20 @@ public class StatsAggregatorTests
 
     private static TrackSegment Seg(
         DateTime start, DateTime end, bool stationary,
-        double distanceM = 0, double? sogMax = null)
+        double distanceM = 0, double? sogMax = null,
+        double? twsAvg = null, double? twsMax = null,
+        double? awsAvg = null, double? awsMax = null)
         => new(
             StartUtc: start, EndUtc: end,
             StartLat: 0, StartLon: 0, EndLat: 0, EndLon: 0,
             DistanceMetres: distanceM,
             SogAvgMs: null, SogMaxMs: sogMax, SogMinMs: null,
-            WindSpeedAvgMs: null,
+            WindSpeedAvgMs: twsAvg,
             IsStationary: stationary,
-            PointCount: 2);
+            PointCount: 2,
+            WindSpeedTrueMaxMs: twsMax,
+            WindSpeedApparentAvgMs: awsAvg,
+            WindSpeedApparentMaxMs: awsMax);
 
     [Test]
     public async Task EmptySegments_TripCountZero_DistancesZero_DurationFromWindow()
@@ -415,5 +420,90 @@ public class StatsAggregatorTests
         await Assert.That(rows.Count).IsEqualTo(1);
         await Assert.That(rows[0].LocalDate).IsEqualTo(new DateTime(2026, 4, 1));
         await Assert.That(rows[0].DistanceMetres).IsEqualTo(1000);
+    }
+
+    [Test]
+    public async Task WindAggregates_DurationWeightedAvg_AndPeak()
+    {
+        // Two moving segments: 6 h at 15 kn TWS and 2 h at 6 kn TWS.
+        // Duration-weighted avg = (15*6 + 6*2) / (6+2) = 102/8 = 12.75 kn.
+        // Naive arithmetic mean of the two would be (15+6)/2 = 10.5 kn
+        // - the weighting is what makes the longer leg dominate, which
+        // is what the helm wants ("how was the season's wind"). The
+        // m/s values used below convert cleanly: 15 kn ≈ 7.717 m/s,
+        // 6 kn ≈ 3.087 m/s. Stored in m/s; formatter knot-converts
+        // at the UI layer.
+        const double TwsAvg1 = 7.717; // 15 kn
+        const double TwsAvg2 = 3.087; // 6 kn
+        const double TwsMax1 = 9.0;
+        const double TwsMax2 = 11.0;  // bigger gust on the SHORT leg
+
+        var segs = new[]
+        {
+            Seg(From.AddHours(0), From.AddHours(6), stationary: false,
+                distanceM: 50000, twsAvg: TwsAvg1, twsMax: TwsMax1,
+                awsAvg: 9.0, awsMax: 11.0),
+            Seg(From.AddHours(8), From.AddHours(10), stationary: false,
+                distanceM: 5000, twsAvg: TwsAvg2, twsMax: TwsMax2,
+                awsAvg: 4.0, awsMax: 12.0),
+        };
+
+        var t = StatsAggregator.Aggregate(From, To, segs);
+
+        // Duration-weighted TWS avg: (7.717*6 + 3.087*2) / 8 = 6.560
+        double expectedTwsAvg = (TwsAvg1 * 6 + TwsAvg2 * 2) / 8.0;
+        await Assert.That(t.AvgTwsMs).IsNotNull();
+        await Assert.That(Math.Abs(t.AvgTwsMs!.Value - expectedTwsAvg)).IsLessThan(0.01);
+        // Peak TWS comes from the SHORT leg (11.0); duration weighting
+        // doesn't apply to max - it's the single highest observation.
+        await Assert.That(t.MaxTwsMs).IsEqualTo(TwsMax2);
+
+        // AWS: (9*6 + 4*2)/8 = 7.75 avg, peak 12 from the short leg.
+        await Assert.That(t.AvgAwsMs).IsNotNull();
+        await Assert.That(Math.Abs(t.AvgAwsMs!.Value - 7.75)).IsLessThan(0.01);
+        await Assert.That(t.MaxAwsMs).IsEqualTo(12.0);
+    }
+
+    [Test]
+    public async Task WindAggregates_StationaryDoesNotContributeToAvg_StillContributesToMax()
+    {
+        // A stationary segment at anchor with TWS samples should NOT
+        // shift the duration-weighted avg (the helm asked about wind
+        // they sailed in), but a brief gust observed there is still a
+        // valid "max wind this window" data point.
+        var movingSeg = Seg(From.AddHours(0), From.AddHours(4),
+            stationary: false, distanceM: 30000,
+            twsAvg: 5.0, twsMax: 7.0);
+        var anchoredSeg = Seg(From.AddHours(6), From.AddHours(12),
+            stationary: true, distanceM: 10,
+            twsAvg: 12.0, twsMax: 15.0);
+
+        var t = StatsAggregator.Aggregate(From, To, [movingSeg, anchoredSeg]);
+
+        // Avg = moving-segment value, NOT the anchored one (despite
+        // the anchored leg being twice as long).
+        await Assert.That(t.AvgTwsMs).IsEqualTo(5.0);
+        // Max takes the anchored gust because peak considers everything.
+        await Assert.That(t.MaxTwsMs).IsEqualTo(15.0);
+    }
+
+    [Test]
+    public async Task WindAggregates_AllNull_LeavesAggregatesNull()
+    {
+        // No segment in the window carried wind samples. The aggregator
+        // must keep the four wind fields null so the UI hides the row
+        // rather than rendering misleading zero / "--" placeholders.
+        var segs = new[]
+        {
+            Seg(From.AddHours(0), From.AddHours(4),
+                stationary: false, distanceM: 30000),
+        };
+
+        var t = StatsAggregator.Aggregate(From, To, segs);
+
+        await Assert.That(t.AvgTwsMs).IsNull();
+        await Assert.That(t.MaxTwsMs).IsNull();
+        await Assert.That(t.AvgAwsMs).IsNull();
+        await Assert.That(t.MaxAwsMs).IsNull();
     }
 }

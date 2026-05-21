@@ -52,6 +52,33 @@ public static class TripSummary
             sb.Append("Min depth: ").Append(Format.Depth(s.DepthMinM)).AppendLine(" m");
         }
 
+        // Wind: composite line shape matches SOG. Each aggregate
+        // elides on null so a server without TWD derived
+        // (signalk-derived-data missing) still shows the apparent
+        // wind story, and a boat with only TWS / no AWS still gets
+        // the true-wind summary. Helm reads "TWS avg X / max Y kn"
+        // at a glance for the passage's wind character. Direction
+        // last because it's the smaller-font number on the panel and
+        // reads as a tag on the speed pair.
+        var twsParts = new List<string>(2);
+        if (s.WindSpeedAvgMs is not null) twsParts.Add($"avg {Format.Speed(s.WindSpeedAvgMs)} kn");
+        if (s.WindSpeedTrueMaxMs is not null) twsParts.Add($"max {Format.Speed(s.WindSpeedTrueMaxMs)} kn");
+        if (twsParts.Count > 0)
+        {
+            sb.Append("TWS: ").AppendLine(string.Join(", ", twsParts));
+        }
+        if (s.WindDirectionTrueAvgRad is not null)
+        {
+            sb.Append("Avg TWD: ").Append(Format.Degrees(s.WindDirectionTrueAvgRad)).AppendLine("°");
+        }
+        var awsParts = new List<string>(2);
+        if (s.WindSpeedApparentAvgMs is not null) awsParts.Add($"avg {Format.Speed(s.WindSpeedApparentAvgMs)} kn");
+        if (s.WindSpeedApparentMaxMs is not null) awsParts.Add($"max {Format.Speed(s.WindSpeedApparentMaxMs)} kn");
+        if (awsParts.Count > 0)
+        {
+            sb.Append("AWS: ").AppendLine(string.Join(", ", awsParts));
+        }
+
         // Drop the trailing newline AppendLine appended after the
         // last stat row - some chat apps render an empty line at the
         // bottom of a pasted block.

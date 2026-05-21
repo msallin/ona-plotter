@@ -47,9 +47,35 @@
                 <span class="trip-stat-label">Min SOG</span>
                 <span class="trip-stat-value">@(Segment.SogMinMs is null ? "—" : Format.Speed(Segment.SogMinMs)) <span class="trip-stat-unit">kn</span></span>
             </div>
+            @* True wind: avg + peak speed + circular-mean direction.
+               TWS comes from history when the server has it derived
+               (signalk-derived-data); helms without that plugin see
+               "—" here and the apparent-wind rows tell the story
+               instead. TWD as a compass-from bearing answers
+               "where was the wind coming from?" for the leg. *@
             <div class="trip-stat">
                 <span class="trip-stat-label">Avg TWS</span>
                 <span class="trip-stat-value">@(Segment.WindSpeedAvgMs is null ? "—" : Format.Speed(Segment.WindSpeedAvgMs)) <span class="trip-stat-unit">kn</span></span>
+            </div>
+            <div class="trip-stat">
+                <span class="trip-stat-label">Max TWS</span>
+                <span class="trip-stat-value">@(Segment.WindSpeedTrueMaxMs is null ? "—" : Format.Speed(Segment.WindSpeedTrueMaxMs)) <span class="trip-stat-unit">kn</span></span>
+            </div>
+            <div class="trip-stat">
+                <span class="trip-stat-label">Avg TWD</span>
+                <span class="trip-stat-value">@(Segment.WindDirectionTrueAvgRad is null ? "—" : Format.Degrees(Segment.WindDirectionTrueAvgRad)) <span class="trip-stat-unit">°</span></span>
+            </div>
+            @* Apparent wind: rig-load indicator. On a close-hauled leg
+               AWS reads well above TWS; on a run it reads below. The
+               max value is the leg's "loaded the rig hardest" moment -
+               useful for sail-trim debriefs after a passage. *@
+            <div class="trip-stat">
+                <span class="trip-stat-label">Avg AWS</span>
+                <span class="trip-stat-value">@(Segment.WindSpeedApparentAvgMs is null ? "—" : Format.Speed(Segment.WindSpeedApparentAvgMs)) <span class="trip-stat-unit">kn</span></span>
+            </div>
+            <div class="trip-stat">
+                <span class="trip-stat-label">Max AWS</span>
+                <span class="trip-stat-value">@(Segment.WindSpeedApparentMaxMs is null ? "—" : Format.Speed(Segment.WindSpeedApparentMaxMs)) <span class="trip-stat-unit">kn</span></span>
             </div>
             @* Depth aggregates only render when the leg's underlying
                samples carried at least one environment.depth.belowTransducer

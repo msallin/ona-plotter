@@ -52,6 +52,20 @@ namespace OnaPlotter.Models;
 /// is counted in full when its start falls inside a candidate window
 /// (over-counts segments longer than 24 h, which are rare in practice;
 /// would need clipping otherwise). Null when no moving segments.</param>
+/// <param name="AvgTwsMs">Average true wind speed across moving
+/// segments, weighted by segment duration so a 6 h passage counts
+/// more than a 1 h harbour hop. Null when no segment carried TWS
+/// samples (history backend doesn't record / derive
+/// <c>environment.wind.speedTrue</c>).</param>
+/// <param name="MaxTwsMs">Peak true wind speed observed across all
+/// segments in the window. The season's biggest blow.</param>
+/// <param name="AvgAwsMs">Average apparent wind speed across moving
+/// segments, weighted by duration. Companion to <see cref="AvgTwsMs"/>
+/// for installs where TWS isn't derived but AWS is recorded raw -
+/// at least the helm sees a "felt wind" figure.</param>
+/// <param name="MaxAwsMs">Peak apparent wind speed observed. Often
+/// higher than <see cref="MaxTwsMs"/> for the same gust on a beat
+/// (AWS = TWS + boat speed); on a run it reads lower.</param>
 public sealed record StatsTotals(
     DateTime From,
     DateTime To,
@@ -63,4 +77,8 @@ public sealed record StatsTotals(
     double? MaxTripDistanceMetres,
     double? MaxSogMs,
     double? AvgSogMs,
-    double? Best24hMetres);
+    double? Best24hMetres,
+    double? AvgTwsMs = null,
+    double? MaxTwsMs = null,
+    double? AvgAwsMs = null,
+    double? MaxAwsMs = null);

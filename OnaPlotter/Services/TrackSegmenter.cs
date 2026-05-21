@@ -278,12 +278,18 @@ public static class TrackSegmenter
                 points[i].Latitude, points[i].Longitude);
         }
 
-        // Aggregate SOG + TWS + depth over samples that carry the
-        // value. A null aggregate means "no samples in this segment
-        // had it" - the UI renders that as "—" rather than "0".
+        // Aggregate SOG + TWS + AWS + TWD + depth over samples that
+        // carry the value. A null aggregate means "no samples in this
+        // segment had it" - the UI renders that as "—" rather than "0".
+        // TWD uses circular (sin/cos) mean so the 350°/10° wrap doesn't
+        // produce a 180°-off midpoint.
         double sogSum = 0; int sogCount = 0;
         double sogMax = double.MinValue, sogMin = double.MaxValue;
         double twsSum = 0; int twsCount = 0;
+        double twsMax = double.MinValue;
+        double awsSum = 0; int awsCount = 0;
+        double awsMax = double.MinValue;
+        double twdSinSum = 0, twdCosSum = 0; int twdCount = 0;
         double depthSum = 0; int depthCount = 0;
         double depthMax = double.MinValue, depthMin = double.MaxValue;
         for (int i = startIdx; i <= endIdx; i++)
@@ -299,6 +305,19 @@ public static class TrackSegmenter
             {
                 twsSum += tws;
                 twsCount++;
+                if (tws > twsMax) twsMax = tws;
+            }
+            if (points[i].WindSpeedApparent is double aws)
+            {
+                awsSum += aws;
+                awsCount++;
+                if (aws > awsMax) awsMax = aws;
+            }
+            if (points[i].WindDirectionTrue is double twd)
+            {
+                twdSinSum += Math.Sin(twd);
+                twdCosSum += Math.Cos(twd);
+                twdCount++;
             }
             if (points[i].Depth is double depth)
             {
@@ -313,6 +332,17 @@ public static class TrackSegmenter
         double? sogHi = sogCount > 0 ? sogMax : null;
         double? sogLo = sogCount > 0 ? sogMin : null;
         double? twsAvg = twsCount > 0 ? twsSum / twsCount : null;
+        double? twsHi = twsCount > 0 ? twsMax : null;
+        double? awsAvg = awsCount > 0 ? awsSum / awsCount : null;
+        double? awsHi = awsCount > 0 ? awsMax : null;
+        // Circular mean: atan2(sum sin, sum cos), normalised to [0, 2π).
+        double? twdAvg = null;
+        if (twdCount > 0)
+        {
+            double rad = Math.Atan2(twdSinSum / twdCount, twdCosSum / twdCount);
+            if (rad < 0) rad += 2 * Math.PI;
+            twdAvg = rad;
+        }
         double? depthAvg = depthCount > 0 ? depthSum / depthCount : null;
         double? depthHi = depthCount > 0 ? depthMax : null;
         double? depthLo = depthCount > 0 ? depthMin : null;
@@ -333,6 +363,10 @@ public static class TrackSegmenter
             PointCount: endIdx - startIdx + 1,
             DepthAvgM: depthAvg,
             DepthMaxM: depthHi,
-            DepthMinM: depthLo);
+            DepthMinM: depthLo,
+            WindSpeedTrueMaxMs: twsHi,
+            WindSpeedApparentAvgMs: awsAvg,
+            WindSpeedApparentMaxMs: awsHi,
+            WindDirectionTrueAvgRad: twdAvg);
     }
 }

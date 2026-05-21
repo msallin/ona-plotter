@@ -181,16 +181,29 @@
                 new("environment.depth.belowTransducer", "Depth HUD, shallow alarm",
                     "Depth sounder via NMEA 0183 DPT / PGN 128267",
                     GetValue: d => Metres(d.Depth, "F1")),
-                new("environment.wind.angleApparent", "AWA HUD, WindRose, SailSteer",
+                new("environment.wind.angleApparent",
+                    "AWA HUD, WindRose, SailSteer; pulled from history to "
+                    + "seed the WindRose polar scatter and the History trip "
+                    + "detail / share recap (avg + max AWS per trip)",
                     "Wind transducer via NMEA 0183 MWV / PGN 130306",
                     GetValue: d => DegFromRad(d.WindAngleApparent)),
-                new("environment.wind.speedApparent", "AWS HUD, WindRose",
+                new("environment.wind.speedApparent",
+                    "AWS HUD, WindRose chips, WindRose polar dot colour; "
+                    + "pulled from history for History trip detail / share "
+                    + "and Stats page avg + max AWS",
                     "Wind transducer (MWV / PGN 130306)",
                     GetValue: d => KnFromMs(d.WindSpeedApparent)),
-                new("environment.wind.directionTrue", "Laylines, wind-shift alarm",
+                new("environment.wind.directionTrue",
+                    "Laylines, wind-shift alarm, WindRose direction history "
+                    + "chart; pulled from history for History trip detail "
+                    + "(avg TWD) and to seed the WindRose shift-rate readout",
                     "NMEA 0183 MWD / derived from AWA + COG via <code>signalk-derived-data</code>",
                     GetValue: d => DegFromRad(d.WindDirectionTrue)),
-                new("environment.wind.speedTrue", "TWS HUD, polar performance, race HUD",
+                new("environment.wind.speedTrue",
+                    "TWS HUD, polar performance, race HUD, WindRose speed "
+                    + "history chart; pulled from history for History trip "
+                    + "detail / share (avg + max TWS) and Stats page "
+                    + "duration-weighted avg + peak TWS",
                     "Derived by <code>signalk-derived-data</code> from AWS + SOG",
                     GetValue: d => KnFromMs(d.WindSpeedTrue)),
                 new("environment.wind.angleTrueWater", "Race TWA, polar target speed",
@@ -356,10 +369,14 @@
             new PathGroup("History API (REST)",
             [
                 new("/signalk/v2/api/history/values",
-                    "History page playback + segmenter, Stats page totals, "
-                    + "saved-trip route export",
+                    "History page playback + segmenter, History trip detail "
+                    + "panel + share recap (TWS / AWS / TWD aggregates), "
+                    + "Stats page totals + share (duration-weighted wind), "
+                    + "WindRose page seed (3 h pre-warm of polar + chart + "
+                    + "AWS gust/lull/mean chips), saved-trip route export",
                     "<code>signalk-parquet</code> or <code>signalk-to-influxdb2</code> "
-                    + "(install one to populate the History page)",
+                    + "(install one to populate the History / Stats / WindRose pages; "
+                    + "wind paths must be in the configured recording set)",
                     IsLive: _ => true),
                 new("/signalk/v2/api/history/_providers",
                     "Plugin discovery - which provider serves history queries",

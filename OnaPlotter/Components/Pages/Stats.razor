@@ -252,6 +252,80 @@
             </div>
         </div>
 
+        @* Wind row. Sourced from the SignalK history API alongside
+           position + SOG; populates when at least one moving segment
+           in the window carried TWS / AWS columns. Two cards because
+           helms tend to ask the questions separately: "how much wind
+           on average?" (avg, duration-weighted across trips) vs "what
+           was the biggest gust?" (peak). The four-tile compaction
+           (avg TWS, max TWS, avg AWS, max AWS) reads from left to
+           right as "wind I sailed in -> wind that loaded the rig".
+           Cards hide individually when the underlying number is null
+           so a server with TWS but no AWS (or vice versa) doesn't
+           render a row full of "--". *@
+        @if (t.AvgTwsMs is not null || t.MaxTwsMs is not null
+             || t.AvgAwsMs is not null || t.MaxAwsMs is not null)
+        {
+            <div class="row g-3 mb-3">
+                @if (t.AvgTwsMs is not null)
+                {
+                    <div class="col-sm-6 col-lg-3">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h6 class="page-section-header">Avg TWS</h6>
+                                <div class="metric-lg">
+                                    @Format.Speed(t.AvgTwsMs)<span class="dash-unit">kn</span>
+                                </div>
+                                <small class="text-muted">duration-weighted mean across trips</small>
+                            </div>
+                        </div>
+                    </div>
+                }
+                @if (t.MaxTwsMs is not null)
+                {
+                    <div class="col-sm-6 col-lg-3">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h6 class="page-section-header">Max TWS</h6>
+                                <div class="metric-lg">
+                                    @Format.Speed(t.MaxTwsMs)<span class="dash-unit">kn</span>
+                                </div>
+                                <small class="text-muted">biggest gust observed in the window</small>
+                            </div>
+                        </div>
+                    </div>
+                }
+                @if (t.AvgAwsMs is not null)
+                {
+                    <div class="col-sm-6 col-lg-3">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h6 class="page-section-header">Avg AWS</h6>
+                                <div class="metric-lg">
+                                    @Format.Speed(t.AvgAwsMs)<span class="dash-unit">kn</span>
+                                </div>
+                                <small class="text-muted">duration-weighted; the "felt wind"</small>
+                            </div>
+                        </div>
+                    </div>
+                }
+                @if (t.MaxAwsMs is not null)
+                {
+                    <div class="col-sm-6 col-lg-3">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h6 class="page-section-header">Max AWS</h6>
+                                <div class="metric-lg">
+                                    @Format.Speed(t.MaxAwsMs)<span class="dash-unit">kn</span>
+                                </div>
+                                <small class="text-muted">peak rig load</small>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+
         <div class="row g-3 mb-3">
             <div class="col-sm-6 col-lg-4">
                 <div class="card h-100">
@@ -677,6 +751,18 @@
             sb.AppendLine($"- Best 24 h: {Format.Nm(t.Best24hMetres)} nm");
         if (t.MaxTripDistanceMetres is not null)
             sb.AppendLine($"- Longest trip: {Format.Nm(t.MaxTripDistanceMetres)} nm");
+        // Wind bullets. Mirror the on-page card row so a helm pasting
+        // into chat sees the same numbers they read on screen. Each
+        // metric elides on null so a TWS-only server doesn't leak
+        // empty AWS lines, and vice versa.
+        if (t.AvgTwsMs is not null)
+            sb.AppendLine($"- Avg TWS: {Format.Speed(t.AvgTwsMs)} kn");
+        if (t.MaxTwsMs is not null)
+            sb.AppendLine($"- Max TWS: {Format.Speed(t.MaxTwsMs)} kn");
+        if (t.AvgAwsMs is not null)
+            sb.AppendLine($"- Avg AWS: {Format.Speed(t.AvgAwsMs)} kn");
+        if (t.MaxAwsMs is not null)
+            sb.AppendLine($"- Max AWS: {Format.Speed(t.MaxAwsMs)} kn");
         sb.AppendLine();
         sb.AppendLine($"Coverage: {CoveragePct(t).ToString("F0", CultureInfo.InvariantCulture)}%");
         return sb.ToString().TrimEnd();
