@@ -593,6 +593,17 @@
     // reuse this without needing to re-attach, and so dispose can detach
     // BEFORE disposing the main module.
     private IJSObjectReference? deadmanModule;
+    // Module handle for the visibilitychange-edges listener (see
+    // wwwroot/js/visibility.js). Drives aisTimer pause/resume so a
+    // long-hidden tab doesn't queue a fire-storm of pushes that blocks
+    // the renderer past Chrome's 5 s "page unresponsive" threshold on
+    // wake.
+    private IJSObjectReference? visibilityEdgesModule;
+    // Tracks whether the tab is currently visible to the helm. Updated
+    // by OnPageHidden / OnPageVisible JSInvokables; gates aisTimer's
+    // Change calls so a no-op transition (already hidden, still hidden)
+    // doesn't churn the timer.
+    private bool _pageIsVisible = true;
     private DotNetObjectReference<Map>? dotNetRef;
     private bool follow;
     private bool nightMode;
@@ -681,6 +692,40 @@
     {
         colregsHelpOpen = true;
         StateHasChanged();
+    }
+
+    /// <summary>Fired from wwwroot/js/visibility.js when the tab goes
+    /// hidden. Pauses the AIS push timer so a long-hidden tab doesn't
+    /// queue backlogged ticks that drain back-to-back on resume and
+    /// trip Chrome's "page unresponsive" dialog. Idempotent: a no-op
+    /// when already hidden.</summary>
+    [JSInvokable]
+    public void OnPageHidden()
+    {
+        if (!_pageIsVisible) return;
+        _pageIsVisible = false;
+        // ObjectDisposedException can race with DisposeAsync: the
+        // detach call in DisposeAsync runs before aisTimer.DisposeAsync,
+        // but a visibilitychange that JS already dispatched can still
+        // be in flight on the WASM scheduler. Swallow the race; the
+        // page is going away anyway.
+        try { aisTimer?.Change(Timeout.Infinite, Timeout.Infinite); }
+        catch (ObjectDisposedException) { }
+    }
+
+    /// <summary>Fired from wwwroot/js/visibility.js when the tab
+    /// becomes visible. Re-arms the AIS push timer with the standard
+    /// initial-delay so the first push lands ~1 s after wake-up,
+    /// giving Blazor's render scheduler room to settle the layout pass
+    /// before the JSInterop payload hits the same frame. Idempotent.
+    /// </summary>
+    [JSInvokable]
+    public void OnPageVisible()
+    {
+        if (_pageIsVisible) return;
+        _pageIsVisible = true;
+        try { aisTimer?.Change(AisPushInitialDelayMs, AisPushIntervalMs); }
+        catch (ObjectDisposedException) { }
     }
     // Per-tick frame-building state (previous position, laylines
     // throttle counter, course-line-drawn flag) lives in this builder
@@ -1478,6 +1523,32 @@
         // minutes, so the precision loss is invisible.
         deadmanModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/deadman.js");
         await deadmanModule.InvokeVoidAsync("attachDeadman", dotNetRef, nameof(OnDeadmanTouch));
+
+        // Pause the AIS push timer when the tab goes hidden. The
+        // WebSocket stays connected so anchor / CPA / MOB alarms keep
+        // evaluating from live SK data, but the 3 s push (200+ vessel
+        // CPA/COLREGS compute + JSInterop payload) is wasted work on
+        // an invisible chart. Without this, a long-hidden tab queues
+        // backlogged ticks under Chrome's background throttle and on
+        // resume drains them back-to-back on the single WASM thread,
+        // blocking the renderer past 5 s and tripping the "page
+        // unresponsive" dialog.
+        try
+        {
+            visibilityEdgesModule = await JS.InvokeAsync<IJSObjectReference>(
+                "import", "./js/visibility.js");
+            await visibilityEdgesModule.InvokeVoidAsync(
+                "attachVisibilityEdges", dotNetRef,
+                nameof(OnPageVisible), nameof(OnPageHidden));
+        }
+        catch (JSDisconnectedException) { }
+        catch (Exception ex)
+        {
+            // Best-effort: a missing module file or a JSDisconnected at
+            // boot leaves the page running its previous wake-up shape
+            // rather than failing the whole Map mount.
+            Console.Error.WriteLine($"[map] visibility-edges hook failed: {ex.Message}");
+        }
 
         // Hand the loaded module to the radar overlay host so the
         // manager can drive it. Wired here (not in DI) because the
@@ -4933,6 +5004,19 @@
             {
                 await deadmanModule.InvokeVoidAsync("detachDeadman");
                 await deadmanModule.DisposeAsync();
+            }
+            catch (JSDisconnectedException) { }
+        }
+        // Same shape as the deadman teardown above: detach the JS-side
+        // visibility-edges listener BEFORE the dotNetRef is disposed so
+        // a visibilitychange firing mid-dispose doesn't try to invoke
+        // OnPageHidden/Visible on a torn-down proxy.
+        if (visibilityEdgesModule is not null)
+        {
+            try
+            {
+                await visibilityEdgesModule.InvokeVoidAsync("detachVisibilityEdges");
+                await visibilityEdgesModule.DisposeAsync();
             }
             catch (JSDisconnectedException) { }
         }
