@@ -1,4 +1,9 @@
-@* Modal card listing all keyboard shortcuts. Dismissed by clicking outside or Esc. *@
+@* Modal card listing every keyboard shortcut wired in
+   wwwroot/js/leafletInterop.js (letter set + arrow handler) and
+   Map.razor's OnKeyShortcut switch. Dismissed by clicking outside or
+   pressing Esc. Keep the rows in sync with both sources; the letter
+   set in leafletInterop.js gates which keys ever reach .NET, so any
+   row added here without a matching entry there is a lie. *@
 
 <div class="shortcuts-overlay" @onclick="OnDismiss">
     <div class="shortcuts-card" @onclick:stopPropagation>
@@ -10,16 +15,21 @@
             <kbd>A</kbd><span>Anchor watch</span>
             <kbd>M</kbd><span>Man overboard</span>
             <kbd>T</kbd><span>Fit track</span>
-            <kbd>L</kbd><span>Ship lines (COG vector / current / laylines)</span>
+            <kbd>L</kbd><span>Show laylines</span>
+            <kbd>D</kbd><span>Measure (distance / bearing)</span>
             <kbd>R</kbd><span>Race timer</span>
-            <kbd>D</kbd><span>Measure (distance)</span>
             <kbd>?</kbd><span>Show this card</span>
-            <kbd>Esc</kbd><span>Dismiss / exit measure</span>
+            <kbd>Esc</kbd><span>Dismiss / cancel current edit</span>
+            @* Combo cells: wrap multi-key chords in .kbd-combo so the
+               grid's 2-column layout still sees one entry per row. *@
+            <span class="kbd-combo"><kbd>&larr;</kbd><kbd>&uarr;</kbd><kbd>&darr;</kbd><kbd>&rarr;</kbd></span>
+            <span>Pan chart (1/5 viewport)</span>
+            <span class="kbd-combo"><kbd>Shift</kbd>+<kbd>&larr;</kbd><kbd>&uarr;</kbd><kbd>&darr;</kbd><kbd>&rarr;</kbd></span>
+            <span>Pan chart (full viewport)</span>
         </div>
         <div class="shortcuts-hint">
-            Double-click the map: toggle bearing/distance line.<br />
-            Right-click or long-press: context menu.<br />
-            Hold (or hold Space on a focused banner) to dismiss Danger alarms.
+            Right-click or long-press the chart: context menu (Navigate, Measure to/from here, Add waypoint).<br />
+            Hold the on-screen Danger banner (or hold <kbd>Space</kbd> / <kbd>Enter</kbd> on a focused banner) to dismiss the alarm.
         </div>
     </div>
 </div>

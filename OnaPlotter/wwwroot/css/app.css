@@ -3161,6 +3161,16 @@ html, body {
     font-weight: 600;
 }
 
+/* Group several <kbd> elements into a single grid cell so chord
+   shortcuts (arrow cluster, Shift+arrow cluster) occupy one row in
+   the 2-column grid instead of wrapping. */
+.shortcuts-grid .kbd-combo {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: nowrap;
+}
+
 .shortcuts-hint {
     margin-top: 16px;
     padding-top: 12px;

@@ -33,7 +33,7 @@
         <input type="checkbox" checked="@LaylinesVisible"
                @onchange="(e) => OnToggleLaylines.InvokeAsync((bool)(e.Value ?? false))" />
         <div class="chart-item-body">
-            <div class="chart-name">Show laylines</div>
+            <div class="chart-name">Show laylines@(ShowKeyboardHints ? " (L)" : "")</div>
             <div class="chart-desc">Port + stbd close-hauled tacks (sailing)</div>
         </div>
     </label>
@@ -114,6 +114,11 @@
     [Parameter] public EventCallback<bool> OnToggleShipLines { get; set; }
     [Parameter] public bool LaylinesVisible { get; set; }
     [Parameter] public EventCallback<bool> OnToggleLaylines { get; set; }
+    /// <summary>When true, append the (L) shortcut letter to the
+    /// "Show laylines" label so a keyboard user discovers the
+    /// shortcut without opening the shortcuts card. Mirrors the same
+    /// flag MapControls uses for (F)/(N)/etc. on the bottom bar.</summary>
+    [Parameter] public bool ShowKeyboardHints { get; set; }
 
     [Parameter] public bool ServerTrackVisible { get; set; }
     [Parameter] public string ServerTrackDuration { get; set; } = "1d";

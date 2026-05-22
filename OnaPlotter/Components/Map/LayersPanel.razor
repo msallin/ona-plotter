@@ -103,6 +103,7 @@
                     OnToggleShipLines="OnToggleShipLines"
                     LaylinesVisible="LaylinesVisible"
                     OnToggleLaylines="OnToggleLaylines"
+                    ShowKeyboardHints="ShowKeyboardHints"
                     ServerTrackVisible="ServerTrackVisible"
                     ServerTrackDuration="@ServerTrackDuration"
                     ServerTrackResolution="@ServerTrackResolution"
@@ -210,6 +211,10 @@
     [Parameter] public EventCallback<bool> OnToggleShipLines { get; set; }
     [Parameter] public bool LaylinesVisible { get; set; }
     [Parameter] public EventCallback<bool> OnToggleLaylines { get; set; }
+    /// <summary>Forwarded to <see cref="OwnShipSection"/> so the (L)
+    /// hint appears on the laylines checkbox when the helm has
+    /// enabled keyboard hints in Settings.</summary>
+    [Parameter] public bool ShowKeyboardHints { get; set; }
     [Parameter] public bool ServerTrackVisible { get; set; }
     [Parameter] public bool WeatherOverlayVisible { get; set; }
     [Parameter] public int WeatherOverlayOpacityPercent { get; set; } = 50;

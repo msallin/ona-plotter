@@ -212,7 +212,7 @@
        a permanent slot. *@
     <button class="ctrl-btn @(Follow ? "active" : "")" @onclick="OnToggleFollow" title="Follow boat (F)">
         <span class="ctrl-ico">@((MarkupString)Icons.Follow)</span>
-        <span class="ctrl-lbl">@(Follow ? "Follow" : "Free")</span>
+        <span class="ctrl-lbl">@(Follow ? "Follow" : "Free")@(ShowKeyboardHints ? " (F)" : "")</span>
     </button>
     <button class="ctrl-btn ctrl-btn-overflow" @onclick="OnCentreOnBoat"
             title="Centre on boat (one-shot; doesn't engage Follow)">
@@ -234,7 +234,10 @@
            ("set what?"). The button is a state indicator + toggle: when
            inactive it says "Anchor" (the noun, also the affordance),
            when active it says "Anchored" (the state). *@
-        <span class="ctrl-lbl">@(anchorClearConfirming ? "Confirm?" : AnchorActive ? "Anchored" : "Anchor")</span>
+        @* Suppress the (A) suffix during the confirm window: the
+           "Confirm?" label is itself a transient mid-action state and
+           the helm doesn't need a shortcut hint at that moment. *@
+        <span class="ctrl-lbl">@(anchorClearConfirming ? "Confirm?" : AnchorActive ? "Anchored" : "Anchor")@(ShowKeyboardHints && !anchorClearConfirming ? " (A)" : "")</span>
     </button>
     @* Stop Navigation lives next to Anchor because the two are the
        "end the current safety state" grouping: a route and a manual
@@ -268,14 +271,14 @@
             @onclick="OnMobClicked"
             title="@(mobClearConfirming ? "Tap again to clear MOB" : MobActive ? "Clear MOB (M)" : "Man overboard (M)")">
         <span class="ctrl-ico">@((MarkupString)Icons.Mob)</span>
-        <span class="ctrl-lbl">@(mobClearConfirming ? "Confirm?" : "MOB")</span>
+        <span class="ctrl-lbl">@(mobClearConfirming ? "Confirm?" : "MOB")@(ShowKeyboardHints && !mobClearConfirming ? " (M)" : "")</span>
     </button>
 
     <div class="ctrl-sep"></div>
 
     <button class="ctrl-btn ctrl-btn-overflow" @onclick="OnZoomToTrack" title="Fit track (T)">
         <span class="ctrl-ico">@((MarkupString)Icons.Fit)</span>
-        <span class="ctrl-lbl">Fit</span>
+        <span class="ctrl-lbl">Fit@(ShowKeyboardHints ? " (T)" : "")</span>
     </button>
 
     <div class="ctrl-sep"></div>
@@ -333,13 +336,16 @@
             @onclick="OnToggleMeasure"
             title="Measure distance + bearing (D)">
         <span class="ctrl-ico">@((MarkupString)Icons.Measure)</span>
-        <span class="ctrl-lbl">Measure</span>
+        <span class="ctrl-lbl">Measure@(ShowKeyboardHints ? " (D)" : "")</span>
     </button>
     @if (SailingMode == "race" || RaceTimerActive)
     {
         <button class="ctrl-btn ctrl-btn-overflow @(RaceTimerActive ? "active" : "")" @onclick="OnToggleRaceTimer" title="Race timer (R)">
             <span class="ctrl-ico">@((MarkupString)Icons.Flag)</span>
-            <span class="ctrl-lbl">@(RaceTimerActive ? RaceTimerLabel : "Race")</span>
+            @* Active label is a live clock string (e.g. "5:00") so a
+               trailing (R) would only clutter; suppress while the
+               timer is running, show it only on the idle "Race" label. *@
+            <span class="ctrl-lbl">@(RaceTimerActive ? RaceTimerLabel : "Race")@(ShowKeyboardHints && !RaceTimerActive ? " (R)" : "")</span>
         </button>
     }
 

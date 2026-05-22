@@ -2606,7 +2606,12 @@ export function enableKeyboardShortcuts(dotNetObjRef) {
         }
 
         const key = e.key.toLowerCase();
-        const isLetter = 'mfnatlor'.includes(key) && key.length === 1;
+        // Keep this set in sync with Map.razor's OnKeyShortcut switch
+        // and the MapShortcutsOverlay help card. Letters here are
+        // forwarded to .NET; anything else falls through to the
+        // browser. Order matches the help card so a future reader
+        // can scan both lists side by side.
+        const isLetter = 'fonamtldr'.includes(key) && key.length === 1;
         const isSpecial = key === '?' || key === 'escape';
         if (isLetter || isSpecial) {
             e.preventDefault();
