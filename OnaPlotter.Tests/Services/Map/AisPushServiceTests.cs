@@ -41,8 +41,6 @@ public class AisPushServiceTests
         public Task SetOwnCallsignAsync(string callsign) => Task.CompletedTask;
         public Task SetHarborModeAsync(bool enabled) => Task.CompletedTask;
         public Task<bool> FocusVesselAsync(string context) => Task.FromResult(false);
-        public Task SetGuardZoneVisibleAsync(bool visible) => Task.CompletedTask;
-        public Task SetGuardZoneWarningRingVisibleAsync(bool visible) => Task.CompletedTask;
     }
 
     /// <summary>Mutable time provider for the harbor-mode dwell test.
@@ -229,18 +227,20 @@ public class AisPushServiceTests
 
         var settings = new FakeSettings
         {
-            CpaAlarmThreshold = 0.5,
-            GuardZoneLookaheadMinutes = 30.0,
+            CpaAlarmNm = 0.5,
+            TcpaAlarmMin = 30.0,
+            CpaAwarenessNm = 1.0,
+            TcpaAwarenessMin = 30.0,
         };
         var svc = NewService(store, js, settings);
 
         await svc.PushAsync(nav);
 
         var entry = js.Pushes[0][0];
-        // 0.09 nm CPA is OUTSIDE the anchor-narrowed warning band
-        // (~0.032 nm) - the chip should be classified None. Without
-        // the AisPushService fix this returns "warning" because the
-        // 0.5 nm underway threshold's warning band reaches to 1.0 nm.
+        // 0.09 nm CPA is OUTSIDE the anchor-narrowed band (both tiers
+        // collapse to ~0.0162 nm at anchor) - the chip should be
+        // classified None. Without the anchor-narrowing the underway
+        // awareness band (1.0 nm) would have classified this awareness.
         await Assert.That(entry.CpaThreat)
             .IsEqualTo("none")
             .Because("anchored chip classifier must use the narrowed " +
@@ -405,7 +405,7 @@ public class AisPushServiceTests
     }
 
     // --- Threat-band integration pins (m7 from the PR-265 follow-up) -
-    // The three-band classification is unit-tested at the helper
+    // The two-tier classification is unit-tested at the helper
     // level (CpaTests.ClassifyThreat_*); these tests pin that the
     // plumbing through BuildSnapshot ends up writing the right
     // wire-string into the JS-bound payload. Cheap insurance against
@@ -413,11 +413,12 @@ public class AisPushServiceTests
     // an inline implementation.
 
     [Test]
-    public async Task BuildSnapshot_DangerBand_GeometryProducesDangerWireString()
+    public async Task BuildSnapshot_AlarmTier_GeometryProducesAlarmWireString()
     {
         // Target ~0.3 nm north of own boat, head-on closing at 5 m/s
-        // each. Default guard zone 0.5 nm, outer ring 1.0 nm. Current
-        // dist 0.3 < 0.5 -> Danger band.
+        // each. Projected CPA ~ 0 nm; with default CpaAlarmNm = 0.1
+        // and TcpaAlarmMin = 30, classification lands in the alarm
+        // tier.
         const double ownLat = 47.0, ownLon = 8.0;
         // 0.3 nm = 555.6 m. dLat = 555.6 / 111320 = 0.00499 deg.
         var store = new AisStore();
@@ -433,18 +434,27 @@ public class AisPushServiceTests
 
         await svc.PushAsync(nav);
 
-        await Assert.That(js.Pushes[0][0].CpaThreat).IsEqualTo("danger");
+        await Assert.That(js.Pushes[0][0].CpaThreat).IsEqualTo("alarm");
     }
 
     [Test]
-    public async Task BuildSnapshot_WarningBand_GeometryProducesWarningWireString()
+    public async Task BuildSnapshot_AwarenessTier_GeometryProducesAwarenessWireString()
     {
-        // Target ~0.7 nm north (between guard zone 0.5 and outer
-        // ring 1.0), head-on closing -> Warning band.
+        // Crossing target with a deliberate lateral offset so the
+        // projected CPA lands between the alarm tier (0.1 nm default)
+        // and the awareness tier (1.0 nm default). Geometry: target
+        // 0.5 nm north and 0.5 nm east of own, heading south at the
+        // same speed. As own goes north and target goes south, they
+        // cross paths with ~0.5 nm lateral separation -> CPA ~0.5 nm
+        // -> Awareness band.
         const double ownLat = 47.0, ownLon = 8.0;
+        double metresPerDegLon = 111_320.0 * Math.Cos(ownLat * Math.PI / 180.0);
+        double dLat = (0.5 * 1852.0) / 111_320.0;
+        double dLon = (0.5 * 1852.0) / metresPerDegLon;
+
         var store = new AisStore();
         SeedVessel(store, "vessels.urn:mrn:imo:mmsi:111",
-            ownLat + (0.7 * 1852) / 111320.0, ownLon, sog: 5.0, cog: Math.PI);
+            ownLat + dLat, ownLon + dLon, sog: 5.0, cog: Math.PI);
 
         var nav = new NavigationData();
         nav.ApplyPosition(ownLat, ownLon);
@@ -455,19 +465,24 @@ public class AisPushServiceTests
 
         await svc.PushAsync(nav);
 
-        await Assert.That(js.Pushes[0][0].CpaThreat).IsEqualTo("warning");
+        await Assert.That(js.Pushes[0][0].CpaThreat).IsEqualTo("awareness");
     }
 
     [Test]
-    public async Task BuildSnapshot_NoneBand_FarVesselProducesNoneWireString()
+    public async Task BuildSnapshot_NonClosingVessel_ProducesNoneWireString()
     {
-        // Target ~3 nm north - well outside the outer ring (1 nm at
-        // default 0.5 nm guard zone) - even with closing geometry,
-        // None.
+        // Parallel-course vessel at the same speed never closes.
+        // Cpa.Compute returns null for parallel-same-velocity pairs,
+        // which surfaces as Threat.None on the wire. Pin so the
+        // chart stays quiet on convoy formations.
         const double ownLat = 47.0, ownLon = 8.0;
         var store = new AisStore();
+        // Target 1 nm east, going due north at the same speed as own
+        // -> they cruise abreast and never approach each other.
+        double metresPerDegLon = 111_320.0 * Math.Cos(ownLat * Math.PI / 180.0);
+        double dLon = (1.0 * 1852.0) / metresPerDegLon;
         SeedVessel(store, "vessels.urn:mrn:imo:mmsi:111",
-            ownLat + (3.0 * 1852) / 111320.0, ownLon, sog: 5.0, cog: Math.PI);
+            ownLat, ownLon + dLon, sog: 5.0, cog: 0.0);
 
         var nav = new NavigationData();
         nav.ApplyPosition(ownLat, ownLon);
@@ -482,9 +497,9 @@ public class AisPushServiceTests
     }
 
     [Test]
-    public async Task BuildSnapshot_BuddyVessel_ProducesNoneWireString_EvenInDangerBand()
+    public async Task BuildSnapshot_BuddyVessel_ProducesNoneWireString_EvenInAlarmTier()
     {
-        // Same Danger geometry as the band test above, but the
+        // Same alarm-tier geometry as the band test above, but the
         // vessel is on the buddy list. ClassifyThreat short-circuits
         // to None when isBuddy=true, regardless of distance.
         const double ownLat = 47.0, ownLon = 8.0;
@@ -509,14 +524,17 @@ public class AisPushServiceTests
     public async Task BuildSnapshot_NonThreatVessel_HasNullColregsLabels()
     {
         // PR-265 made COLREGS lazy: only computed when threat is
-        // Warning or Danger. Pin that the lazy path means popups for
-        // non-threats see null labels (the JS popup then suppresses
-        // the COLREGS row entirely - correct, since the rules apply
-        // to closing encounters).
+        // Awareness or Alarm. Pin that the lazy path means popups
+        // for non-threats see null labels (the JS popup then
+        // suppresses the COLREGS row entirely - correct, since the
+        // rules apply to closing encounters). Use a parallel-course
+        // vessel so the threat is provably None.
         const double ownLat = 47.0, ownLon = 8.0;
         var store = new AisStore();
+        double metresPerDegLon = 111_320.0 * Math.Cos(ownLat * Math.PI / 180.0);
+        double dLon = (1.0 * 1852.0) / metresPerDegLon;
         SeedVessel(store, "vessels.urn:mrn:imo:mmsi:111",
-            ownLat + (3.0 * 1852) / 111320.0, ownLon, sog: 5.0, cog: Math.PI);
+            ownLat, ownLon + dLon, sog: 5.0, cog: 0.0);
 
         var nav = new NavigationData();
         nav.ApplyPosition(ownLat, ownLon);
@@ -535,7 +553,7 @@ public class AisPushServiceTests
     [Test]
     public async Task BuildSnapshot_ThreatVessel_PopulatesColregsLabels()
     {
-        // The complementary pin: a vessel in the Danger band gets
+        // The complementary pin: a vessel in the alarm tier gets
         // COLREGS labels populated. This exercises the lazy-COLREGS
         // path AND the head-on geometry classifier.
         const double ownLat = 47.0, ownLon = 8.0;
@@ -552,7 +570,7 @@ public class AisPushServiceTests
 
         await svc.PushAsync(nav);
 
-        await Assert.That(js.Pushes[0][0].CpaThreat).IsEqualTo("danger");
+        await Assert.That(js.Pushes[0][0].CpaThreat).IsEqualTo("alarm");
         await Assert.That(js.Pushes[0][0].ColregsLabel).IsNotNull();
         // Role can legitimately be null for indeterminate categories;
         // we just pin that the label landed (the head-on case maps
@@ -563,16 +581,16 @@ public class AisPushServiceTests
     public async Task ThreatToWireString_ContractIsStable()
     {
         // Pin the C#/JS contract: aisLayer.js reads
-        //   case 'danger': ... case 'warning': ... default: none
+        //   case 'alarm': ... case 'awareness': ... default: none
         // so any rename here silently breaks the chart-overlay
         // classifier on the JS side. Test reads the static helper
         // (internal-visible to tests via InternalsVisibleTo) so a
         // rename of the underlying enum case still surfaces here at
         // compile time.
         await Assert.That(AisPushService.ThreatToWireString(
-            OnaPlotter.Utilities.Cpa.Threat.Danger)).IsEqualTo("danger");
+            OnaPlotter.Utilities.Cpa.Threat.Alarm)).IsEqualTo("alarm");
         await Assert.That(AisPushService.ThreatToWireString(
-            OnaPlotter.Utilities.Cpa.Threat.Warning)).IsEqualTo("warning");
+            OnaPlotter.Utilities.Cpa.Threat.Awareness)).IsEqualTo("awareness");
         await Assert.That(AisPushService.ThreatToWireString(
             OnaPlotter.Utilities.Cpa.Threat.None)).IsEqualTo("none");
     }
@@ -599,8 +617,6 @@ public class AisPushServiceTests
         public Task SetOwnCallsignAsync(string callsign) => Task.CompletedTask;
         public Task SetHarborModeAsync(bool enabled) => Task.CompletedTask;
         public Task<bool> FocusVesselAsync(string context) => Task.FromResult(false);
-        public Task SetGuardZoneVisibleAsync(bool visible) => Task.CompletedTask;
-        public Task SetGuardZoneWarningRingVisibleAsync(bool visible) => Task.CompletedTask;
     }
 
     private sealed class ThrowAlwaysNonJsAisJs : IMapAisJs
@@ -625,8 +641,6 @@ public class AisPushServiceTests
         public Task SetOwnCallsignAsync(string callsign) => Task.CompletedTask;
         public Task SetHarborModeAsync(bool enabled) => Task.CompletedTask;
         public Task<bool> FocusVesselAsync(string context) => Task.FromResult(false);
-        public Task SetGuardZoneVisibleAsync(bool visible) => Task.CompletedTask;
-        public Task SetGuardZoneWarningRingVisibleAsync(bool visible) => Task.CompletedTask;
     }
 
     [Test]

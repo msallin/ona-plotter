@@ -37,21 +37,6 @@
             <div class="chart-desc">Port + stbd close-hauled tacks (sailing)</div>
         </div>
     </label>
-    @* Guard zone ring: amber CPA-radius circle drawn around own
-       boat. Lives here (rather than Misc) because it's an own-ship
-       indicator and the helm flips it to declutter the area
-       around the boat. Independent of the alarm pipeline - the
-       CPA-alarm thresholds in Settings still drive the alarm
-       regardless. *@
-    <label class="chart-item">
-        <input type="checkbox" checked="@GuardZoneVisible"
-               @onchange="(e) => OnToggleGuardZone.InvokeAsync((bool)(e.Value ?? false))" />
-        <div class="chart-item-body">
-            <div class="chart-name">Guard zone ring</div>
-            <div class="chart-desc">Amber CPA-radius circle around own boat. Alarm fires regardless.</div>
-        </div>
-    </label>
-
     @* Ship track = server-side history polyline. Was a separate
        Layers-panel section ("Server history" / "History" before
        that); helm-feedback consolidated all own-ship chart toggles
@@ -129,8 +114,6 @@
     [Parameter] public EventCallback<bool> OnToggleShipLines { get; set; }
     [Parameter] public bool LaylinesVisible { get; set; }
     [Parameter] public EventCallback<bool> OnToggleLaylines { get; set; }
-    [Parameter] public bool GuardZoneVisible { get; set; } = true;
-    [Parameter] public EventCallback<bool> OnToggleGuardZone { get; set; }
 
     [Parameter] public bool ServerTrackVisible { get; set; }
     [Parameter] public string ServerTrackDuration { get; set; } = "1d";

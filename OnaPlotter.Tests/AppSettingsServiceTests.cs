@@ -20,7 +20,13 @@ public class AppSettingsServiceTests
         // declared field default and the InitializeAsync fallback
         // surfaces here.
         await Assert.That(svc.DepthAlarmThreshold).IsEqualTo(2.0);
-        await Assert.That(svc.CpaAlarmThreshold).IsEqualTo(0.5);
+        // Two-tier CPA defaults: alarm tier strict (0.1 nm / 30 min),
+        // awareness tier wider (1.0 nm / 30 min). Pinning both keeps
+        // a future tweak to either side from sneaking through unseen.
+        await Assert.That(svc.CpaAlarmNm).IsEqualTo(0.1);
+        await Assert.That(svc.TcpaAlarmMin).IsEqualTo(30.0);
+        await Assert.That(svc.CpaAwarenessNm).IsEqualTo(1.0);
+        await Assert.That(svc.TcpaAwarenessMin).IsEqualTo(30.0);
         await Assert.That(svc.WindShiftAlarmThreshold).IsEqualTo(30.0);
     }
 
@@ -60,7 +66,7 @@ public class AppSettingsServiceTests
     // UI slider could allow a value the JS layer rejects. Ladder of
     // boundary cases follows the same shape every other "double with
     // clamp + invariant culture persistence" setting on this service
-    // covers (CpaAlarmThreshold, ManualAnchorRadiusMeters, etc).
+    // covers (CpaAlarmNm, ManualAnchorRadiusMeters, etc).
 
     [Test]
     public async Task WeatherOverlayOpacity_DefaultsTo0_5()
@@ -166,32 +172,37 @@ public class AppSettingsServiceTests
         var kv = new InMemoryKv();
         var svc = new AppSettingsService(kv);
         await svc.InitializeAsync();
-        await svc.SetCpaAlarmThresholdAsync(0.75);
+        await svc.SetCpaAlarmNmAsync(0.75);
 
-        var stored = await kv.GetAsync("cpaAlarmThreshold");
+        var stored = await kv.GetAsync("cpaAlarmNm.v1");
         await Assert.That(stored).IsEqualTo("0.75");
     }
 
     [Test]
     public async Task LoadDouble_AcceptsInvariantDot_RegardlessOfStoredFormat()
     {
-        // Pin the LOAD direction (the SetCpaAlarmThresholdAsync test
-        // above already pins the SAVE direction). A user on de-CH /
-        // fr-FR running an older buggy build might have a "0,5" in
+        // Pin the LOAD direction (the SetCpaAlarmNmAsync test above
+        // already pins the SAVE direction). A user on de-CH / fr-FR
+        // running an older buggy build might have a "0,5" in
         // localStorage; the current loader uses InvariantCulture and
         // must fall back to the default rather than parse a comma as
         // a thousands separator and produce a nonsense threshold.
+        // The legacy keys (cpaAlarmThreshold, guardZoneLookaheadMinutes)
+        // are still honoured via LoadDoubleFallback so a one-time
+        // upgrade from the pre-two-tier schema migrates cleanly.
         var kv = new InMemoryKv();
-        await kv.SetAsync("cpaAlarmThreshold", "0.42");          // canonical
-        await kv.SetAsync("guardZoneLookaheadMinutes", "12,5");  // comma locale
+        await kv.SetAsync("cpaAlarmThreshold", "0.42");          // canonical (legacy key)
+        await kv.SetAsync("guardZoneLookaheadMinutes", "12,5");  // comma locale (legacy key)
         await kv.SetAsync("windShiftAlarmThreshold", "garbage"); // corrupt
 
         var svc = new AppSettingsService(kv);
         await svc.InitializeAsync();
 
-        await Assert.That(svc.CpaAlarmThreshold).IsEqualTo(0.42);
-        // Comma-formatted value rejected -> default applied
-        await Assert.That(svc.GuardZoneLookaheadMinutes).IsEqualTo(10.0);
+        // Legacy cpaAlarmThreshold migrates into CpaAlarmNm.
+        await Assert.That(svc.CpaAlarmNm).IsEqualTo(0.42);
+        // Comma-formatted legacy value rejected -> default applied
+        // (30 min for the new TcpaAlarmMin tier).
+        await Assert.That(svc.TcpaAlarmMin).IsEqualTo(30.0);
         // Garbage rejected -> default applied
         await Assert.That(svc.WindShiftAlarmThreshold).IsEqualTo(30.0);
     }
@@ -364,17 +375,17 @@ public class AppSettingsServiceTests
     }
 
     [Test]
-    public async Task GuardZoneLookahead_RoundTrip()
+    public async Task TcpaAlarmMin_RoundTrip()
     {
         var kv = new InMemoryKv();
         var svc = new AppSettingsService(kv);
         await svc.InitializeAsync();
 
-        await svc.SetGuardZoneLookaheadMinutesAsync(15);
+        await svc.SetTcpaAlarmMinAsync(15);
 
         var svc2 = new AppSettingsService(kv);
         await svc2.InitializeAsync();
-        await Assert.That(svc2.GuardZoneLookaheadMinutes).IsEqualTo(15);
+        await Assert.That(svc2.TcpaAlarmMin).IsEqualTo(15);
     }
 
     [Test]
@@ -1399,65 +1410,6 @@ public class AppSettingsServiceTests
     // Without these guards the JS decorator could see (e.g.) -1 and
     // the chart would render with a broken maxZoom calculation.
 
-    // === Guard zone warning ring ===
-    // Default true so existing installs gain the new advisory ring
-    // without an opt-in step. Persistence pinned because the toggle
-    // is the only path the helm has to opt out - the value MUST
-    // round-trip across reloads.
-
-    [Test]
-    public async Task GuardZoneWarningRingVisible_DefaultsTrue()
-    {
-        var svc = new AppSettingsService(new InMemoryKv());
-        await svc.InitializeAsync();
-        await Assert.That(svc.GuardZoneWarningRingVisible).IsTrue();
-    }
-
-    [Test]
-    public async Task GuardZoneWarningRingVisible_RoundTrips()
-    {
-        var kv = new InMemoryKv();
-        var svc = new AppSettingsService(kv);
-        await svc.InitializeAsync();
-        await svc.SetGuardZoneWarningRingVisibleAsync(false);
-
-        var svc2 = new AppSettingsService(kv);
-        await svc2.InitializeAsync();
-        await Assert.That(svc2.GuardZoneWarningRingVisible).IsFalse();
-        await Assert.That(await kv.GetAsync("guardZoneWarningRingVisible.v1"))
-            .IsEqualTo("false");
-    }
-
-    [Test]
-    public async Task SetGuardZoneWarningRingVisible_FiresOnSettingsChanged()
-    {
-        var svc = new AppSettingsService(new InMemoryKv());
-        await svc.InitializeAsync();
-        int fires = 0;
-        svc.OnSettingsChanged += () => fires++;
-
-        await svc.SetGuardZoneWarningRingVisibleAsync(false);
-
-        await Assert.That(fires).IsEqualTo(1);
-    }
-
-    [Test]
-    public async Task GuardZoneWarningRingVisible_GarbageStored_TreatedAsFalse()
-    {
-        // LoadBool's contract: a stored value is interpreted as the
-        // string "true" or false-otherwise. Pin: a corrupted "yes"
-        // entry resolves as false. Same shape every other boolean
-        // setting on the service uses, so the helm's "off" choice
-        // can never be silently flipped back to on by a corrupt
-        // localStorage value AND the rare "weird stored value"
-        // path is documented as off.
-        var kv = new InMemoryKv();
-        await kv.SetAsync("guardZoneWarningRingVisible.v1", "yes");
-        var svc = new AppSettingsService(kv);
-        await svc.InitializeAsync();
-        await Assert.That(svc.GuardZoneWarningRingVisible).IsFalse();
-    }
-
     [Test]
     public async Task ChartUpscale_DefaultsWhenStorageEmpty()
     {
@@ -1728,6 +1680,94 @@ public class AppSettingsServiceTests
         var svc2 = new AppSettingsService(kv);
         await svc2.InitializeAsync();
         await Assert.That(svc2.ChartsSeeded).IsTrue();
+    }
+
+    [Test]
+    public async Task DistanceRings_Defaults_WhenStorageEmpty()
+    {
+        // Pure visual scaffolding, opt-in: a fresh helm gets a clean
+        // chart, not a bullseye. The defaults pair the toggle (off)
+        // with sensible spacing + count so flipping it on once is
+        // enough to see useful rings.
+        var svc = new AppSettingsService(new InMemoryKv());
+        await svc.InitializeAsync();
+
+        await Assert.That(svc.DistanceRingsEnabled).IsFalse();
+        await Assert.That(svc.DistanceRingsBaseNm).IsEqualTo(0.5);
+        await Assert.That(svc.DistanceRingsCount).IsEqualTo(4);
+    }
+
+    [Test]
+    public async Task DistanceRings_RoundTripsPersistedValues()
+    {
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        await svc.SetDistanceRingsEnabledAsync(true);
+        await svc.SetDistanceRingsBaseNmAsync(0.25);
+        await svc.SetDistanceRingsCountAsync(6);
+
+        var svc2 = new AppSettingsService(kv);
+        await svc2.InitializeAsync();
+        await Assert.That(svc2.DistanceRingsEnabled).IsTrue();
+        await Assert.That(svc2.DistanceRingsBaseNm).IsEqualTo(0.25);
+        await Assert.That(svc2.DistanceRingsCount).IsEqualTo(6);
+    }
+
+    [Test]
+    public async Task DistanceRingsCount_ClampsToOneEightOnSet()
+    {
+        // Defence against a UI binding that lets a typed-in 0 / 99 /
+        // negative slip past the input's min/max attribute. The
+        // setter is the canonical clamp - the input is just a hint.
+        var svc = new AppSettingsService(new InMemoryKv());
+        await svc.InitializeAsync();
+        await svc.SetDistanceRingsCountAsync(0);
+        await Assert.That(svc.DistanceRingsCount).IsEqualTo(1);
+        await svc.SetDistanceRingsCountAsync(-5);
+        await Assert.That(svc.DistanceRingsCount).IsEqualTo(1);
+        await svc.SetDistanceRingsCountAsync(42);
+        await Assert.That(svc.DistanceRingsCount).IsEqualTo(8);
+    }
+
+    [Test]
+    public async Task DistanceRingsBaseNm_ClampsAndRejectsNonFinite()
+    {
+        // Out-of-range and non-finite values would either disable
+        // the rings via the radius-collapse path (0 / negative) or
+        // paint outside any reasonable chart (huge). Pin to the
+        // supported band on set so a corrupted bind can't degrade
+        // the feature silently.
+        var svc = new AppSettingsService(new InMemoryKv());
+        await svc.InitializeAsync();
+        await svc.SetDistanceRingsBaseNmAsync(0.0);
+        await Assert.That(svc.DistanceRingsBaseNm).IsEqualTo(0.05);
+        await svc.SetDistanceRingsBaseNmAsync(-3.0);
+        await Assert.That(svc.DistanceRingsBaseNm).IsEqualTo(0.05);
+        await svc.SetDistanceRingsBaseNmAsync(9999.0);
+        await Assert.That(svc.DistanceRingsBaseNm).IsEqualTo(50.0);
+        await svc.SetDistanceRingsBaseNmAsync(double.NaN);
+        await Assert.That(svc.DistanceRingsBaseNm).IsEqualTo(0.5);
+    }
+
+    [Test]
+    public async Task DistanceRings_GarbagePersistedFalls_BackToDefaults()
+    {
+        // localStorage corruption / locale drift on an older build:
+        // base stored with a comma, count stored as garbage. Loader
+        // must fall back to the declared defaults rather than land
+        // on NaN / zero that would silently disable the feature.
+        var kv = new InMemoryKv();
+        await kv.SetAsync("distanceRingsBaseNm.v1", "0,5");        // comma locale
+        await kv.SetAsync("distanceRingsCount.v1", "banana");      // garbage
+        await kv.SetAsync("distanceRingsEnabled.v1", "true");
+
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        await Assert.That(svc.DistanceRingsEnabled).IsTrue();
+        await Assert.That(svc.DistanceRingsBaseNm).IsEqualTo(0.5);
+        await Assert.That(svc.DistanceRingsCount).IsEqualTo(4);
     }
 
     private sealed class ThrowingKv : IKeyValueStore

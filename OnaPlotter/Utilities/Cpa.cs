@@ -169,120 +169,128 @@ public static class Cpa
         return Compute(own.Value, lat2, lon2, cog2Rad, sog2Ms);
     }
 
-    /// <summary>Default CPA threshold used when storage corruption / a
-    /// schema migration leaves the helm-configured value as NaN or
-    /// non-positive. Matches IAppSettings's default-on-fresh-install
-    /// (0.5 nm) so a recovery from a bad localStorage entry doesn't
-    /// silently disable CPA classification entirely.</summary>
-    private const double DefaultCpaThresholdNm = 0.5;
+    /// <summary>Floor used when a helm-configured CPA value lands as
+    /// NaN / negative / zero (storage corruption, schema migration
+    /// mishap, hand-edited localStorage). Without the floor,
+    /// ClassifyThreat's `cpa &lt;= NaN` test is false on every vessel
+    /// and the whole tier goes dark with no helm-visible signal. A
+    /// tiny positive number is the safe recovery: classification
+    /// still runs, just very strictly.</summary>
+    private const double SafeCpaFloorNm = 0.01;
+
+    /// <summary>Same idea as <see cref="SafeCpaFloorNm"/>: a tiny
+    /// positive TCPA floor so a corrupted lookahead can't collapse
+    /// the whole classifier to None.</summary>
+    private const double SafeTcpaFloorMin = 1.0;
 
     /// <summary>
-    /// Effective CPA radius (nautical miles) given the helm's underway
-    /// threshold + anchor state. When the SignalK anchoralarm plugin is
-    /// active and has published a max-radius, the visible guard ring AND
-    /// the chip-classifier both narrow to the anchor swing radius; the
-    /// underway threshold (typically 0.3+ nm) generates "every passing
-    /// vessel chips" noise on a stationary boat in a crowded anchorage.
-    /// <para>Pure helper so the alarm rule (CpaAlarmRule), the chip
-    /// snapshot path (AisPushService), and the ring rendering
-    /// (Map.razor.PushGuardZoneAsync) all settle on one number. A
-    /// previous bug had the rings narrow but the chips keep using
-    /// the underway threshold - helm saw amber chips floating
-    /// outside the visible rings, called it broken.</para>
+    /// Anchor-aware effective CPA distance (nautical miles) for one
+    /// classifier tier. When the SignalK anchoralarm plugin is active
+    /// and has published a max swing radius, the configured tier
+    /// distance narrows to the swing radius - the underway distance
+    /// (0.1+ nm for alarm, 1.0+ nm for awareness) generates "every
+    /// passing vessel chips / fires the klaxon" noise on a stationary
+    /// boat in a crowded anchorage.
+    /// <para>Used twice per evaluation tick: once for the alarm tier,
+    /// once for awareness. Both call sites collapse to the anchor
+    /// radius when anchored so the two tiers merge into a single
+    /// "anything entering the swing circle" band - which is what an
+    /// anchored helm actually wants.</para>
     /// </summary>
-    /// <param name="underwayNm">Helm-configured CPA radius
-    /// (<c>IAppSettings.CpaAlarmThreshold</c>).</param>
+    /// <param name="configuredNm">Helm-configured tier distance
+    /// (<c>IAppSettings.CpaAlarmNm</c> or <c>CpaAwarenessNm</c>).</param>
     /// <param name="anchorActive">True when SK anchoralarm-plugin has
     /// a drop point set (<c>NavigationData.AnchorActive</c>).</param>
     /// <param name="anchorMaxRadiusM">SK-published max swing radius in
     /// metres (<c>NavigationData.AnchorMaxRadius</c>); null when the
     /// plugin hasn't pushed a value yet.</param>
-    public static double EffectiveRadiusNm(
-        double underwayNm, bool anchorActive, double? anchorMaxRadiusM)
+    public static double EffectiveCpaRadiusNm(
+        double configuredNm, bool anchorActive, double? anchorMaxRadiusM)
     {
-        // Storage corruption / schema-migration mishap can land
-        // underwayNm as NaN / Infinity / non-positive. Without the
-        // guard, Math.Min(NaN, anchorNm) = NaN and ClassifyThreat
-        // then sees `cpaNm < NaN` = false on every vessel - the CPA
-        // alarm + threat ring go DARK with no helm-visible signal.
-        // Recover to the spec default rather than fail-silent.
-        double safeUnderway = (double.IsFinite(underwayNm) && underwayNm > 0)
-            ? underwayNm : DefaultCpaThresholdNm;
-        if (!anchorActive) return safeUnderway;
-        if (anchorMaxRadiusM is not double maxM) return safeUnderway;
-        if (!double.IsFinite(maxM) || maxM <= 0) return safeUnderway;
+        double safe = (double.IsFinite(configuredNm) && configuredNm > 0)
+            ? configuredNm : SafeCpaFloorNm;
+        if (!anchorActive) return safe;
+        if (anchorMaxRadiusM is not double maxM) return safe;
+        if (!double.IsFinite(maxM) || maxM <= 0) return safe;
         double anchorNm = maxM / 1852.0;
-        return Math.Min(safeUnderway, anchorNm);
+        return Math.Min(safe, anchorNm);
     }
 
     /// <summary>
-    /// Threat severity for a single CPA hit, used to drive marker colour /
-    /// danger-ring pulse / red-vs-amber crossing line on the chart. Pure
-    /// classification, no rendering side-effects.
+    /// Threat severity for a single CPA hit. Drives marker colour,
+    /// klaxon trigger, crossing-line rendering. Two-tier model:
+    /// <list type="bullet">
+    ///   <item><b>None</b>: vessel not on a closing track, CPA in the
+    ///   past, beyond the awareness window, or buddy.</item>
+    ///   <item><b>Awareness</b>: silent on-chart attention - cross +
+    ///   hover label, no audio. The "watch this one" band.</item>
+    ///   <item><b>Alarm</b>: audible klaxon + red-blink marker +
+    ///   always-on label. The "act now" band.</item>
+    /// </list>
     /// </summary>
-    public enum Threat { None, Warning, Danger }
-
-    /// <summary>Outer (warning-band) ring multiplier. Hardcoded at 2× the
-    /// helm-configured guard-zone radius. Previously a settings-exposed
-    /// "warning factor" with default 2.0; helms reported the second knob
-    /// as confusing (the visible warning ring already implied 2×) and the
-    /// factor's only realistic value was always 2 anyway. The amber ring
-    /// now tracks the guard zone deterministically.</summary>
-    public const double OuterRingMultiplier = 2.0;
+    public enum Threat { None, Awareness, Alarm }
 
     /// <summary>
     /// Maps a CPA result to a <see cref="Threat"/> level using the helm's
-    /// configured guard-zone radius + lookahead PLUS the vessel's CURRENT
-    /// distance from own ship. The current-distance gate is what stops a
-    /// vessel 5 nm away with a marginal closing track from drawing a long
-    /// crossing line across the chart - helms read those as visual noise
-    /// because the ship is well outside the displayed guard ring.
+    /// two-tier thresholds. Awareness is the wider band (default 1.0 nm
+    /// / 30 min); alarm is the inner strict band (default 0.1 nm / 30
+    /// min). A target trips the alarm only when BOTH the alarm CPA and
+    /// alarm TCPA limits are satisfied; otherwise it may still trip
+    /// awareness if it's inside that wider band.
     ///
-    /// <para>Severity is decided by the CURRENT distance ring:</para>
-    /// <list type="bullet">
-    ///   <item><b>Danger</b>: target is already inside the guard zone
-    ///   AND the CPA math says it'll get closer.</item>
-    ///   <item><b>Warning</b>: target is between the guard zone and
-    ///   2× guard zone (the "outer ring") AND the CPA math says it'll
-    ///   reach inside the guard zone within the lookahead window.</item>
-    ///   <item><b>None</b>: target outside the outer ring, CPA is in the
-    ///   past, target is not closing, target won't reach inside the
-    ///   guard zone, or the lookahead has already elapsed.</item>
-    /// </list>
+    /// <para>No current-distance gate: the awareness band is wide
+    /// enough (1.0 nm) that a vessel 4 nm away converging fast is
+    /// genuinely something the helm wants to see, which the previous
+    /// 2× guard-zone gate would have suppressed.</para>
     ///
-    /// <para>Buddies are exempted by the caller passing <paramref name="isBuddy"/>
-    /// = true so a friend sailing close never paints the chart red.</para>
+    /// <para>Buddies are exempted by the caller passing
+    /// <paramref name="isBuddy"/> = true so a friend sailing close
+    /// never paints the chart red.</para>
     /// </summary>
-    /// <param name="cpaNm">Projected CPA distance, nautical miles. Null = no CPA.</param>
+    /// <param name="cpaNm">Projected CPA distance, nm. Null = no CPA.</param>
     /// <param name="tcpaMin">TCPA time, minutes. Null or non-positive = no closing.</param>
-    /// <param name="currentDistanceNm">Current distance from own ship to the
-    /// target, nautical miles. The ring-membership gate.</param>
-    /// <param name="guardZoneRadiusNm">Helm-configured guard-zone radius
-    /// (<see cref="EffectiveRadiusNm"/> output).</param>
-    /// <param name="lookaheadMin">Helm-configured lookahead window. CPA
-    /// further out than this is treated as None even if a future approach
-    /// would otherwise classify - sleep first.</param>
-    /// <param name="isBuddy">If true the result is always <see cref="Threat.None"/>.</param>
+    /// <param name="cpaAlarmNm">Alarm-tier CPA distance limit. From
+    /// <see cref="EffectiveCpaRadiusNm"/> applied to
+    /// <c>IAppSettings.CpaAlarmNm</c>.</param>
+    /// <param name="tcpaAlarmMin">Alarm-tier TCPA window, minutes.
+    /// <c>IAppSettings.TcpaAlarmMin</c>.</param>
+    /// <param name="cpaAwarenessNm">Awareness-tier CPA distance limit.
+    /// From <see cref="EffectiveCpaRadiusNm"/> applied to
+    /// <c>IAppSettings.CpaAwarenessNm</c>.</param>
+    /// <param name="tcpaAwarenessMin">Awareness-tier TCPA window,
+    /// minutes. <c>IAppSettings.TcpaAwarenessMin</c>.</param>
+    /// <param name="isBuddy">If true the result is always
+    /// <see cref="Threat.None"/>.</param>
     public static Threat ClassifyThreat(
         double? cpaNm, double? tcpaMin,
-        double currentDistanceNm,
-        double guardZoneRadiusNm, double lookaheadMin,
+        double cpaAlarmNm, double tcpaAlarmMin,
+        double cpaAwarenessNm, double tcpaAwarenessMin,
         bool isBuddy)
     {
         if (isBuddy) return Threat.None;
         if (cpaNm is null || tcpaMin is null || tcpaMin <= 0) return Threat.None;
-        if (tcpaMin > lookaheadMin) return Threat.None;
-        // The vessel must actually reach inside the guard zone to count.
-        // A parallel-course pass at 1.5 nm with 1.5 nm cpa shouldn't draw
-        // a crossing line - they're just sailing alongside.
-        if (cpaNm > guardZoneRadiusNm) return Threat.None;
-        // Current-distance ring gate. The outer ring is hardcoded at 2×
-        // guard zone (matches the visible warning-band circle).
-        double outerRingNm = guardZoneRadiusNm * OuterRingMultiplier;
-        if (currentDistanceNm > outerRingNm) return Threat.None;
 
-        return currentDistanceNm <= guardZoneRadiusNm
-            ? Threat.Danger
-            : Threat.Warning;
+        // Defence against corrupted thresholds. The setters clamp on
+        // write but a hand-crafted IAppSettings stub in tests or a
+        // localStorage poke could land us here with NaN / negative
+        // values; pin to the safe floor so the classifier still
+        // returns something meaningful instead of None on every
+        // vessel.
+        double safeAlarmCpa = (double.IsFinite(cpaAlarmNm) && cpaAlarmNm > 0) ? cpaAlarmNm : SafeCpaFloorNm;
+        double safeAlarmTcpa = (double.IsFinite(tcpaAlarmMin) && tcpaAlarmMin > 0) ? tcpaAlarmMin : SafeTcpaFloorMin;
+        double safeAwarenessCpa = (double.IsFinite(cpaAwarenessNm) && cpaAwarenessNm > 0) ? cpaAwarenessNm : safeAlarmCpa;
+        double safeAwarenessTcpa = (double.IsFinite(tcpaAwarenessMin) && tcpaAwarenessMin > 0) ? tcpaAwarenessMin : safeAlarmTcpa;
+        // The invariant "awareness >= alarm" is enforced by the
+        // AppSettingsService setters, but a stub could violate it.
+        // Apply it here so the tiers never invert at the classifier.
+        if (safeAwarenessCpa < safeAlarmCpa) safeAwarenessCpa = safeAlarmCpa;
+        if (safeAwarenessTcpa < safeAlarmTcpa) safeAwarenessTcpa = safeAlarmTcpa;
+
+        double cpa = cpaNm.Value;
+        double tcpa = tcpaMin.Value;
+
+        if (cpa <= safeAlarmCpa && tcpa <= safeAlarmTcpa) return Threat.Alarm;
+        if (cpa <= safeAwarenessCpa && tcpa <= safeAwarenessTcpa) return Threat.Awareness;
+        return Threat.None;
     }
 }

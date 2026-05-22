@@ -1,0 +1,34 @@
+# CPA / TCPA visualisation test overlay.
+#
+# Swaps the regular fake-data publisher for the CPA scenario variant:
+# own boat goes straight north + 7 AIS targets positioned so that
+# three sit outside both zones, two trigger awareness, and two trigger
+# the audible alarm. Use this to verify the new two-tier model + the
+# click-to-show awareness overlay land correctly on the chart.
+#
+# Usage:
+#   # 1. Build the OnaPlotter webapp bundle (Release publish + stage)
+#   dotnet publish OnaPlotter/OnaPlotter.csproj -c Release -o deploy/publish
+#   pwsh ./deploy/stage-only.ps1
+#
+#   # 2. Bring up the full stack (SK + CPA fake-data + webapp mount)
+#   docker compose -f docker/docker-compose.dev.yml \
+#                  -f docker/docker-compose.cpa-test.yml \
+#                  -f docker/docker-compose.testing.yml \
+#                  up -d --build
+#
+#   # 3. Open
+#   #   http://localhost:3000/signalk-onaplotter/
+#
+#   # 4. Tear down
+#   docker compose -f docker/docker-compose.dev.yml \
+#                  -f docker/docker-compose.cpa-test.yml \
+#                  -f docker/docker-compose.testing.yml \
+#                  down
+
+services:
+  fake-data:
+    build:
+      context: ./fake-data-cpa
+      dockerfile: Dockerfile
+    container_name: ona-fake-data-cpa

@@ -29,24 +29,33 @@ public sealed class CpaAlarmRule : IAlarmRule
             "notifications.security.collision", alarm.TargetKey);
     }
 
-    /// <summary>Effective CPA radius for THIS tick (nautical miles).
-    /// Wraps the shared <see cref="Cpa.EffectiveRadiusNm"/> helper so
-    /// the alarm rule, the chart-side chip classifier
-    /// (<c>AisPushService</c>), and the visible guard-ring renderer
-    /// (<c>Map.razor.PushGuardZoneAsync</c>) all settle on one number.
+    /// <summary>Effective alarm-tier CPA distance (nautical miles) for
+    /// THIS tick. Wraps <see cref="Cpa.EffectiveCpaRadiusNm"/> so the
+    /// alarm rule + the chart-side chip classifier
+    /// (<c>AisPushService</c>) agree on the number.
     /// <para>
-    /// The user-configured <see cref="IAlarmThresholds.CpaAlarmThreshold"/>
-    /// is the underway value - typically 0.3..0.5 nm so a developing
-    /// crossing situation has time to read. When the boat is anchored
-    /// (<see cref="NavigationData.AnchorActive"/> = the SignalK
+    /// The user-configured <see cref="IAlarmThresholds.CpaAlarmNm"/>
+    /// is the underway value (default 0.1 nm). When the boat is
+    /// anchored (<see cref="NavigationData.AnchorActive"/> = the SignalK
     /// anchoralarm-plugin has a drop point set) the threshold narrows
     /// to the anchor's max swing radius - an alarm fires only when a
     /// vessel could enter the anchor circle, not on every passer-by.
     /// </para>
     /// </summary>
-    public static double EffectiveCpaRadiusNm(AlarmEvaluationContext ctx) =>
-        Cpa.EffectiveRadiusNm(
-            ctx.Settings.CpaAlarmThreshold,
+    public static double EffectiveAlarmCpaNm(AlarmEvaluationContext ctx) =>
+        Cpa.EffectiveCpaRadiusNm(
+            ctx.Settings.CpaAlarmNm,
+            ctx.Data.AnchorActive,
+            ctx.Data.AnchorMaxRadius);
+
+    /// <summary>Effective awareness-tier CPA distance for this tick.
+    /// Same anchor-narrowing as the alarm tier - at anchor both tiers
+    /// collapse to the swing radius so the helm gets one
+    /// "anything-entering-the-circle" band rather than awareness chips
+    /// for every harmless passer-by.</summary>
+    public static double EffectiveAwarenessCpaNm(AlarmEvaluationContext ctx) =>
+        Cpa.EffectiveCpaRadiusNm(
+            ctx.Settings.CpaAwarenessNm,
             ctx.Data.AnchorActive,
             ctx.Data.AnchorMaxRadius);
 
@@ -106,8 +115,10 @@ public sealed class CpaAlarmRule : IAlarmRule
             || data.CourseOverGround is null || data.SpeedOverGround is null)
             return null;
 
-        double cpaLimit = EffectiveCpaRadiusNm(ctx);
-        double tcpaLimit = ctx.Settings.GuardZoneLookaheadMinutes;
+        double cpaAlarmLimit = EffectiveAlarmCpaNm(ctx);
+        double tcpaAlarmLimit = ctx.Settings.TcpaAlarmMin;
+        double cpaAwarenessLimit = EffectiveAwarenessCpaNm(ctx);
+        double tcpaAwarenessLimit = ctx.Settings.TcpaAwarenessMin;
 
         // Pre-compute own-ship sin/cos of COG ONCE here rather than on
         // every vessel inside the loop - a busy harbour push has 200+
@@ -142,29 +153,16 @@ public sealed class CpaAlarmRule : IAlarmRule
             if (cpa is null) continue;
 
             // Single source of truth with the chart-overlay classifier
-            // (AisPushService.BuildSnapshot). Previously this rule had
-            // its own gate (`cpa.CpaNm >= cpaLimit` continue, `cpa.TcpaMin
-            // > tcpaLimit` continue) which:
-            //   1. drifted at the boundary - alarm used '>=' on the cpa
-            //      side while ClassifyThreat uses strict '>', so a CPA
-            //      hit exactly at the threshold radius classified as a
-            //      threat on the chart but DIDN'T fire the audible alarm.
-            //   2. didn't apply the current-distance ring gate, so the
-            //      klaxon could fire for a vessel 5 nm away with a
-            //      marginal closing track even though the chart-overlay's
-            //      threat ring had already classified it as None.
-            // Helm-feedback equivalent: "the X is gone but the alarm
-            // still rings" - now they agree by construction.
-            //
-            // CurrentDistanceNm is a free byproduct of the projection
-            // inside Cpa.Compute (see Cpa.Result XML doc); we used to
-            // re-run a haversine here per vessel.
+            // (AisPushService.BuildSnapshot). The audible alarm fires
+            // ONLY on Threat.Alarm; awareness-tier hits paint the
+            // chart but stay silent so a developing crossing situation
+            // is visible without nagging the cockpit.
             var threat = Cpa.ClassifyThreat(
                 cpa.Value.CpaNm, cpa.Value.TcpaMin,
-                cpa.Value.CurrentDistanceNm,
-                cpaLimit, tcpaLimit,
+                cpaAlarmLimit, tcpaAlarmLimit,
+                cpaAwarenessLimit, tcpaAwarenessLimit,
                 v.IsBuddy);
-            if (threat == Cpa.Threat.None) continue;
+            if (threat != Cpa.Threat.Alarm) continue;
 
             // CPA threshold tripped. Now (and only now) compute the
             // COLREGS classification for the alarm banner suffix.

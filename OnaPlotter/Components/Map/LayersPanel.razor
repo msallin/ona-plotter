@@ -103,8 +103,6 @@
                     OnToggleShipLines="OnToggleShipLines"
                     LaylinesVisible="LaylinesVisible"
                     OnToggleLaylines="OnToggleLaylines"
-                    GuardZoneVisible="GuardZoneVisible"
-                    OnToggleGuardZone="OnToggleGuardZoneVisible"
                     ServerTrackVisible="ServerTrackVisible"
                     ServerTrackDuration="@ServerTrackDuration"
                     ServerTrackResolution="@ServerTrackResolution"
@@ -218,7 +216,6 @@
     [Parameter] public bool RegionsVisible { get; set; } = true;
     [Parameter] public bool AtonsVisible { get; set; } = true;
     [Parameter] public bool AisLabelsVisible { get; set; } = true;
-    [Parameter] public bool GuardZoneVisible { get; set; } = true;
     [Parameter] public bool ShowDefaultHud { get; set; } = true;
     [Parameter] public bool ShowAutopilotHud { get; set; }
     [Parameter] public bool ShowRadarHud { get; set; }
@@ -297,7 +294,6 @@
     [Parameter] public EventCallback<bool> OnToggleMarinePoiDrinkingWater { get; set; }
     [Parameter] public EventCallback<bool> OnToggleMarinePoiPumpOut { get; set; }
 
-    [Parameter] public EventCallback<bool> OnToggleGuardZoneVisible { get; set; }
     [Parameter] public EventCallback<bool> OnToggleShowDefaultHud { get; set; }
     [Parameter] public EventCallback<bool> OnToggleShowAutopilotHud { get; set; }
     [Parameter] public EventCallback<bool> OnToggleShowRadarHud { get; set; }

@@ -204,19 +204,21 @@ public sealed class AisPushService
         // this caller just trusts the answer.
         var visible = HarborAisFilter.Apply(vessels, _mooredTracker, harbor, now);
 
-        // Effective CPA radius for THIS snapshot (anchor-narrowing
-        // when applicable). The visible guard-zone rings AND the
-        // chip classifier MUST agree - using the underway threshold
-        // here while the rings show the anchor-narrowed radius made
-        // chips appear outside the rings ("how can this be?").
-        // See OnaPlotter.Utilities.Cpa.EffectiveRadiusNm for the
-        // single source of truth used by all three render paths
-        // (rings, chips, alarm rule).
-        double effectiveCpaRadiusNm = Cpa.EffectiveRadiusNm(
-            _settings.CpaAlarmThreshold,
+        // Two-tier CPA thresholds for THIS snapshot. Same anchor-
+        // narrowing helper as the alarm rule so the audible-alarm
+        // path and the on-chart classifier agree by construction.
+        // When anchored, both tiers collapse to the swing radius so
+        // awareness chips don't fire for harmless passers-by.
+        double cpaAlarmEff = Cpa.EffectiveCpaRadiusNm(
+            _settings.CpaAlarmNm,
             ownship.AnchorActive,
             ownship.AnchorMaxRadius);
-        double lookaheadMin = _settings.GuardZoneLookaheadMinutes;
+        double tcpaAlarmEff = _settings.TcpaAlarmMin;
+        double cpaAwarenessEff = Cpa.EffectiveCpaRadiusNm(
+            _settings.CpaAwarenessNm,
+            ownship.AnchorActive,
+            ownship.AnchorMaxRadius);
+        double tcpaAwarenessEff = _settings.TcpaAwarenessMin;
 
         // Pre-compute own-ship sin/cos of COG ONCE here rather than on
         // every vessel inside the loop - the own-ship trig is
@@ -261,10 +263,11 @@ public sealed class AisPushService
             {
                 var threat = ComputeVesselThreat(
                     in ownCtx, v, vLat, vLon,
-                    effectiveCpaRadiusNm, lookaheadMin);
+                    cpaAlarmEff, tcpaAlarmEff,
+                    cpaAwarenessEff, tcpaAwarenessEff);
 
                 AisVesselPayload p = AcquirePoolSlot(written);
-                FillPayload(p, v, vLat, vLon, in threat, now, aisCogVectorMinutes, _trailBuffer);
+                FillPayload(p, v, vLat, vLon, in threat, in ownCtx, now, aisCogVectorMinutes, _trailBuffer);
                 result[written++] = p;
             }
             catch (Exception ex)
@@ -365,7 +368,8 @@ public sealed class AisPushService
     /// encounters.</summary>
     private static VesselThreat ComputeVesselThreat(
         in OwnContext? ownCtx, AisVessel v, double vLat, double vLon,
-        double effectiveCpaRadiusNm, double lookaheadMin)
+        double cpaAlarmEff, double tcpaAlarmEff,
+        double cpaAwarenessEff, double tcpaAwarenessEff)
     {
         if (ownCtx is null
             || v.CourseOverGround is null || v.SpeedOverGround is null)
@@ -380,12 +384,11 @@ public sealed class AisPushService
             return default;
         }
 
-        // CurrentDistanceNm is a free byproduct of the Cpa.Compute
-        // projection (see Cpa.Result XML doc). Previously the chip
-        // pipeline + CpaAlarmRule each ran their own haversine here.
         var threat = Cpa.ClassifyThreat(
-            c.CpaNm, c.TcpaMin, c.CurrentDistanceNm,
-            effectiveCpaRadiusNm, lookaheadMin, v.IsBuddy);
+            c.CpaNm, c.TcpaMin,
+            cpaAlarmEff, tcpaAlarmEff,
+            cpaAwarenessEff, tcpaAwarenessEff,
+            v.IsBuddy);
 
         string? colregsLabel = null;
         string? colregsRole = null;
@@ -432,7 +435,8 @@ public sealed class AisPushService
     /// keeps the JIT and V8 happy.</summary>
     private static void FillPayload(
         AisVesselPayload p, AisVessel v, double vLat, double vLon,
-        in VesselThreat threat, DateTime nowUtc, double aisCogVectorMinutes,
+        in VesselThreat threat, in OwnContext? ownCtx,
+        DateTime nowUtc, double aisCogVectorMinutes,
         AisTrailBuffer trailBuffer)
     {
         // Display name resolution: name -> mmsi -> null, with buddy
@@ -523,11 +527,32 @@ public sealed class AisPushService
             var cpaPt = GeoMath.DestPoint(vLat, vLon, cog, sog * tcpaMin * 60.0);
             p.CpaPointLat = cpaPt.Lat;
             p.CpaPointLon = cpaPt.Lon;
+
+            // Own-ship's projected position at the same TCPA. Used by
+            // the JS overlay to draw the own-side X + the line between
+            // the two CPA points (the actual closest-approach segment).
+            // Null when own snapshot is missing - the JS layer treats
+            // null as "draw target-only overlay" to keep some signal
+            // even without an own-ship fix.
+            if (ownCtx is { } own)
+            {
+                var ownCpaPt = GeoMath.DestPoint(
+                    own.Lat, own.Lon, own.Cog, own.Sog * tcpaMin * 60.0);
+                p.OwnCpaPointLat = ownCpaPt.Lat;
+                p.OwnCpaPointLon = ownCpaPt.Lon;
+            }
+            else
+            {
+                p.OwnCpaPointLat = null;
+                p.OwnCpaPointLon = null;
+            }
         }
         else
         {
             p.CpaPointLat = null;
             p.CpaPointLon = null;
+            p.OwnCpaPointLat = null;
+            p.OwnCpaPointLon = null;
         }
 
         // Trail update. Push the current fix into the per-vessel
@@ -564,12 +589,12 @@ public sealed class AisPushService
     /// switch. Pinned in <c>AisPushServiceTests</c> so any rename here
     /// fails fast in C# rather than silently breaking the chart-overlay
     /// classifier on the JS side. The switch on the JS side reads
-    /// <c>'danger' | 'warning' | _ -&gt; none</c>; keep these strings in
+    /// <c>'alarm' | 'awareness' | _ -&gt; none</c>; keep these strings in
     /// sync with <c>wwwroot/js/aisLayer.js</c>.</summary>
     internal static string ThreatToWireString(Cpa.Threat t) => t switch
     {
-        Cpa.Threat.Danger => "danger",
-        Cpa.Threat.Warning => "warning",
+        Cpa.Threat.Alarm => "alarm",
+        Cpa.Threat.Awareness => "awareness",
         _ => "none",
     };
 }

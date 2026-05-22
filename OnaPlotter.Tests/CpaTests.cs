@@ -243,142 +243,117 @@ public class CpaTests
         await Assert.That(r.Value.TcpaMin).IsLessThan(11);
     }
 
-    // Threat classification: maps a CPA result onto the helm's three-band
-    // visual model (none / warning / danger). Severity is decided by the
-    // target's CURRENT distance from own ship - a vessel currently
-    // outside the outer ring gets None even if its projected CPA looks
-    // like it'd close (helms read those long crossings as visual noise
-    // and asked for the gate). Buddies always collapse to None so a
-    // friend nearby can't paint the chart red.
-    private const double Radius = 0.5;        // nm (inner / guard ring)
-    private const double Lookahead = 10.0;    // min
-    // Outer ring is hardcoded at 2× the inner radius
-    // (Cpa.OuterRingMultiplier = 2.0). Tests reference 2*Radius
-    // explicitly so a refactor that changes the multiplier triggers
-    // a deliberate re-read here.
-    private const double OuterRing = 2.0 * Radius;
+    // Threat classification: maps a CPA result onto the helm's two-tier
+    // visual model (none / awareness / alarm). The current-distance gate
+    // is gone; classification is purely a function of projected CPA + TCPA
+    // against the two configured tiers. Buddies always collapse to None
+    // so a friend nearby can't paint the chart red.
+    private const double AlarmCpa = 0.5;       // nm (inner / alarm tier)
+    private const double AwarenessCpa = 1.0;   // nm (outer / awareness tier, 2× alarm)
+    private const double AlarmTcpa = 10.0;     // min
+    private const double AwarenessTcpa = 10.0; // min (same window for these tests)
 
     [Test]
     public async Task Threat_None_WhenBuddy()
     {
         var t = Cpa.ClassifyThreat(cpaNm: 0.1, tcpaMin: 1.0,
-            currentDistanceNm: 0.1,
-            Radius, Lookahead, isBuddy: true);
+            AlarmCpa, AlarmTcpa, AwarenessCpa, AwarenessTcpa, isBuddy: true);
         await Assert.That(t).IsEqualTo(Cpa.Threat.None);
     }
 
     [Test]
     public async Task Threat_None_WhenCpaNull()
     {
-        var t = Cpa.ClassifyThreat(null, 1.0, currentDistanceNm: 0.3,
-            Radius, Lookahead, false);
+        var t = Cpa.ClassifyThreat(null, 1.0,
+            AlarmCpa, AlarmTcpa, AwarenessCpa, AwarenessTcpa, false);
         await Assert.That(t).IsEqualTo(Cpa.Threat.None);
     }
 
     [Test]
     public async Task Threat_None_WhenTcpaNullOrNonPositive()
     {
-        await Assert.That(Cpa.ClassifyThreat(0.1, null, 0.3, Radius, Lookahead, false))
+        await Assert.That(Cpa.ClassifyThreat(0.1, null,
+            AlarmCpa, AlarmTcpa, AwarenessCpa, AwarenessTcpa, false))
             .IsEqualTo(Cpa.Threat.None);
-        await Assert.That(Cpa.ClassifyThreat(0.1, 0.0, 0.3, Radius, Lookahead, false))
+        await Assert.That(Cpa.ClassifyThreat(0.1, 0.0,
+            AlarmCpa, AlarmTcpa, AwarenessCpa, AwarenessTcpa, false))
             .IsEqualTo(Cpa.Threat.None);
-        await Assert.That(Cpa.ClassifyThreat(0.1, -1.0, 0.3, Radius, Lookahead, false))
+        await Assert.That(Cpa.ClassifyThreat(0.1, -1.0,
+            AlarmCpa, AlarmTcpa, AwarenessCpa, AwarenessTcpa, false))
             .IsEqualTo(Cpa.Threat.None);
     }
 
     [Test]
     public async Task Threat_None_WhenTcpaBeyondLookahead()
     {
-        // Vessel will close inside guard zone but not within the
-        // lookahead window. Sleep first.
+        // CPA inside both tiers but TCPA past both lookahead windows.
         var t = Cpa.ClassifyThreat(0.1, tcpaMin: 30.0,
-            currentDistanceNm: 0.3,
-            Radius, Lookahead, false);
+            AlarmCpa, AlarmTcpa, AwarenessCpa, AwarenessTcpa, false);
         await Assert.That(t).IsEqualTo(Cpa.Threat.None);
     }
 
     [Test]
-    public async Task Threat_None_WhenCpaWontReachGuardZone()
+    public async Task Threat_None_WhenCpaBeyondAwareness()
     {
-        // 1.5 nm projected miss is outside the guard zone - the vessel
-        // won't actually close. Pin this to stop a parallel-course
-        // 1.5 nm pass from drawing a crossing line.
+        // 1.5 nm projected miss is outside the awareness tier (1.0 nm)
+        // so the vessel never crosses into either band. Pin this to
+        // stop a parallel-course 1.5 nm pass from drawing a crossing
+        // line.
         var t = Cpa.ClassifyThreat(cpaNm: 1.5, tcpaMin: 5.0,
-            currentDistanceNm: 0.3,
-            Radius, Lookahead, false);
+            AlarmCpa, AlarmTcpa, AwarenessCpa, AwarenessTcpa, false);
         await Assert.That(t).IsEqualTo(Cpa.Threat.None);
     }
 
     [Test]
-    public async Task Threat_Danger_WhenCurrentlyInsideGuardZone()
+    public async Task Threat_Alarm_WhenInsideAlarmTier()
     {
-        // Target inside the inner ring AND projected to close further:
-        // red overlay.
+        // Projected CPA inside the alarm tier AND TCPA inside the
+        // alarm lookahead: red overlay + klaxon.
         var t = Cpa.ClassifyThreat(0.1, 5.0,
-            currentDistanceNm: 0.3,
-            Radius, Lookahead, false);
-        await Assert.That(t).IsEqualTo(Cpa.Threat.Danger);
+            AlarmCpa, AlarmTcpa, AwarenessCpa, AwarenessTcpa, false);
+        await Assert.That(t).IsEqualTo(Cpa.Threat.Alarm);
     }
 
     [Test]
-    public async Task Threat_Warning_WhenCurrentlyInOuterRing()
+    public async Task Threat_Awareness_WhenBetweenTiers()
     {
-        // Target between guard zone and 2× guard zone, projected to
-        // close inside guard zone within lookahead: amber overlay.
-        var t = Cpa.ClassifyThreat(0.1, 5.0,
-            currentDistanceNm: 0.7,   // > 0.5 (Radius), < 1.0 (OuterRing)
-            Radius, Lookahead, false);
-        await Assert.That(t).IsEqualTo(Cpa.Threat.Warning);
+        // CPA between alarm (0.5) and awareness (1.0) thresholds with
+        // TCPA inside the awareness window: silent on-chart attention.
+        var t = Cpa.ClassifyThreat(cpaNm: 0.7, tcpaMin: 5.0,
+            AlarmCpa, AlarmTcpa, AwarenessCpa, AwarenessTcpa, false);
+        await Assert.That(t).IsEqualTo(Cpa.Threat.Awareness);
     }
 
     [Test]
-    public async Task Threat_None_WhenCurrentlyOutsideOuterRing()
+    public async Task Threat_AlarmEdge_AtAlarmTierBoundary()
     {
-        // Target 5 nm out with a closing track that would otherwise
-        // qualify - the live-data complaint that drove this gate. The
-        // long crossing line clutters the chart even though physically
-        // accurate; helms wanted the chart to stay quiet until the
-        // target is within the outer ring.
-        var t = Cpa.ClassifyThreat(0.1, 5.0,
-            currentDistanceNm: 5.0,
-            Radius, Lookahead, false);
-        await Assert.That(t).IsEqualTo(Cpa.Threat.None);
-    }
-
-    [Test]
-    public async Task Threat_DangerEdge_AtGuardZoneBoundary()
-    {
-        // Exactly on the inner boundary should be Danger (uses <=).
+        // Exactly on the alarm-tier boundary should be Alarm (uses <=).
         // A helm setting "0.5 nm" expects 0.5 to mean "still inside".
-        var atBoundary = Cpa.ClassifyThreat(0.1, 5.0,
-            currentDistanceNm: Radius,
-            Radius, Lookahead, false);
-        await Assert.That(atBoundary).IsEqualTo(Cpa.Threat.Danger);
+        var atBoundary = Cpa.ClassifyThreat(cpaNm: AlarmCpa, tcpaMin: 5.0,
+            AlarmCpa, AlarmTcpa, AwarenessCpa, AwarenessTcpa, false);
+        await Assert.That(atBoundary).IsEqualTo(Cpa.Threat.Alarm);
 
-        // Just outside the inner ring -> Warning band.
-        var justOutside = Cpa.ClassifyThreat(0.1, 5.0,
-            currentDistanceNm: Radius + 0.0001,
-            Radius, Lookahead, false);
-        await Assert.That(justOutside).IsEqualTo(Cpa.Threat.Warning);
+        // Just outside the alarm tier -> Awareness band.
+        var justOutside = Cpa.ClassifyThreat(cpaNm: AlarmCpa + 0.0001, tcpaMin: 5.0,
+            AlarmCpa, AlarmTcpa, AwarenessCpa, AwarenessTcpa, false);
+        await Assert.That(justOutside).IsEqualTo(Cpa.Threat.Awareness);
     }
 
     [Test]
-    public async Task Threat_NoneEdge_AtOuterRingBoundary()
+    public async Task Threat_AwarenessEdge_AtAwarenessTierBoundary()
     {
-        // Exactly on the outer boundary -> Warning (uses <=).
-        var atBoundary = Cpa.ClassifyThreat(0.1, 5.0,
-            currentDistanceNm: OuterRing,
-            Radius, Lookahead, false);
-        await Assert.That(atBoundary).IsEqualTo(Cpa.Threat.Warning);
+        // Exactly on the awareness boundary -> Awareness (uses <=).
+        var atBoundary = Cpa.ClassifyThreat(cpaNm: AwarenessCpa, tcpaMin: 5.0,
+            AlarmCpa, AlarmTcpa, AwarenessCpa, AwarenessTcpa, false);
+        await Assert.That(atBoundary).IsEqualTo(Cpa.Threat.Awareness);
 
         // Just outside -> None.
-        var justOutside = Cpa.ClassifyThreat(0.1, 5.0,
-            currentDistanceNm: OuterRing + 0.0001,
-            Radius, Lookahead, false);
+        var justOutside = Cpa.ClassifyThreat(cpaNm: AwarenessCpa + 0.0001, tcpaMin: 5.0,
+            AlarmCpa, AlarmTcpa, AwarenessCpa, AwarenessTcpa, false);
         await Assert.That(justOutside).IsEqualTo(Cpa.Threat.None);
     }
 
-    // ===== EffectiveRadiusNm =====
+    // ===== EffectiveCpaRadiusNm =====
     // Pinned because three render paths read this value (alarm rule,
     // chart-side chip classifier, visible guard-ring renderer); drift
     // between any of them surfaces as "chip outside the ring", which
@@ -387,11 +362,11 @@ public class CpaTests
     [Test]
     public async Task EffectiveRadius_NotAnchored_ReturnsUnderway()
     {
-        await Assert.That(Cpa.EffectiveRadiusNm(0.5, anchorActive: false, anchorMaxRadiusM: null))
+        await Assert.That(Cpa.EffectiveCpaRadiusNm(0.5, anchorActive: false, anchorMaxRadiusM: null))
             .IsEqualTo(0.5);
         // Anchored=false even with a radius set means we ignore the
         // radius and use the underway value.
-        await Assert.That(Cpa.EffectiveRadiusNm(0.5, anchorActive: false, anchorMaxRadiusM: 30.0))
+        await Assert.That(Cpa.EffectiveCpaRadiusNm(0.5, anchorActive: false, anchorMaxRadiusM: 30.0))
             .IsEqualTo(0.5);
     }
 
@@ -400,7 +375,7 @@ public class CpaTests
     {
         // 30 m anchor radius = ~0.0162 nm, much narrower than 0.5
         // underway. Expected: the smaller wins.
-        double eff = Cpa.EffectiveRadiusNm(0.5, anchorActive: true, anchorMaxRadiusM: 30.0);
+        double eff = Cpa.EffectiveCpaRadiusNm(0.5, anchorActive: true, anchorMaxRadiusM: 30.0);
         await Assert.That(eff).IsLessThan(0.05);
         await Assert.That(eff).IsGreaterThan(0.01);
     }
@@ -411,38 +386,41 @@ public class CpaTests
         // Helm asked for 0.3 nm underway but their anchor swing is
         // 1000 m (~0.54 nm). The cautious choice is the smaller -
         // 0.3 nm.
-        await Assert.That(Cpa.EffectiveRadiusNm(0.3, anchorActive: true, anchorMaxRadiusM: 1000.0))
+        await Assert.That(Cpa.EffectiveCpaRadiusNm(0.3, anchorActive: true, anchorMaxRadiusM: 1000.0))
             .IsEqualTo(0.3);
     }
 
     [Test]
-    public async Task EffectiveRadius_UnderwayCorrupt_RecoversToDefault()
+    public async Task EffectiveRadius_UnderwayCorrupt_RecoversToSafeFloor()
     {
         // Storage corruption / schema migration / hand-edited
-        // localStorage can land underwayNm as NaN, +/- Infinity,
+        // localStorage can land configuredNm as NaN, +/- Infinity,
         // 0, or negative. Without the fall-back the chip classifier
         // sees `cpaNm < NaN` = false on every vessel and the CPA
         // alarm + threat ring go DARK with no helm-visible signal -
         // a silent safety regression. Pin every corruption shape
-        // returns the spec default (0.5 nm = DefaultCpaThresholdNm)
-        // so a future change that drops the guard fails this test
-        // before it reaches the helm.
-        const double Default = 0.5;
-        await Assert.That(Cpa.EffectiveRadiusNm(double.NaN, anchorActive: false, anchorMaxRadiusM: null))
-            .IsEqualTo(Default);
-        await Assert.That(Cpa.EffectiveRadiusNm(double.PositiveInfinity, anchorActive: false, anchorMaxRadiusM: null))
-            .IsEqualTo(Default);
-        await Assert.That(Cpa.EffectiveRadiusNm(double.NegativeInfinity, anchorActive: false, anchorMaxRadiusM: null))
-            .IsEqualTo(Default);
-        await Assert.That(Cpa.EffectiveRadiusNm(0.0, anchorActive: false, anchorMaxRadiusM: null))
-            .IsEqualTo(Default);
-        await Assert.That(Cpa.EffectiveRadiusNm(-0.5, anchorActive: false, anchorMaxRadiusM: null))
-            .IsEqualTo(Default);
+        // recovers to the safe floor (a tiny positive number) so
+        // classification still runs, just strictly. A future change
+        // that drops the guard fails this test before it reaches
+        // the helm.
+        const double SafeFloor = 0.01;
+        await Assert.That(Cpa.EffectiveCpaRadiusNm(double.NaN, anchorActive: false, anchorMaxRadiusM: null))
+            .IsEqualTo(SafeFloor);
+        await Assert.That(Cpa.EffectiveCpaRadiusNm(double.PositiveInfinity, anchorActive: false, anchorMaxRadiusM: null))
+            .IsEqualTo(SafeFloor);
+        await Assert.That(Cpa.EffectiveCpaRadiusNm(double.NegativeInfinity, anchorActive: false, anchorMaxRadiusM: null))
+            .IsEqualTo(SafeFloor);
+        await Assert.That(Cpa.EffectiveCpaRadiusNm(0.0, anchorActive: false, anchorMaxRadiusM: null))
+            .IsEqualTo(SafeFloor);
+        await Assert.That(Cpa.EffectiveCpaRadiusNm(-0.5, anchorActive: false, anchorMaxRadiusM: null))
+            .IsEqualTo(SafeFloor);
         // Same shapes but anchored - the recovery still happens
-        // BEFORE the anchor-narrowing decision, so a corrupt
-        // underway value can't poison the anchor branch either.
-        await Assert.That(Cpa.EffectiveRadiusNm(double.NaN, anchorActive: true, anchorMaxRadiusM: 5000.0))
-            .IsEqualTo(Default);
+        // BEFORE the anchor-narrowing decision; the anchor branch
+        // then picks the smaller of (SafeFloor, anchor-nm). A 5000 m
+        // anchor radius is ~2.7 nm, far larger than the floor, so
+        // the floor still wins.
+        await Assert.That(Cpa.EffectiveCpaRadiusNm(double.NaN, anchorActive: true, anchorMaxRadiusM: 5000.0))
+            .IsEqualTo(SafeFloor);
     }
 
     [Test]
@@ -453,15 +431,15 @@ public class CpaTests
         // for one tick on the path between "anchor active" and "have
         // a radius" - they should keep using the underway value
         // until we know better.
-        await Assert.That(Cpa.EffectiveRadiusNm(0.5, anchorActive: true, anchorMaxRadiusM: null))
+        await Assert.That(Cpa.EffectiveCpaRadiusNm(0.5, anchorActive: true, anchorMaxRadiusM: null))
             .IsEqualTo(0.5);
-        await Assert.That(Cpa.EffectiveRadiusNm(0.5, anchorActive: true, anchorMaxRadiusM: 0))
+        await Assert.That(Cpa.EffectiveCpaRadiusNm(0.5, anchorActive: true, anchorMaxRadiusM: 0))
             .IsEqualTo(0.5);
-        await Assert.That(Cpa.EffectiveRadiusNm(0.5, anchorActive: true, anchorMaxRadiusM: -10))
+        await Assert.That(Cpa.EffectiveCpaRadiusNm(0.5, anchorActive: true, anchorMaxRadiusM: -10))
             .IsEqualTo(0.5);
-        await Assert.That(Cpa.EffectiveRadiusNm(0.5, anchorActive: true, anchorMaxRadiusM: double.NaN))
+        await Assert.That(Cpa.EffectiveCpaRadiusNm(0.5, anchorActive: true, anchorMaxRadiusM: double.NaN))
             .IsEqualTo(0.5);
-        await Assert.That(Cpa.EffectiveRadiusNm(0.5, anchorActive: true, anchorMaxRadiusM: double.PositiveInfinity))
+        await Assert.That(Cpa.EffectiveCpaRadiusNm(0.5, anchorActive: true, anchorMaxRadiusM: double.PositiveInfinity))
             .IsEqualTo(0.5);
     }
 }

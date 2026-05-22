@@ -507,7 +507,6 @@
                      WeatherOverlayOpacityPercent="@((int)Math.Round(Settings.WeatherOverlayOpacity * 100))"
                      AtonsVisible="Settings.AtonsVisible"
                      AisLabelsVisible="Settings.AisLabelsVisible"
-                     GuardZoneVisible="Settings.GuardZoneVisible"
                      ShowDefaultHud="Settings.ShowDefaultHud"
                      ShowAutopilotHud="Settings.ShowAutopilotHud"
                      ShowRadarHud="Settings.ShowRadarHud"
@@ -555,7 +554,6 @@
                      OnToggleMarinePoiChandlery="@(v => Settings.SetMarinePoiChandleryEnabledAsync(v))"
                      OnToggleMarinePoiDrinkingWater="@(v => Settings.SetMarinePoiDrinkingWaterEnabledAsync(v))"
                      OnToggleMarinePoiPumpOut="@(v => Settings.SetMarinePoiPumpOutEnabledAsync(v))"
-                     OnToggleGuardZoneVisible="ToggleGuardZoneVisible"
                      OnToggleShowDefaultHud="@(v => Settings.SetShowDefaultHudAsync(v))"
                      OnToggleShowAutopilotHud="@(v => Settings.SetShowAutopilotHudAsync(v))"
                      OnToggleShowRadarHud="@(v => Settings.SetShowRadarHudAsync(v))"
@@ -1157,7 +1155,8 @@
         int AisVersion,
         double? OwnLat, double? OwnLon, double? OwnCog, double? OwnSog,
         bool AnchorActive, double? AnchorMaxRadius,
-        double CpaAlarmThreshold, double GuardZoneLookaheadMinutes);
+        double CpaAlarmNm, double TcpaAlarmMin,
+        double CpaAwarenessNm, double TcpaAwarenessMin);
 
     /// <summary>
     /// Snapshot of every known AIS vessel sorted by threat: vessels with a
@@ -1182,15 +1181,17 @@
         var ownSog = Data.SpeedOverGround;
         bool anchorActive = Data.AnchorActive;
         double? anchorMaxRadius = Data.AnchorMaxRadius;
-        double cpaAlarmThreshold = Settings.CpaAlarmThreshold;
-        double lookaheadMin = Settings.GuardZoneLookaheadMinutes;
+        double cpaAlarmNm = Settings.CpaAlarmNm;
+        double tcpaAlarmMin = Settings.TcpaAlarmMin;
+        double cpaAwarenessNm = Settings.CpaAwarenessNm;
+        double tcpaAwarenessMin = Settings.TcpaAwarenessMin;
 
         var key = new VesselListCacheKey(
             AisVersion: AisStore.Version,
             OwnLat: ownLat, OwnLon: ownLon, OwnCog: ownCog, OwnSog: ownSog,
             AnchorActive: anchorActive, AnchorMaxRadius: anchorMaxRadius,
-            CpaAlarmThreshold: cpaAlarmThreshold,
-            GuardZoneLookaheadMinutes: lookaheadMin);
+            CpaAlarmNm: cpaAlarmNm, TcpaAlarmMin: tcpaAlarmMin,
+            CpaAwarenessNm: cpaAwarenessNm, TcpaAwarenessMin: tcpaAwarenessMin);
         if (_vesselListCache is { } cached && _vesselListCacheKey == key)
         {
             return cached;
@@ -1204,13 +1205,15 @@
             ? Cpa.PrecomputeOwn(ownLat.Value, ownLon.Value, ownCog, ownSog)
             : null;
 
-        // Effective CPA threshold + lookahead drive the same threat
-        // band the chart-side ComputeVesselThreat uses. COLREGS for a
-        // vessel outside this band has no helm-actionable meaning - the
+        // Two-tier CPA thresholds drive the same threat band the
+        // chart-side ComputeVesselThreat uses. COLREGS for a vessel
+        // outside this band has no helm-actionable meaning - the
         // rules apply to closing encounters. Hoisted out of the per-
-        // vessel loop because both inputs are own-ship-invariant.
-        double effectiveCpaRadiusNm = Cpa.EffectiveRadiusNm(
-            cpaAlarmThreshold, anchorActive, anchorMaxRadius);
+        // vessel loop because all inputs are own-ship-invariant.
+        double cpaAlarmEff = Cpa.EffectiveCpaRadiusNm(
+            cpaAlarmNm, anchorActive, anchorMaxRadius);
+        double cpaAwarenessEff = Cpa.EffectiveCpaRadiusNm(
+            cpaAwarenessNm, anchorActive, anchorMaxRadius);
 
         var entries = new List<VesselListEntry>(vessels.Length);
         foreach (var v in vessels)
@@ -1245,8 +1248,10 @@
                     && v.CourseOverGround is not null && v.SpeedOverGround is not null)
                 {
                     var threat = Cpa.ClassifyThreat(
-                        c.CpaNm, c.TcpaMin, c.CurrentDistanceNm,
-                        effectiveCpaRadiusNm, lookaheadMin, v.IsBuddy);
+                        c.CpaNm, c.TcpaMin,
+                        cpaAlarmEff, tcpaAlarmMin,
+                        cpaAwarenessEff, tcpaAwarenessMin,
+                        v.IsBuddy);
                     if (threat != Cpa.Threat.None)
                     {
                         colregs = Colregs.Classify(
@@ -1885,7 +1890,6 @@
         if (nightMode) await _controlsJs.SetNightModeAsync(true);
         if (mapOrientation != "north") await _controlsJs.SetMapOrientationAsync(mapOrientation);
 
-        await PushGuardZoneAsync();
         await _controlsJs.SetCogVectorMinutesAsync(
             Settings.OwnCogVectorMinutes,
             Settings.AisCogVectorMinutes);
@@ -1902,6 +1906,14 @@
         await _controlsJs.SetRadarRangeRingsAsync(
             Settings.RadarRangeRingsEnabled,
             Settings.RadarRangeRingsCount);
+        // Distance rings: push persisted config so a helm who left
+        // the rings enabled sees them on the first paint instead of
+        // "after the toggle is touched once". JS-side default is
+        // disabled so a never-touched helm still pays nothing here.
+        await _controlsJs.SetDistanceRingsAsync(
+            Settings.DistanceRingsEnabled,
+            Settings.DistanceRingsBaseNm,
+            Settings.DistanceRingsCount);
         // Radar bearing-source opt-in: push the persisted helm choice
         // so any radar overlay that comes up later picks the correct
         // spoke-index path on its first sweep. Without this an already-
@@ -1952,8 +1964,6 @@
         await _aisJs.SetAisLabelsVisibleAsync(Settings.AisLabelsVisible);
         _cachedAisInactiveMinutes = Settings.AisInactiveMinutes;
         await _aisJs.SetAisInactiveMinutesAsync(_cachedAisInactiveMinutes);
-        await _aisJs.SetGuardZoneVisibleAsync(Settings.GuardZoneVisible);
-        await _aisJs.SetGuardZoneWarningRingVisibleAsync(Settings.GuardZoneWarningRingVisible);
         _ = _atonPush!.PushAsync();
 
         // Marine-POI overlay: push initial visibility (= "any category
@@ -2068,39 +2078,14 @@
     // MaybeShowTouchCoachmarkAsync / DismissTouchCoachmark live in the
     // Map.FirstRun.razor.cs partial.
 
-    private async Task PushGuardZoneAsync()
-    {
-        if (_controlsJs is null) return;
-        // Effective radius via the shared Cpa.EffectiveRadiusNm helper.
-        // Three render paths consume it: the alarm rule
-        // (CpaAlarmRule.EffectiveCpaRadiusNm), the chip classifier
-        // (AisPushService.BuildSnapshot), and the visible rings
-        // (this call site). All three MUST settle on one number -
-        // a previous bug had the rings narrow under anchor while
-        // chips kept the underway threshold, helm saw chips outside
-        // the rings and asked "how can this be?".
-        double radiusNm = OnaPlotter.Utilities.Cpa.EffectiveRadiusNm(
-            Settings.CpaAlarmThreshold,
-            SignalkClient.Data.AnchorActive,
-            SignalkClient.Data.AnchorMaxRadius);
-        await _controlsJs.SetGuardZoneAsync(
-            radiusNm,
-            Settings.GuardZoneLookaheadMinutes,
-            // Single source of truth: C# owns the outer-ring scale
-            // factor (Cpa.OuterRingMultiplier) so the JS overlay
-            // can't drift from the threat classifier on it.
-            OnaPlotter.Utilities.Cpa.OuterRingMultiplier);
-    }
-
     // Per-push diff-caches. OnSettingsChanged fires for ANY setting
     // (font size, night mode preset, harbor mode, ...); the previous
     // handler unconditionally fired 6+ JS interop calls per fire,
     // turning a single helm toggle into a fan-out of redundant pushes.
     // Each push now gates on its own snapshot of the inputs it consumes.
-    private (double Cpa, double LookaheadMin,
-        bool AnchorActive, double? AnchorMaxRadius) _cachedGuardZone;
     private (double OwnCog, double AisCog) _cachedCogVector;
     private (bool Enabled, int Count) _cachedRadarRangeRings;
+    private (bool Enabled, double BaseNm, int Count) _cachedDistanceRings;
     private bool _cachedRadarUseWireBearing;
     private double _cachedRadarBearingCorrection;
     private bool _cachedAtonsVisible;
@@ -2110,27 +2095,16 @@
     // same pattern as the visibility caches above. Default mirrors the
     // AppSettings default so the first sync after init is a no-op.
     private double _cachedAisInactiveMinutes = 5.0;
-    private bool _cachedGuardZoneWarningRingVisible;
     private (int Contrast, int Saturation, int Brightness) _cachedChartFilter;
 
     // Fire-and-forget on the settings-changed event. Each push compares
     // its inputs against the last-seen snapshot and skips the JS interop
-    // when nothing relevant changed. PushGuardZoneAsync swallows
-    // expected disposal races so nothing escapes as an unobserved task
-    // exception.
+    // when nothing relevant changed. CPA / TCPA threshold changes don't
+    // need a JS push - the chip classifier runs C# side and the next
+    // AIS tick picks up the new thresholds through Settings.* reads
+    // inside AisPushService.BuildSnapshot.
     private void HandleSettingsChanged()
     {
-        var guardZoneNow = (
-            Settings.CpaAlarmThreshold,
-            Settings.GuardZoneLookaheadMinutes,
-            SignalkClient.Data.AnchorActive,
-            SignalkClient.Data.AnchorMaxRadius);
-        if (!guardZoneNow.Equals(_cachedGuardZone))
-        {
-            _cachedGuardZone = guardZoneNow;
-            _ = PushGuardZoneAsync();
-        }
-
         if (_controlsJs is not null)
         {
             var cogNow = (Settings.OwnCogVectorMinutes, Settings.AisCogVectorMinutes);
@@ -2145,6 +2119,19 @@
             {
                 _cachedRadarRangeRings = rrNow;
                 _ = _controlsJs.SetRadarRangeRingsAsync(rrNow.RadarRangeRingsEnabled, rrNow.RadarRangeRingsCount);
+            }
+
+            var drNow = (
+                Settings.DistanceRingsEnabled,
+                Settings.DistanceRingsBaseNm,
+                Settings.DistanceRingsCount);
+            if (!drNow.Equals(_cachedDistanceRings))
+            {
+                _cachedDistanceRings = drNow;
+                _ = _controlsJs.SetDistanceRingsAsync(
+                    drNow.DistanceRingsEnabled,
+                    drNow.DistanceRingsBaseNm,
+                    drNow.DistanceRingsCount);
             }
 
             if (Settings.RadarUseWireBearing != _cachedRadarUseWireBearing)
@@ -2199,14 +2186,6 @@
             {
                 _cachedAisInactiveMinutes = Settings.AisInactiveMinutes;
                 _ = _aisJs.SetAisInactiveMinutesAsync(_cachedAisInactiveMinutes);
-            }
-            // Outer guard-zone warning ring: tracked here too so a
-            // Settings-page toggle reaches the JS layer without the
-            // helm having to refresh the Map page.
-            if (Settings.GuardZoneWarningRingVisible != _cachedGuardZoneWarningRingVisible)
-            {
-                _cachedGuardZoneWarningRingVisible = Settings.GuardZoneWarningRingVisible;
-                _ = _aisJs.SetGuardZoneWarningRingVisibleAsync(_cachedGuardZoneWarningRingVisible);
             }
         }
 
@@ -2506,10 +2485,6 @@
     private string? _lastPushedOwnCallsign;
 
     /// <summary>Last (active, maxRadiusMeters) tuple pushed to the
-    /// guard-zone JS layer. We diff per tick so transitions
-    /// (anchor activated / radius changed / dropped) repaint the
-    /// ring + threshold while steady-state ticks stay no-op.</summary>
-    private (bool active, double? maxM) _lastAnchorPushedState = (false, null);
 
     /// <summary>
     /// Closes the seed-vs-subscribe race in <c>OnAfterRenderAsync</c>:
@@ -2725,18 +2700,11 @@
             // snapshot.
             if (_anchorSync is not null) await _anchorSync.SyncAsync(Data);
 
-            // Re-push the guard zone when anchor state transitions
-            // (active flip, or radius change while active). Effective
-            // CPA radius narrows to the anchor swing while the
-            // anchoralarm-plugin has a drop point set; without this
-            // diff-and-push the visible ring + threshold stay at the
-            // underway value until the next settings change.
-            (bool active, double? maxM) anchorState = (Data.AnchorActive, Data.AnchorMaxRadius);
-            if (anchorState != _lastAnchorPushedState)
-            {
-                _lastAnchorPushedState = anchorState;
-                await PushGuardZoneAsync();
-            }
+            // Anchor state transitions narrow the CPA classifier on
+            // the next AIS push tick (AisPushService reads
+            // SignalkClient.Data.AnchorActive each call). No explicit
+            // push from here is needed; the chip classifier picks up
+            // the new threshold on the next tick automatically.
 
             // Sync active route visualization (href-diff -> fetch + draw).
             if (_activeRouteSync is not null)
@@ -3578,19 +3546,6 @@
         // suppresses labels while it's on, and toggling harbor mode
         // off doesn't resurrect labels the helm hid here.
         await Settings.SetAisLabelsVisibleAsync(enabled);
-    }
-
-    private async Task ToggleGuardZoneVisible(bool enabled)
-    {
-        // Persist + push to JS in lockstep. The setting fires
-        // OnSettingsChanged but only Settings -> JS sync paths that
-        // listen for this specific flag would react; the explicit
-        // JS push here keeps the chart in sync without waiting for a
-        // re-render cycle. CPA alarm pipeline is independent of this
-        // visibility flag (the ring is purely visual; the radius +
-        // lookahead values still drive the alarm).
-        await Settings.SetGuardZoneVisibleAsync(enabled);
-        if (_aisJs is not null) await _aisJs.SetGuardZoneVisibleAsync(enabled);
     }
 
     // --- Race Timer ---

@@ -1,0 +1,8 @@
+{
+  "name": "ona-fake-data-cpa",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Canned SignalK deltas for CPA/TCPA visualisation test - 3 vessels outside zones, 2 awareness, 2 alarm.",
+  "dependencies": {}
+}

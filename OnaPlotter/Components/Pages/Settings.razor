@@ -525,6 +525,41 @@
     <div class="col-sm-6">
         <div class="card">
             <div class="card-body">
+                <label class="form-label">Distance rings</label>
+                <div class="form-check form-switch mb-2">
+                    <input type="checkbox" class="form-check-input" role="switch"
+                           id="distance-rings-enabled"
+                           checked="@AppSettings.DistanceRingsEnabled"
+                           @onchange="OnDistanceRingsEnabledChanged" />
+                    <label class="form-check-label" for="distance-rings-enabled">
+                        Draw concentric distance rings on own boat
+                    </label>
+                </div>
+                <div class="input-group mb-2">
+                    <span class="input-group-text">Spacing</span>
+                    <input type="number" class="form-control" step="0.1" min="0.05" max="50"
+                           aria-label="Distance ring spacing in nautical miles"
+                           value="@AppSettings.DistanceRingsBaseNm.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)"
+                           disabled="@(!AppSettings.DistanceRingsEnabled)"
+                           @onchange="(e) => OnDistanceRingsBaseNmChanged(e)" />
+                    <span class="input-group-text">nm</span>
+                </div>
+                <div class="input-group">
+                    <span class="input-group-text">Rings</span>
+                    <input type="number" class="form-control" step="1" min="1" max="8"
+                           aria-label="Number of distance rings"
+                           value="@AppSettings.DistanceRingsCount"
+                           disabled="@(!AppSettings.DistanceRingsEnabled)"
+                           @onchange="(e) => OnDistanceRingsCountChanged(e)" />
+                </div>
+                <small class="text-muted">Pure visual scaffolding; no alarm. Rings sit at spacing × 1, 2, ..., N (e.g. 0.5 nm × 4 = 0.5/1.0/1.5/2.0 nm).</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
                 <label class="form-label">Radar range rings</label>
                 <div class="form-check form-switch mb-2">
                     <input type="checkbox" class="form-check-input" role="switch"
@@ -712,41 +747,55 @@
         </div>
     </div>
 
-    @* CPA *@
+    @* CPA & TCPA Alarm — inner band, audible klaxon + red-blink + always-on label. *@
     <div class="col-sm-6">
         <div class="card">
             <div class="card-body">
                 <AlarmRuleEnableToggle Title="CPA" />
-                <label class="form-label">Guard zone radius</label>
+                <label class="form-label">CPA &amp; TCPA Alarm</label>
                 <div class="input-group">
-                    <input type="number" class="form-control" step="0.1" min="0" max="5"
-                           aria-label="CPA guard zone radius in nautical miles"
-                           value="@AppSettings.CpaAlarmThreshold"
-                           @onchange="(e) => OnCpaChanged(e)" />
+                    <span class="input-group-text">CPA</span>
+                    <input type="number" class="form-control" step="0.05" min="0.01" max="5"
+                           aria-label="Alarm CPA distance in nautical miles"
+                           value="@AppSettings.CpaAlarmNm.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)"
+                           @onchange="(e) => OnCpaAlarmNmChanged(e)" />
                     <span class="input-group-text">nm</span>
                 </div>
-                <small class="text-muted">Alert when a vessel's projected closest approach is inside this radius.</small>
-
-                <label class="form-label mt-2">Lookahead</label>
-                <div class="input-group">
-                    <input type="number" class="form-control" step="1" min="1" max="60"
-                           aria-label="Guard zone lookahead in minutes"
-                           value="@AppSettings.GuardZoneLookaheadMinutes"
-                           @onchange="(e) => OnLookaheadChanged(e)" />
+                <div class="input-group mt-2">
+                    <span class="input-group-text">TCPA</span>
+                    <input type="number" class="form-control" step="1" min="1" max="120"
+                           aria-label="Alarm TCPA window in minutes"
+                           value="@AppSettings.TcpaAlarmMin"
+                           @onchange="(e) => OnTcpaAlarmMinChanged(e)" />
                     <span class="input-group-text">min</span>
                 </div>
-                <small class="text-muted">Only vessels whose CPA occurs within this window raise the alarm.</small>
+                <small class="text-muted">Audible klaxon + red-blink + always-on label fires when a vessel's projected CPA falls below this distance AND its TCPA is inside this window.</small>
+            </div>
+        </div>
+    </div>
 
-                <div class="form-check form-switch mt-2">
-                    <input class="form-check-input" type="checkbox"
-                           id="guard-zone-warning-ring-switch"
-                           checked="@AppSettings.GuardZoneWarningRingVisible"
-                           @onchange="(e) => OnGuardZoneWarningRingChanged(e)" />
-                    <label class="form-check-label" for="guard-zone-warning-ring-switch">
-                        Show outer warning ring
-                    </label>
+    @* CPA & TCPA Awareness — outer band, silent on-chart cross + hover label. *@
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <label class="form-label">CPA &amp; TCPA Awareness</label>
+                <div class="input-group">
+                    <span class="input-group-text">CPA</span>
+                    <input type="number" class="form-control" step="0.1" min="0.01" max="10"
+                           aria-label="Awareness CPA distance in nautical miles"
+                           value="@AppSettings.CpaAwarenessNm.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)"
+                           @onchange="(e) => OnCpaAwarenessNmChanged(e)" />
+                    <span class="input-group-text">nm</span>
                 </div>
-                <small class="text-muted d-block">Dashed ring at <code>radius × 2</code>. Targets between the rings raise an advisory chip but no audible alarm.</small>
+                <div class="input-group mt-2">
+                    <span class="input-group-text">TCPA</span>
+                    <input type="number" class="form-control" step="1" min="1" max="120"
+                           aria-label="Awareness TCPA window in minutes"
+                           value="@AppSettings.TcpaAwarenessMin"
+                           @onchange="(e) => OnTcpaAwarenessMinChanged(e)" />
+                    <span class="input-group-text">min</span>
+                </div>
+                <small class="text-muted">Silent on-chart cross + hover label - "watch this one". Automatically clamped to be at least the alarm values; values below alarm don't make sense.</small>
             </div>
         </div>
     </div>
@@ -1675,16 +1724,36 @@
             await AppSettings.SetDepthAlarmThresholdAsync(val);
     }
 
-    private async Task OnCpaChanged(ChangeEventArgs e)
+    private async Task OnCpaAlarmNmChanged(ChangeEventArgs e)
     {
-        if (double.TryParse(e.Value?.ToString(), out double val) && val >= 0)
-            await AppSettings.SetCpaAlarmThresholdAsync(val);
+        if (double.TryParse(e.Value?.ToString(),
+            System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out double val))
+            await AppSettings.SetCpaAlarmNmAsync(val);
     }
 
-    private async Task OnGuardZoneWarningRingChanged(ChangeEventArgs e)
+    private async Task OnTcpaAlarmMinChanged(ChangeEventArgs e)
     {
-        bool on = e.Value is bool b && b;
-        await AppSettings.SetGuardZoneWarningRingVisibleAsync(on);
+        if (double.TryParse(e.Value?.ToString(),
+            System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out double val))
+            await AppSettings.SetTcpaAlarmMinAsync(val);
+    }
+
+    private async Task OnCpaAwarenessNmChanged(ChangeEventArgs e)
+    {
+        if (double.TryParse(e.Value?.ToString(),
+            System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out double val))
+            await AppSettings.SetCpaAwarenessNmAsync(val);
+    }
+
+    private async Task OnTcpaAwarenessMinChanged(ChangeEventArgs e)
+    {
+        if (double.TryParse(e.Value?.ToString(),
+            System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out double val))
+            await AppSettings.SetTcpaAwarenessMinAsync(val);
     }
 
     private async Task OnHeadingPrefChanged(bool magnetic)
@@ -1801,12 +1870,6 @@
         await AppSettings.SetSnoozeDurationMinutesAsync(clamped);
     }
 
-    private async Task OnLookaheadChanged(ChangeEventArgs e)
-    {
-        if (double.TryParse(e.Value?.ToString(), out double val) && val >= 1)
-            await AppSettings.SetGuardZoneLookaheadMinutesAsync(val);
-    }
-
     private async Task OnWindShiftChanged(ChangeEventArgs e)
     {
         if (double.TryParse(e.Value?.ToString(), out double val) && val >= 5)
@@ -1878,6 +1941,32 @@
             System.Globalization.CultureInfo.InvariantCulture, out int val))
         {
             await AppSettings.SetRadarRangeRingsCountAsync(val);
+        }
+    }
+
+    private async Task OnDistanceRingsEnabledChanged(ChangeEventArgs e)
+    {
+        bool enabled = e.Value is bool b && b;
+        await AppSettings.SetDistanceRingsEnabledAsync(enabled);
+    }
+
+    private async Task OnDistanceRingsBaseNmChanged(ChangeEventArgs e)
+    {
+        if (double.TryParse(e.Value?.ToString(),
+            System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out double val))
+        {
+            await AppSettings.SetDistanceRingsBaseNmAsync(val);
+        }
+    }
+
+    private async Task OnDistanceRingsCountChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(),
+            System.Globalization.NumberStyles.Integer,
+            System.Globalization.CultureInfo.InvariantCulture, out int val))
+        {
+            await AppSettings.SetDistanceRingsCountAsync(val);
         }
     }
 

@@ -90,26 +90,6 @@ public interface IMapDisplaySettings
     /// (<c>AisLabelsVisible AND !HarborMode</c>).</summary>
     bool AisLabelsVisible { get; }
 
-    /// <summary>Guard-zone amber ring visible on the map. Independent
-    /// of the CPA alarm pipeline - helms can declutter the chart
-    /// without disabling the alarm. Defaults to true so existing
-    /// installs see the ring as before.</summary>
-    bool GuardZoneVisible { get; }
-
-    /// <summary>Outer dashed warning ring visible on the map at
-    /// <c>GuardZone × WarningFactor</c>. Helps the helm see why an
-    /// amber CPA chip can sit between the inner danger ring and the
-    /// outer advisory band - the chip is in the warning band, not
-    /// "outside the guard ring" as field-tested. Independent of the
-    /// inner ring's visibility (helms can show the danger ring alone
-    /// for a cleaner chart, or both rings for full context).
-    /// Defaults to true so existing installs gain the new advisory
-    /// ring without an opt-in step. Has no effect when the inner
-    /// ring is hidden or when harbor mode is active. The ring radius
-    /// itself is always 2× the helm-configured guard zone (see
-    /// <c>Cpa.OuterRingMultiplier</c>).</summary>
-    bool GuardZoneWarningRingVisible { get; }
-
     /// <summary>RainViewer weather overlay opacity, 0.05..0.95
     /// fraction. The shared
     /// <see cref="OnaPlotter.Utilities.WeatherOpacity"/> helper holds
@@ -228,6 +208,26 @@ public interface IMapDisplaySettings
     /// <c>tideVisible.v1</c>.</summary>
     bool TideVisible { get; }
 
+    /// <summary>Whether the chart paints helm-configured concentric
+    /// distance rings centred on own boat. Pure visual scaffolding -
+    /// no alarm semantics. Rings sit at <c>BaseNm × {1..Count}</c>,
+    /// so 0.5 nm base with count 4 draws rings at 0.5 / 1.0 / 1.5 /
+    /// 2.0 nm. Default off so a fresh helm sees a clean chart;
+    /// opt-in from Settings -> Display.</summary>
+    bool DistanceRingsEnabled { get; }
+
+    /// <summary>Base ring radius in nautical miles. The Nth ring sits
+    /// at <c>BaseNm × N</c>. Default 0.5 nm. Clamped 0.05..50 at the
+    /// setter so a stray zero/negative doesn't disable the rings via
+    /// the radius-collapsed-to-zero path, and a fat-fingered 5000
+    /// doesn't paint a ring outside the visible chart.</summary>
+    double DistanceRingsBaseNm { get; }
+
+    /// <summary>Number of concentric distance rings to draw. Default
+    /// 4. Clamped 1..8 on the setter; below 1 there's nothing to
+    /// draw, above 8 the chart turns into a bullseye.</summary>
+    int DistanceRingsCount { get; }
+
     /// <summary>Whether the radar overlay paints concentric range
     /// rings centred on own boat. Each ring sits at an evenly-spaced
     /// fraction of the radar's current range (1/N, 2/N, ..., N/N).
@@ -280,8 +280,6 @@ public interface IMapDisplaySettings
     Task SetServerTrackWithinBoundsAsync(bool value);
     Task SetAtonsVisibleAsync(bool value);
     Task SetAisLabelsVisibleAsync(bool value);
-    Task SetGuardZoneVisibleAsync(bool value);
-    Task SetGuardZoneWarningRingVisibleAsync(bool value);
     Task SetWeatherOverlayOpacityAsync(double value);
     Task SetChartContrastPercentAsync(int value);
     Task SetChartSaturationPercentAsync(int value);
@@ -298,6 +296,9 @@ public interface IMapDisplaySettings
     Task SetAisCogVectorMinutesAsync(double value);
     Task SetAisInactiveMinutesAsync(double value);
     Task SetAisRemoveMinutesAsync(double value);
+    Task SetDistanceRingsEnabledAsync(bool value);
+    Task SetDistanceRingsBaseNmAsync(double value);
+    Task SetDistanceRingsCountAsync(int value);
     Task SetRadarRangeRingsEnabledAsync(bool value);
     Task SetRadarRangeRingsCountAsync(int value);
     Task SetRadarUseWireBearingAsync(bool value);

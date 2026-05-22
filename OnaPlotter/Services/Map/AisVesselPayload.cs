@@ -63,7 +63,7 @@ public sealed class AisVesselPayload
     [JsonPropertyName("shipColor")] public string? ShipColor { get; set; }
     [JsonPropertyName("cpaNm")] public double? CpaNm { get; set; }
     [JsonPropertyName("tcpaMin")] public double? TcpaMin { get; set; }
-    /// <summary>"none" / "warning" / "danger" - precomputed threat
+    /// <summary>"none" / "awareness" / "alarm" - precomputed threat
     /// band for the chart chip. JS used to redo this thresholding
     /// inline; lifting it up means CpaTests.ClassifyThreat is the
     /// single source of truth.</summary>
@@ -98,11 +98,24 @@ public sealed class AisVesselPayload
 
     /// <summary>CPA endpoint precomputed for the vessel's projected
     /// position at TCPA. Only populated when the CPA threat band is
-    /// Warning or Danger (the only states where the JS draws the
-    /// crossing-situation line); null otherwise. Same WASM-side
+    /// Awareness or Alarm (the only states where the JS draws the
+    /// crossing-situation overlay); null otherwise. Same WASM-side
     /// destPoint() that produced VectorEndLat / Lon.</summary>
     [JsonPropertyName("cpaPointLat")] public double? CpaPointLat { get; set; }
     [JsonPropertyName("cpaPointLon")] public double? CpaPointLon { get; set; }
+
+    /// <summary>Own-ship's projected position at the same TCPA as
+    /// <see cref="CpaPointLat"/> / <see cref="CpaPointLon"/>. The JS
+    /// overlay draws an X marker here, a dashed line from own boat
+    /// to here, and a third line from this point to the target's
+    /// projected position (the actual CPA segment, with the
+    /// distance/time label at its midpoint).
+    /// <para>Populated for the same threat states as the target CPA
+    /// point - the two are siblings of one rendering pass. Per-vessel
+    /// because TCPA varies per target; same own-ship inputs but the
+    /// projection distance is target-specific.</para></summary>
+    [JsonPropertyName("ownCpaPointLat")] public double? OwnCpaPointLat { get; set; }
+    [JsonPropertyName("ownCpaPointLon")] public double? OwnCpaPointLon { get; set; }
 
     /// <summary>
     /// Fresh trail coords for this vessel as a flat alternating

@@ -77,7 +77,7 @@ public class CpaAlarmRuleTests
     public async Task Fires_WhenVesselInsideCpaAndTcpaLimits()
     {
         // Head-on closer at 200 m with closing speed 10 m/s -> TCPA ~0.33 min,
-        // CPA ~0 nm. Settings default (CPA 0.5, lookahead 10 min) -> alarm.
+        // CPA ~0 nm. Settings defaults (CpaAlarmNm 0.1, TcpaAlarmMin 30) -> alarm.
         var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
         var nav = OwnShipUnderway();
         var threat = ThreatNorthOf(200, speedMs: 5, name: "MV Close");
@@ -218,9 +218,9 @@ public class CpaAlarmRuleTests
         double cpaLimitNm = 0.5;
         double metresPerDegLon = 111_320 * Math.Cos(OwnLat * Math.PI / 180);
         // Northward offset kept small so TCPA stays inside the
-        // default 10-minute lookahead (else the lookahead check
-        // would dominate regardless of distance). 500 m north with a
-        // 10 m/s closing speed -> TCPA ~= 0.83 min.
+        // alarm-tier window (else the lookahead check would dominate
+        // regardless of distance). 500 m north with a 10 m/s closing
+        // speed -> TCPA ~= 0.83 min.
         double dLat = 500.0 / 111_320.0;
 
         var outsideThreshold = new AisVessel("vessels.cpa-outside")
@@ -232,7 +232,7 @@ public class CpaAlarmRuleTests
             CourseOverGround = Math.PI,
             SpeedOverGround = 5,
         };
-        await Assert.That(rule.Check(Ctx(nav, [outsideThreshold], new FakeSettings { CpaAlarmThreshold = cpaLimitNm }))).IsNull();
+        await Assert.That(rule.Check(Ctx(nav, [outsideThreshold], new FakeSettings { CpaAlarmNm = cpaLimitNm }))).IsNull();
 
         var insideThreshold = new AisVessel("vessels.cpa-inside")
         {
@@ -243,7 +243,7 @@ public class CpaAlarmRuleTests
             CourseOverGround = Math.PI,
             SpeedOverGround = 5,
         };
-        var fired = rule.Check(Ctx(nav, [insideThreshold], new FakeSettings { CpaAlarmThreshold = cpaLimitNm }));
+        var fired = rule.Check(Ctx(nav, [insideThreshold], new FakeSettings { CpaAlarmNm = cpaLimitNm }));
         await Assert.That(fired).IsNotNull();
         await Assert.That(fired!.TargetLabel).IsEqualTo("CPA Inside");
     }
@@ -251,59 +251,31 @@ public class CpaAlarmRuleTests
     [Test]
     public async Task TcpaLookahead_RejectsFarFutureCrossings()
     {
-        // Threat inside CPA radius but TCPA way beyond lookahead.
-        // 80 nm distant (~ 148 km), closing at 5+5 = 10 m/s -> TCPA ~ 247 min.
-        // Default GuardZoneLookaheadMinutes = 10. Must not fire.
-        // (The current-distance gate ALSO rejects this case at 80 nm
-        // > outerRing of 1 nm; the lookahead pin is exercised
-        // separately in CurrentDistanceGate_RejectsFarVesselsEvenWithCloseProjectedCpa
-        // below.)
+        // Threat inside CPA radius but TCPA way beyond the alarm
+        // lookahead. 80 nm distant (~ 148 km), closing at 5+5 = 10 m/s
+        // -> TCPA ~ 247 min. Default TcpaAlarmMin = 30. Must not fire.
         var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
         var threat = ThreatNorthOf(metresNorth: 148_000, speedMs: 5);
-        await Assert.That(rule.Check(Ctx(OwnShipUnderway(), [threat], new FakeSettings()))).IsNull();
+        // Tighten the lookahead so the geometry is unambiguous against
+        // the test threshold rather than the production default (which
+        // is allowed to drift).
+        var settings = new FakeSettings { TcpaAlarmMin = 30.0 };
+        await Assert.That(rule.Check(Ctx(OwnShipUnderway(), [threat], settings))).IsNull();
     }
 
     [Test]
-    public async Task CurrentDistanceGate_RejectsFarVesselsEvenWithCloseProjectedCpa()
+    public async Task FiresWhenProjectedCpaInsideAlarmTier()
     {
-        // PR #264 alignment fix: alarm rule now consumes the same
-        // Cpa.ClassifyThreat output as the chart-overlay classifier.
-        // The current-distance ring (2× guard zone) is what stops a
-        // far-away vessel with a marginal closing track from firing
-        // the audible klaxon while the chart-overlay says "no
-        // threat". Helm-feedback (paraphrased): "the X is gone but
-        // the alarm still rings".
-        //
-        // Geometry: vessel 3 nm north, closing south at 5 m/s,
-        // projected CPA = 0 (head-on). Outer ring = 2 × 0.5 nm = 1 nm,
-        // current dist = 3 nm > outer ring -> threat None -> no alarm.
+        // A vessel head-on closing with projected CPA inside the
+        // alarm-tier CPA limit AND TCPA inside the alarm-tier window
+        // fires the audible klaxon. Pin so a future "be more
+        // conservative" change doesn't suppress real alarms.
         var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
         var nav = OwnShipUnderway();
-        // 3 nm = 5556 m. Threat heading south, own heading north,
-        // closing speed 10 m/s -> TCPA ~9.3 min (just inside the
-        // 10 min default lookahead). The OLD alarm gate would have
-        // fired - inside CPA limit AND inside TCPA limit. The NEW
-        // gate rejects on current distance.
-        var farThreat = ThreatNorthOf(metresNorth: 5556, speedMs: 5);
-        await Assert.That(rule.Check(Ctx(nav, [farThreat], new FakeSettings()))).IsNull()
-            .Because("vessels currently outside the outer ring (2× guard zone) " +
-                     "must not fire the klaxon - chart-overlay agrees.");
-    }
-
-    [Test]
-    public async Task CurrentDistanceGate_FiresInOuterRing_WhenProjectedCpaInsideGuardZone()
-    {
-        // The complementary case: a vessel currently in the warning
-        // band (between guard zone and 2× guard zone) with a closing
-        // track that would breach the guard zone DOES fire the
-        // alarm. Pinned so a future "be even more conservative"
-        // change doesn't accidentally suppress real Warning-band
-        // hits.
-        var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
-        var nav = OwnShipUnderway();
-        // ~0.7 nm north (~1296 m): inside outer ring (1.0 nm at
-        // default 0.5 nm guard zone), outside guard zone.
-        // Closing at 10 m/s -> TCPA ~2 min, CPA ~0 -> Warning band.
+        // ~0.7 nm north (~1296 m), head-on closing at 10 m/s -> TCPA
+        // ~2 min, CPA ~0 nm. With FakeSettings defaults (CpaAlarmNm
+        // = 0.1, TcpaAlarmMin = 30) the projected CPA of ~0 clears
+        // the alarm tier and the alarm fires.
         var threat = ThreatNorthOf(metresNorth: 1296, speedMs: 5);
         await Assert.That(rule.Check(Ctx(nav, [threat], new FakeSettings()))).IsNotNull();
     }
@@ -352,8 +324,8 @@ public class CpaAlarmRuleTests
     {
         // Anchor not active -> threshold is the user's underway value.
         var nav = OwnShipUnderway();
-        var ctx = Ctx(nav, [], new FakeSettings { CpaAlarmThreshold = 0.5 });
-        await Assert.That(CpaAlarmRule.EffectiveCpaRadiusNm(ctx)).IsEqualTo(0.5);
+        var ctx = Ctx(nav, [], new FakeSettings { CpaAlarmNm = 0.5 });
+        await Assert.That(CpaAlarmRule.EffectiveAlarmCpaNm(ctx)).IsEqualTo(0.5);
     }
 
     [Test]
@@ -368,9 +340,9 @@ public class CpaAlarmRuleTests
         var nav = OwnShipUnderway();
         nav.ApplyAnchorPosition(OwnLat, OwnLon);
         nav.Apply("navigation.anchor.maxRadius", 30.0);
-        var ctx = Ctx(nav, [], new FakeSettings { CpaAlarmThreshold = 0.5 });
+        var ctx = Ctx(nav, [], new FakeSettings { CpaAlarmNm = 0.5 });
 
-        double eff = CpaAlarmRule.EffectiveCpaRadiusNm(ctx);
+        double eff = CpaAlarmRule.EffectiveAlarmCpaNm(ctx);
         // 30 m / 1852 m/nm ~ 0.0162 nm.
         await Assert.That(eff).IsLessThan(0.02);
         await Assert.That(eff).IsGreaterThan(0.01);
@@ -386,9 +358,9 @@ public class CpaAlarmRuleTests
         var nav = OwnShipUnderway();
         nav.ApplyAnchorPosition(OwnLat, OwnLon);
         nav.Apply("navigation.anchor.maxRadius", 5000.0);  // ~2.7 nm
-        var ctx = Ctx(nav, [], new FakeSettings { CpaAlarmThreshold = 0.3 });
+        var ctx = Ctx(nav, [], new FakeSettings { CpaAlarmNm = 0.3 });
 
-        await Assert.That(CpaAlarmRule.EffectiveCpaRadiusNm(ctx)).IsEqualTo(0.3);
+        await Assert.That(CpaAlarmRule.EffectiveAlarmCpaNm(ctx)).IsEqualTo(0.3);
     }
 
     [Test]
@@ -400,9 +372,9 @@ public class CpaAlarmRuleTests
         var nav = OwnShipUnderway();
         nav.ApplyAnchorPosition(OwnLat, OwnLon);
         // No maxRadius applied.
-        var ctx = Ctx(nav, [], new FakeSettings { CpaAlarmThreshold = 0.5 });
+        var ctx = Ctx(nav, [], new FakeSettings { CpaAlarmNm = 0.5 });
 
-        await Assert.That(CpaAlarmRule.EffectiveCpaRadiusNm(ctx)).IsEqualTo(0.5);
+        await Assert.That(CpaAlarmRule.EffectiveAlarmCpaNm(ctx)).IsEqualTo(0.5);
     }
 
     [Test]
@@ -436,7 +408,7 @@ public class CpaAlarmRuleTests
             IsBuddy = false,
         };
 
-        var alarm = rule.Check(Ctx(nav, [passing], new FakeSettings { CpaAlarmThreshold = 0.5 }));
+        var alarm = rule.Check(Ctx(nav, [passing], new FakeSettings { CpaAlarmNm = 0.5 }));
         await Assert.That(alarm).IsNull();
     }
 

@@ -31,13 +31,14 @@ internal sealed class FakeSettings : IAppSettings
     public bool ServerTrackWithinBounds { get; set; } = true;
     public bool RadarRangeRingsEnabled { get; set; } = true;
     public int RadarRangeRingsCount { get; set; } = 4;
+    public bool DistanceRingsEnabled { get; set; } = false;
+    public double DistanceRingsBaseNm { get; set; } = 0.5;
+    public int DistanceRingsCount { get; set; } = 4;
     public bool RadarUseWireBearing { get; set; } = false;
     public double RadarBearingCorrectionDeg { get; set; } = 0.0;
     public bool TideVisible { get; set; } = true;
     public bool AtonsVisible { get; set; } = true;
     public bool AisLabelsVisible { get; set; } = true;
-    public bool GuardZoneVisible { get; set; } = true;
-    public bool GuardZoneWarningRingVisible { get; set; } = true;
     public bool ChartUpscaleEnabled { get; set; }
     public int ChartUpscaleLevels { get; set; } = 2;
     public double WeatherOverlayOpacity { get; set; } = 0.5;
@@ -47,8 +48,10 @@ internal sealed class FakeSettings : IAppSettings
     public bool HarborMode { get; set; }
     public bool SidebarCollapsed { get; set; }
     public double DepthAlarmThreshold { get; set; } = 3.0;
-    public double CpaAlarmThreshold { get; set; } = 0.5;
-    public double GuardZoneLookaheadMinutes { get; set; } = 10.0;
+    public double CpaAlarmNm { get; set; } = 0.1;
+    public double TcpaAlarmMin { get; set; } = 30.0;
+    public double CpaAwarenessNm { get; set; } = 1.0;
+    public double TcpaAwarenessMin { get; set; } = 30.0;
     public double CpaDebounceSeconds { get; set; }
     public double WindShiftAlarmThreshold { get; set; } = 15.0;
     public double WindShiftLookbackMinutes { get; set; } = 5.0;
@@ -155,14 +158,15 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetServerTrackWithinBoundsAsync(bool v) { ServerTrackWithinBounds = v; return Task.CompletedTask; }
     public Task SetRadarRangeRingsEnabledAsync(bool v) { RadarRangeRingsEnabled = v; return Task.CompletedTask; }
     public Task SetRadarRangeRingsCountAsync(int v) { RadarRangeRingsCount = v; return Task.CompletedTask; }
+    public Task SetDistanceRingsEnabledAsync(bool v) { DistanceRingsEnabled = v; return Task.CompletedTask; }
+    public Task SetDistanceRingsBaseNmAsync(double v) { DistanceRingsBaseNm = v; return Task.CompletedTask; }
+    public Task SetDistanceRingsCountAsync(int v) { DistanceRingsCount = v; return Task.CompletedTask; }
     public Task SetRadarUseWireBearingAsync(bool v) { RadarUseWireBearing = v; return Task.CompletedTask; }
     public Task SetRadarBearingCorrectionDegAsync(double v) { RadarBearingCorrectionDeg = v; return Task.CompletedTask; }
     public Task SetTideVisibleAsync(bool v) { TideVisible = v; return Task.CompletedTask; }
     public Task SetSidebarCollapsedAsync(bool v) { SidebarCollapsed = v; return Task.CompletedTask; }
     public Task SetAtonsVisibleAsync(bool v) { AtonsVisible = v; return Task.CompletedTask; }
     public Task SetAisLabelsVisibleAsync(bool v) { AisLabelsVisible = v; return Task.CompletedTask; }
-    public Task SetGuardZoneVisibleAsync(bool v) { GuardZoneVisible = v; return Task.CompletedTask; }
-    public Task SetGuardZoneWarningRingVisibleAsync(bool v) { GuardZoneWarningRingVisible = v; return Task.CompletedTask; }
     public Task SetChartUpscaleEnabledAsync(bool v) { ChartUpscaleEnabled = v; return Task.CompletedTask; }
     public Task SetChartUpscaleLevelsAsync(int v) { ChartUpscaleLevels = v; return Task.CompletedTask; }
     public Task SetWeatherOverlayOpacityAsync(double v) { WeatherOverlayOpacity = v; return Task.CompletedTask; }
@@ -176,8 +180,10 @@ internal sealed class FakeSettings : IAppSettings
         return Task.CompletedTask;
     }
     public Task SetDepthAlarmThresholdAsync(double v) => Task.CompletedTask;
-    public Task SetCpaAlarmThresholdAsync(double v) => Task.CompletedTask;
-    public Task SetGuardZoneLookaheadMinutesAsync(double v) => Task.CompletedTask;
+    public Task SetCpaAlarmNmAsync(double v) { CpaAlarmNm = v; return Task.CompletedTask; }
+    public Task SetTcpaAlarmMinAsync(double v) { TcpaAlarmMin = v; return Task.CompletedTask; }
+    public Task SetCpaAwarenessNmAsync(double v) { CpaAwarenessNm = v; return Task.CompletedTask; }
+    public Task SetTcpaAwarenessMinAsync(double v) { TcpaAwarenessMin = v; return Task.CompletedTask; }
     public Task SetCpaDebounceSecondsAsync(double v) { CpaDebounceSeconds = v; return Task.CompletedTask; }
     public Task SetWindShiftAlarmThresholdAsync(double v) => Task.CompletedTask;
     public Task SetWindShiftLookbackMinutesAsync(double v) => Task.CompletedTask;

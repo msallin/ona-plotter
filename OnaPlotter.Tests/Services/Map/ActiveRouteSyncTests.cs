@@ -135,6 +135,7 @@ public class ActiveRouteSyncTests
         public Task ClearLaylinesAsync() => Task.CompletedTask;
         public Task SetShipLinesVisibleAsync(bool enabled) => Task.CompletedTask;
         public Task SetRadarRangeRingsAsync(bool enabled, int count) => Task.CompletedTask;
+        public Task SetDistanceRingsAsync(bool enabled, double baseNm, int count) => Task.CompletedTask;
         public Task SetRadarUseWireBearingAsync(bool value) => Task.CompletedTask;
         public Task SetRadarBearingCorrectionAsync(double degrees) => Task.CompletedTask;
         public Task SetNightModeAsync(bool enabled) => Task.CompletedTask;

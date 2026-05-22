@@ -75,8 +75,9 @@ SignalK webapp on a Pi, or runs standalone from any browser.
   gauge empty?" without leaving the app.
 - **Raw Stream** - live delta viewer with per-path filtering.
 - **Settings** - Theme (System / Light / Dark), Night Mode (Soft /
-  Amber / Red), sailing mode, alarm thresholds (depth, CPA, guard-zone
-  lookahead, wind shift), polar-file upload with live polar diagram.
+  Amber / Red), sailing mode, alarm thresholds (depth, two-tier CPA & TCPA
+  alarm/awareness, wind shift), polar-file upload with live polar
+  diagram.
 
 ### Alarms
 

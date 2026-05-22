@@ -64,8 +64,6 @@ public sealed class AppSettingsService : IAppSettings
     /// !HarborMode</c>. Toggling harbor mode off does NOT silently
     /// resurrect labels the helm previously hid via this setting.</summary>
     public bool AisLabelsVisible { get; private set; } = true;
-    public bool GuardZoneVisible { get; private set; } = true;
-    public bool GuardZoneWarningRingVisible { get; private set; } = true;
     public double WeatherOverlayOpacity { get; private set; } = OnaPlotter.Utilities.WeatherOpacity.DefaultFraction;
     /// <summary>Chart-display CSS filter percentages - helm boosts /
     /// dampens contrast / saturation / brightness from the Layers panel
@@ -118,13 +116,30 @@ public sealed class AppSettingsService : IAppSettings
     //   WIND min TWS    3   -> 5 kn:   suppress more wobble in
     //                                  light air where TWD is noisy.
     public double DepthAlarmThreshold { get; private set; } = 2.0;
-    public double CpaAlarmThreshold { get; private set; } = 0.5;
-    public double GuardZoneLookaheadMinutes { get; private set; } = 10.0;
-    /// <summary>How long (seconds) a CPA threat must stay inside the
-    /// guard zone before the audible alarm fires. Default 5 s so a
-    /// single-sample false positive (radar / AIS jitter at the
-    /// projection boundary) doesn't ring the klaxon. 0 disables
-    /// debouncing.</summary>
+    /// <summary>Inner / strict CPA-tier distance (nm). Tighter than the
+    /// awareness tier so the audio klaxon only fires for genuinely
+    /// close encounters. Default 0.1 nm picked by helm field test as
+    /// "actually scary"; the awareness tier (1.0 nm) handles "watch
+    /// this one" without nagging the cockpit.</summary>
+    public double CpaAlarmNm { get; private set; } = 0.1;
+    /// <summary>Alarm-tier TCPA lookahead (minutes). 30 min covers the
+    /// full coastal-pilotage planning horizon - if a vessel's projected
+    /// CPA is inside the alarm distance within half an hour, the helm
+    /// wants to know now.</summary>
+    public double TcpaAlarmMin { get; private set; } = 30.0;
+    /// <summary>Awareness-tier CPA distance (nm). Triggers the silent
+    /// on-chart cross + hover label so the helm SEES a developing
+    /// crossing situation. Setter clamps to be &gt;= <see cref="CpaAlarmNm"/>.
+    /// Default 1.0 nm.</summary>
+    public double CpaAwarenessNm { get; private set; } = 1.0;
+    /// <summary>Awareness-tier TCPA lookahead (minutes). Same time
+    /// horizon as the alarm tier by default; the distance is what
+    /// separates the two bands. Setter clamps to be &gt;= <see cref="TcpaAlarmMin"/>.</summary>
+    public double TcpaAwarenessMin { get; private set; } = 30.0;
+    /// <summary>How long (seconds) a CPA threat must persist before
+    /// the audible alarm fires. Default 5 s so a single-sample false
+    /// positive (radar / AIS jitter at the projection boundary) doesn't
+    /// ring the klaxon. 0 disables debouncing.</summary>
     public double CpaDebounceSeconds { get; private set; } = 5.0;
     public double WindShiftAlarmThreshold { get; private set; } = 30.0;
     public double WindShiftLookbackMinutes { get; private set; } = 10.0;
@@ -191,6 +206,19 @@ public sealed class AppSettingsService : IAppSettings
     /// <summary>Show the tide row + extras on the depth HUD +
     /// Dashboard. Default true.</summary>
     public bool TideVisible { get; private set; } = true;
+
+    /// <summary>Helm-configured distance-ring overlay enabled. Default
+    /// false (opt-in from Settings -> Display). Independent of the
+    /// radar-range-rings flag below and of any alarm setting.</summary>
+    public bool DistanceRingsEnabled { get; private set; } = false;
+    /// <summary>Base distance-ring radius in nautical miles. Default
+    /// 0.5 nm; Nth ring sits at BaseNm × N. Clamped 0.05..50 on the
+    /// setter.</summary>
+    public double DistanceRingsBaseNm { get; private set; } = 0.5;
+    /// <summary>How many concentric distance rings to draw. Default
+    /// 4 (so the default config draws rings at 0.5/1.0/1.5/2.0 nm).
+    /// Clamped 1..8 on the setter.</summary>
+    public int DistanceRingsCount { get; private set; } = 4;
 
     /// <summary>Radar range-ring overlay enabled. Default true.</summary>
     public bool RadarRangeRingsEnabled { get; private set; } = true;
@@ -372,8 +400,6 @@ public sealed class AppSettingsService : IAppSettings
             ServerTrackWithinBounds = await LoadBool("serverTrackWithinBounds.v1", true);
             AtonsVisible = await LoadBool("atonsVisible.v1", true);
             AisLabelsVisible = await LoadBool("aisLabelsVisible.v1", true);
-            GuardZoneVisible = await LoadBool("guardZoneVisible.v1", true);
-            GuardZoneWarningRingVisible = await LoadBool("guardZoneWarningRingVisible.v1", true);
             WeatherOverlayOpacity = await LoadDouble("weatherOverlayOpacity.v1",
                 OnaPlotter.Utilities.WeatherOpacity.DefaultFraction);
             // chartContrast/sat/bright go through LoadDouble + cast for the
@@ -411,12 +437,34 @@ public sealed class AppSettingsService : IAppSettings
             // for rationale). Existing helms keep their stored values;
             // these defaults only apply on first install.
             DepthAlarmThreshold = await LoadDouble("depthAlarmThreshold", 2.0);
-            CpaAlarmThreshold = await LoadDouble("cpaAlarmThreshold", 0.5);
-            GuardZoneLookaheadMinutes = await LoadDouble("guardZoneLookaheadMinutes", 10.0);
+            // CPA / TCPA two-tier load with legacy migration. Helms
+            // upgrading from the single-threshold model have their
+            // tuned value preserved into the new alarm tier; awareness
+            // lands on the fresh defaults. The legacy unversioned
+            // keys are read once on bootstrap, never written - the
+            // new ".v1" keys are the source of truth going forward,
+            // and the legacy entries decay harmlessly when localStorage
+            // is cleared.
+            //
+            // Migration logic per setting:
+            //   * if new key present -> use it (helm has touched the
+            //     setting under the new schema)
+            //   * else if legacy key present -> migrate that value into
+            //     the new tier (helm hasn't touched it since the
+            //     upgrade)
+            //   * else -> use the declared default
+            CpaAlarmNm = await LoadDoubleFallback(
+                "cpaAlarmNm.v1", "cpaAlarmThreshold", 0.1);
+            TcpaAlarmMin = await LoadDoubleFallback(
+                "tcpaAlarmMin.v1", "guardZoneLookaheadMinutes", 30.0);
+            CpaAwarenessNm = Math.Max(
+                await LoadDouble("cpaAwarenessNm.v1", 1.0),
+                CpaAlarmNm);
+            TcpaAwarenessMin = Math.Max(
+                await LoadDouble("tcpaAwarenessMin.v1", 30.0),
+                TcpaAlarmMin);
             CpaDebounceSeconds = Math.Clamp(
                 await LoadDouble("cpaDebounceSeconds.v1", 5.0), 0.0, 60.0);
-            // Outer ring is fixed at 2× the guard-zone radius via
-            // Cpa.OuterRingMultiplier; no per-helm knob.
             WindShiftAlarmThreshold = await LoadDouble("windShiftAlarmThreshold", 30.0);
             WindShiftLookbackMinutes = await LoadDouble("windShiftLookbackMinutes", 10.0);
             WindShiftMinTrueWindSpeed = await LoadDouble("windShiftMinTrueWindSpeed.v1", 5.0);
@@ -461,6 +509,17 @@ public sealed class AppSettingsService : IAppSettings
             // the chart from turning into a bullseye.
             RadarRangeRingsCount = (int)Math.Clamp(
                 await LoadDouble("radarRangeRingsCount.v1", 4.0), 1.0, 8.0);
+            // Distance rings: pure visual scaffolding centred on own
+            // boat, independent of the radar overlay and of any alarm.
+            // Default off; the setters re-clamp on every write so a
+            // corrupted localStorage value (zero / negative / huge)
+            // can't disable the rings via the radius-collapsed path
+            // or paint outside the chart.
+            DistanceRingsEnabled = await LoadBool("distanceRingsEnabled.v1", false);
+            DistanceRingsBaseNm = Math.Clamp(
+                await LoadDouble("distanceRingsBaseNm.v1", 0.5), 0.05, 50.0);
+            DistanceRingsCount = (int)Math.Clamp(
+                await LoadDouble("distanceRingsCount.v1", 4.0), 1.0, 8.0);
             RadarUseWireBearing = await LoadBool("radarUseWireBearing.v1", false);
             RadarBearingCorrectionDeg = Math.Clamp(
                 await LoadDouble("radarBearingCorrection.v1", 0.0), -180.0, 180.0);
@@ -734,20 +793,6 @@ public sealed class AppSettingsService : IAppSettings
         OnSettingsChanged?.Invoke();
     }
 
-    public async Task SetGuardZoneVisibleAsync(bool value)
-    {
-        GuardZoneVisible = value;
-        await Save("guardZoneVisible.v1", value ? "true" : "false");
-        OnSettingsChanged?.Invoke();
-    }
-
-    public async Task SetGuardZoneWarningRingVisibleAsync(bool value)
-    {
-        GuardZoneWarningRingVisible = value;
-        await Save("guardZoneWarningRingVisible.v1", value ? "true" : "false");
-        OnSettingsChanged?.Invoke();
-    }
-
     public async Task SetChartUpscaleEnabledAsync(bool value)
     {
         ChartUpscaleEnabled = value;
@@ -850,17 +895,63 @@ public sealed class AppSettingsService : IAppSettings
         OnSettingsChanged?.Invoke();
     }
 
-    public async Task SetCpaAlarmThresholdAsync(double value)
+    public async Task SetCpaAlarmNmAsync(double value)
     {
-        CpaAlarmThreshold = value;
-        await Save("cpaAlarmThreshold", value.ToString("F2", CultureInfo.InvariantCulture));
+        // Sanitise: NaN / negative / zero would silently disable the
+        // alarm tier (Threat.Alarm requires cpa <= CpaAlarmNm, so 0
+        // makes that "anything <= 0" - never true). Pin to a small
+        // positive minimum so the alarm always classifies *something*.
+        if (!double.IsFinite(value) || value <= 0) value = 0.01;
+        CpaAlarmNm = value;
+        // Awareness must never sit below alarm: an alarm without a
+        // preceding awareness tier breaks the "see it brewing before
+        // you hear the klaxon" contract. Bump it up here so the
+        // helm's order of input doesn't matter (raising the alarm
+        // value past the awareness value adjusts awareness; it
+        // doesn't invert the two bands).
+        if (CpaAwarenessNm < CpaAlarmNm)
+        {
+            CpaAwarenessNm = CpaAlarmNm;
+            await Save("cpaAwarenessNm.v1",
+                CpaAwarenessNm.ToString("F2", CultureInfo.InvariantCulture));
+        }
+        await Save("cpaAlarmNm.v1", value.ToString("F2", CultureInfo.InvariantCulture));
         OnSettingsChanged?.Invoke();
     }
 
-    public async Task SetGuardZoneLookaheadMinutesAsync(double value)
+    public async Task SetTcpaAlarmMinAsync(double value)
     {
-        GuardZoneLookaheadMinutes = value;
-        await Save("guardZoneLookaheadMinutes", value.ToString("F1", CultureInfo.InvariantCulture));
+        if (!double.IsFinite(value) || value <= 0) value = 1.0;
+        TcpaAlarmMin = value;
+        if (TcpaAwarenessMin < TcpaAlarmMin)
+        {
+            TcpaAwarenessMin = TcpaAlarmMin;
+            await Save("tcpaAwarenessMin.v1",
+                TcpaAwarenessMin.ToString("F1", CultureInfo.InvariantCulture));
+        }
+        await Save("tcpaAlarmMin.v1", value.ToString("F1", CultureInfo.InvariantCulture));
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetCpaAwarenessNmAsync(double value)
+    {
+        // Clamp to be >= alarm. Same invariant as the alarm setter,
+        // applied from the other direction: lowering awareness below
+        // alarm would degenerate the awareness tier entirely
+        // (Threat.Awareness requires cpa <= awareness AND > alarm).
+        if (!double.IsFinite(value) || value <= 0) value = CpaAlarmNm;
+        if (value < CpaAlarmNm) value = CpaAlarmNm;
+        CpaAwarenessNm = value;
+        await Save("cpaAwarenessNm.v1", value.ToString("F2", CultureInfo.InvariantCulture));
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetTcpaAwarenessMinAsync(double value)
+    {
+        if (!double.IsFinite(value) || value <= 0) value = TcpaAlarmMin;
+        if (value < TcpaAlarmMin) value = TcpaAlarmMin;
+        TcpaAwarenessMin = value;
+        await Save("tcpaAwarenessMin.v1", value.ToString("F1", CultureInfo.InvariantCulture));
         OnSettingsChanged?.Invoke();
     }
 
@@ -1057,6 +1148,33 @@ public sealed class AppSettingsService : IAppSettings
         RadarRangeRingsCount = Math.Clamp(value, 1, 8);
         await Save("radarRangeRingsCount.v1",
             RadarRangeRingsCount.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetDistanceRingsEnabledAsync(bool value)
+    {
+        DistanceRingsEnabled = value;
+        await Save("distanceRingsEnabled.v1", value ? "true" : "false");
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetDistanceRingsBaseNmAsync(double value)
+    {
+        // NaN / negative / zero would collapse every ring to a single
+        // point or vanish them entirely; pin into the supported range
+        // so a corrupted bind / paste lands on a usable value.
+        if (!double.IsFinite(value)) value = 0.5;
+        DistanceRingsBaseNm = Math.Clamp(value, 0.05, 50.0);
+        await Save("distanceRingsBaseNm.v1",
+            DistanceRingsBaseNm.ToString("F2", CultureInfo.InvariantCulture));
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetDistanceRingsCountAsync(int value)
+    {
+        DistanceRingsCount = Math.Clamp(value, 1, 8);
+        await Save("distanceRingsCount.v1",
+            DistanceRingsCount.ToString(CultureInfo.InvariantCulture));
         OnSettingsChanged?.Invoke();
     }
 
@@ -1335,6 +1453,25 @@ public sealed class AppSettingsService : IAppSettings
         var v = await LoadString(key);
         return v is not null && double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out double d)
             ? d : fallback;
+    }
+
+    /// <summary>Load a double from <paramref name="primaryKey"/>; on miss,
+    /// fall back to <paramref name="legacyKey"/> (one-shot migration of
+    /// pre-rename helms); on second miss, return <paramref name="fallback"/>.
+    /// Used by the CPA / TCPA two-tier loader so an upgraded helm keeps
+    /// the value they tuned under the old single-threshold name.</summary>
+    private async Task<double> LoadDoubleFallback(
+        string primaryKey, string legacyKey, double fallback)
+    {
+        var primary = await LoadString(primaryKey);
+        if (primary is not null
+            && double.TryParse(primary, NumberStyles.Float, CultureInfo.InvariantCulture, out double dp))
+            return dp;
+        var legacy = await LoadString(legacyKey);
+        if (legacy is not null
+            && double.TryParse(legacy, NumberStyles.Float, CultureInfo.InvariantCulture, out double dl))
+            return dl;
+        return fallback;
     }
 
     /// <summary>Load a persisted UTC timestamp. Stored as an ISO-8601

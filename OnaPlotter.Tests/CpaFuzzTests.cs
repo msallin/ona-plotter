@@ -245,93 +245,106 @@ public class CpaFuzzTests
         {
             double cpa = rng.NextDouble() * 5.0;
             double tcpa = rng.NextDouble() * 30.0;
-            double currentDist = rng.NextDouble() * 5.0;
-            double radius = rng.NextDouble() * 2.0 + 0.1;
-            double look = rng.NextDouble() * 30.0 + 1.0;
+            double alarmCpa = rng.NextDouble() * 2.0 + 0.1;
+            double alarmTcpa = rng.NextDouble() * 30.0 + 1.0;
+            double awarenessCpa = alarmCpa + rng.NextDouble() * 2.0;
+            double awarenessTcpa = alarmTcpa + rng.NextDouble() * 30.0;
 
-            var t = Cpa.ClassifyThreat(cpa, tcpa, currentDist, radius, look, isBuddy: true);
+            var t = Cpa.ClassifyThreat(cpa, tcpa,
+                alarmCpa, alarmTcpa, awarenessCpa, awarenessTcpa, isBuddy: true);
             await Assert.That(t).IsEqualTo(Cpa.Threat.None);
         }
     }
 
     [Test]
-    public async Task ClassifyThreat_DangerImpliesInsideGuardZoneAndLookahead()
+    public async Task ClassifyThreat_AlarmImpliesInsideAlarmTier()
     {
-        // If the result is Danger, the inputs must satisfy: vessel is
-        // CURRENTLY within the guard zone, the projected CPA is also
-        // within the guard zone (so it's actually closing), and the
-        // TCPA is inside the lookahead. Catches a regression where
-        // someone widens the band accidentally (e.g. replacing <= with
-        // <, or accidentally using outer-ring radius for the danger
+        // If the result is Alarm, the inputs must satisfy: the
+        // projected CPA is within the alarm-tier CPA limit AND the
+        // TCPA is inside the alarm-tier window. Catches a regression
+        // where someone widens the band accidentally (e.g. replacing
+        // <= with <, or using the awareness threshold for the alarm
         // gate).
         var rng = new Random(Seed ^ 6);
+        int sawAlarm = 0;
         for (int i = 0; i < 1000; i++)
         {
             double cpa = rng.NextDouble() * 5.0;
             double tcpa = rng.NextDouble() * 30.0 + 0.01;       // > 0 to avoid the early-exit
-            double currentDist = rng.NextDouble() * 5.0;
-            double radius = rng.NextDouble() * 2.0 + 0.1;
-            double look = rng.NextDouble() * 30.0 + 1.0;
+            double alarmCpa = rng.NextDouble() * 2.0 + 0.1;
+            double alarmTcpa = rng.NextDouble() * 30.0 + 1.0;
+            double awarenessCpa = alarmCpa + rng.NextDouble() * 2.0;
+            double awarenessTcpa = alarmTcpa + rng.NextDouble() * 30.0;
 
-            var t = Cpa.ClassifyThreat(cpa, tcpa, currentDist, radius, look, isBuddy: false);
-            if (t == Cpa.Threat.Danger)
+            var t = Cpa.ClassifyThreat(cpa, tcpa,
+                alarmCpa, alarmTcpa, awarenessCpa, awarenessTcpa, isBuddy: false);
+            if (t == Cpa.Threat.Alarm)
             {
-                await Assert.That(cpa).IsLessThanOrEqualTo(radius);
-                await Assert.That(tcpa).IsLessThanOrEqualTo(look);
-                await Assert.That(currentDist).IsLessThanOrEqualTo(radius);
+                sawAlarm++;
+                await Assert.That(cpa).IsLessThanOrEqualTo(alarmCpa);
+                await Assert.That(tcpa).IsLessThanOrEqualTo(alarmTcpa);
             }
         }
+        await Assert.That(sawAlarm).IsGreaterThan(20);
     }
 
     [Test]
-    public async Task ClassifyThreat_WarningImpliesInsideOuterRing()
+    public async Task ClassifyThreat_AwarenessImpliesInsideAwarenessTier()
     {
-        // Warning fires only when the vessel is in the outer ring
-        // (between guard zone and 2× guard zone). A vessel currently
-        // outside the outer ring should NEVER classify Warning regardless
-        // of how close its projected CPA looks - that's the user-driven
-        // change that triggered this whole pass.
+        // Awareness fires when the projected CPA is inside the
+        // awareness-tier CPA limit, the TCPA is inside the awareness
+        // window, AND the alarm-tier criteria aren't simultaneously
+        // satisfied (otherwise it would be Alarm). Pin both halves so
+        // the band is provably narrower than "anything that doesn't
+        // alarm".
         var rng = new Random(Seed ^ 7);
-        int sawWarning = 0;
+        int sawAwareness = 0;
         for (int i = 0; i < 1000; i++)
         {
             double cpa = rng.NextDouble() * 5.0;
             double tcpa = rng.NextDouble() * 30.0 + 0.01;
-            double currentDist = rng.NextDouble() * 5.0;
-            double radius = rng.NextDouble() * 2.0 + 0.1;
-            double look = rng.NextDouble() * 30.0 + 1.0;
+            double alarmCpa = rng.NextDouble() * 2.0 + 0.1;
+            double alarmTcpa = rng.NextDouble() * 30.0 + 1.0;
+            double awarenessCpa = alarmCpa + rng.NextDouble() * 2.0;
+            double awarenessTcpa = alarmTcpa + rng.NextDouble() * 30.0;
 
-            var t = Cpa.ClassifyThreat(cpa, tcpa, currentDist, radius, look, isBuddy: false);
-            if (t == Cpa.Threat.Warning)
+            var t = Cpa.ClassifyThreat(cpa, tcpa,
+                alarmCpa, alarmTcpa, awarenessCpa, awarenessTcpa, isBuddy: false);
+            if (t == Cpa.Threat.Awareness)
             {
-                sawWarning++;
-                await Assert.That(currentDist).IsGreaterThan(radius);
-                await Assert.That(currentDist).IsLessThanOrEqualTo(radius * Cpa.OuterRingMultiplier);
+                sawAwareness++;
+                await Assert.That(cpa).IsLessThanOrEqualTo(awarenessCpa);
+                await Assert.That(tcpa).IsLessThanOrEqualTo(awarenessTcpa);
+                // Not simultaneously inside the alarm tier (else it
+                // would have classified Alarm).
+                bool insideAlarm = cpa <= alarmCpa && tcpa <= alarmTcpa;
+                await Assert.That(insideAlarm).IsFalse();
             }
         }
-        await Assert.That(sawWarning).IsGreaterThan(20);
+        await Assert.That(sawAwareness).IsGreaterThan(20);
     }
 
     [Test]
-    public async Task ClassifyThreat_NoneOutsideOuterRing()
+    public async Task ClassifyThreat_NoneOutsideAwarenessCpa()
     {
-        // Symmetric: if currentDistance is outside the outer ring (>
-        // 2× guard zone), the result is always None even if a closing
-        // CPA would otherwise put it in the band. This is the
-        // anti-clutter contract.
+        // Symmetric: if projected CPA exceeds the awareness-tier limit,
+        // classification is always None regardless of TCPA, because the
+        // awareness band is the outer envelope. This is the anti-
+        // clutter contract.
         var rng = new Random(Seed ^ 8);
         int checks = 0;
         for (int i = 0; i < 1000; i++)
         {
-            double cpa = rng.NextDouble() * 0.5;       // small cpa so otherwise eligible
-            double tcpa = rng.NextDouble() * 5.0 + 0.5; // small tcpa so otherwise eligible
-            double radius = rng.NextDouble() * 1.0 + 0.5;
-            double look = rng.NextDouble() * 20.0 + 5.0;
-            // Force currentDist outside the outer ring.
-            double currentDist = radius * Cpa.OuterRingMultiplier
-                                 + 0.1 + rng.NextDouble() * 5.0;
+            double alarmCpa = rng.NextDouble() * 1.0 + 0.1;
+            double alarmTcpa = rng.NextDouble() * 20.0 + 5.0;
+            double awarenessCpa = alarmCpa + rng.NextDouble() * 1.0;
+            double awarenessTcpa = alarmTcpa + rng.NextDouble() * 20.0;
+            // Force cpa outside the awareness band.
+            double cpa = awarenessCpa + 0.1 + rng.NextDouble() * 5.0;
+            double tcpa = rng.NextDouble() * 5.0 + 0.5;        // otherwise eligible
 
-            var t = Cpa.ClassifyThreat(cpa, tcpa, currentDist, radius, look, isBuddy: false);
+            var t = Cpa.ClassifyThreat(cpa, tcpa,
+                alarmCpa, alarmTcpa, awarenessCpa, awarenessTcpa, isBuddy: false);
             await Assert.That(t).IsEqualTo(Cpa.Threat.None);
             checks++;
         }
@@ -342,15 +355,19 @@ public class CpaFuzzTests
     public async Task ClassifyThreat_NullOrZeroTcpaIsNone()
     {
         // tcpa <= 0 means "CPA is in the past" - the rule must say
-        // None, not Warning, regardless of cpa value. Mirror of the
+        // None, not Awareness, regardless of cpa value. Mirror of the
         // null-cpa case.
-        await Assert.That(Cpa.ClassifyThreat(0.1, null,  0.3, 0.5, 10.0, false))
+        await Assert.That(Cpa.ClassifyThreat(0.1, null,
+            0.5, 10.0, 1.0, 10.0, isBuddy: false))
             .IsEqualTo(Cpa.Threat.None);
-        await Assert.That(Cpa.ClassifyThreat(null, 5.0,  0.3, 0.5, 10.0, false))
+        await Assert.That(Cpa.ClassifyThreat(null, 5.0,
+            0.5, 10.0, 1.0, 10.0, isBuddy: false))
             .IsEqualTo(Cpa.Threat.None);
-        await Assert.That(Cpa.ClassifyThreat(0.1, 0.0,   0.3, 0.5, 10.0, false))
+        await Assert.That(Cpa.ClassifyThreat(0.1, 0.0,
+            0.5, 10.0, 1.0, 10.0, isBuddy: false))
             .IsEqualTo(Cpa.Threat.None);
-        await Assert.That(Cpa.ClassifyThreat(0.1, -5.0,  0.3, 0.5, 10.0, false))
+        await Assert.That(Cpa.ClassifyThreat(0.1, -5.0,
+            0.5, 10.0, 1.0, 10.0, isBuddy: false))
             .IsEqualTo(Cpa.Threat.None);
     }
 }

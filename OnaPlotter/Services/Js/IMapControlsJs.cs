@@ -51,6 +51,16 @@ public interface IMapControlsJs
     /// next render tick.</summary>
     Task SetRadarRangeRingsAsync(bool enabled, int count);
 
+    /// <summary>Push the helm-configured distance-rings config to the
+    /// chart layer. Rings are concentric grey circles on own boat at
+    /// <c>baseNm × {1..count}</c>; pure visual scaffolding with no
+    /// alarm semantics. Separate from the radar range rings (which
+    /// live on the radar overlay and scale with the radar's current
+    /// range) - distance rings stay fixed at the helm's chosen radii
+    /// and render even without a radar source. The JS side redraws
+    /// on the next tick.</summary>
+    Task SetDistanceRingsAsync(bool enabled, double baseNm, int count);
+
     /// <summary>Push the helm's "Trust wire bearing" opt-in to every
     /// active radar overlay so a live toggle takes effect on the next
     /// sweep without needing the helm to disable + re-enable the
@@ -68,14 +78,6 @@ public interface IMapControlsJs
 
     /// <summary>Apply night-mode CSS filter to map tiles + UI chrome.</summary>
     Task SetNightModeAsync(bool enabled);
-
-    /// <summary>Configure the CPA guard zone ring around own boat.
-    /// Radius is in nautical miles (the inner red ring), lookahead in
-    /// minutes, outerRingMultiplier is the band scale for the amber
-    /// outer ring (typically 2.0 - sourced from
-    /// <c>Cpa.OuterRingMultiplier</c> so the C# threat classifier and
-    /// the JS rendering can't drift on the constant).</summary>
-    Task SetGuardZoneAsync(double radiusNm, double lookaheadMin, double outerRingMultiplier);
 
     /// <summary>Configure how far ahead the COG vectors project, in
     /// minutes. Two distinct values so the helm can shorten target

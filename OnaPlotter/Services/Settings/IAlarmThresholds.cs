@@ -19,13 +19,31 @@ public interface IAlarmThresholds
     /// when measured depth drops below this value.</summary>
     double DepthAlarmThreshold { get; }
 
-    /// <summary>Guard-zone CPA threshold (nautical miles). A
-    /// projected CPA smaller than this triggers a collision alarm.</summary>
-    double CpaAlarmThreshold { get; }
+    /// <summary>CPA distance (nautical miles) that triggers the audible
+    /// alarm + red-blink rendering. The inner / strict tier of the
+    /// two-tier collision model: a vessel whose projected CPA falls
+    /// below this AND whose TCPA is inside <see cref="TcpaAlarmMin"/>
+    /// crosses into <c>Threat.Alarm</c>.</summary>
+    double CpaAlarmNm { get; }
 
-    /// <summary>Guard-zone lookahead (minutes). Only vessels whose
-    /// TCPA falls within this window trigger the CPA alarm.</summary>
-    double GuardZoneLookaheadMinutes { get; }
+    /// <summary>TCPA lookahead (minutes) for the alarm tier. Only
+    /// vessels whose projected TCPA falls within this window can
+    /// trigger the audible alarm.</summary>
+    double TcpaAlarmMin { get; }
+
+    /// <summary>CPA distance (nautical miles) that triggers the silent
+    /// awareness tier: chart cross + hover label, no audio. Wider than
+    /// <see cref="CpaAlarmNm"/> so the helm sees a developing crossing
+    /// situation well before it becomes a hard alarm. Setter clamps to
+    /// be &gt;= <see cref="CpaAlarmNm"/> so the awareness band never
+    /// degenerates below the alarm band (which would let an alarm fire
+    /// for a target that never paints as awareness first).</summary>
+    double CpaAwarenessNm { get; }
+
+    /// <summary>TCPA lookahead (minutes) for the awareness tier.
+    /// Setter clamps to be &gt;= <see cref="TcpaAlarmMin"/> for the
+    /// same reason as <see cref="CpaAwarenessNm"/>.</summary>
+    double TcpaAwarenessMin { get; }
 
     /// <summary>How long a CPA threat must persist before it raises
     /// the audible alarm (seconds). A target only triggers the banner
@@ -111,8 +129,10 @@ public interface IAlarmThresholds
     IReadOnlySet<string> DisabledAlarmRules { get; }
 
     Task SetDepthAlarmThresholdAsync(double value);
-    Task SetCpaAlarmThresholdAsync(double value);
-    Task SetGuardZoneLookaheadMinutesAsync(double value);
+    Task SetCpaAlarmNmAsync(double value);
+    Task SetTcpaAlarmMinAsync(double value);
+    Task SetCpaAwarenessNmAsync(double value);
+    Task SetTcpaAwarenessMinAsync(double value);
     Task SetCpaDebounceSecondsAsync(double value);
     Task SetWindShiftAlarmThresholdAsync(double value);
     Task SetWindShiftLookbackMinutesAsync(double value);

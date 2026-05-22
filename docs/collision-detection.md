@@ -1,13 +1,21 @@
 # Collision detection
 
 OnaPlotter runs a proper Closest-Point-of-Approach (CPA) model rather than a
-proximity beeper. This doc covers what the captain sees, the math behind it,
-the tuning knobs, and the edge cases it handles.
+proximity beeper. It classifies every AIS target into one of three bands:
+
+- **None** — not on a closing track, or beyond the awareness window.
+- **Awareness** — silent on-chart attention. Cross + hover label, no audio.
+  "Watch this one."
+- **Alarm** — audible klaxon + red-blink marker + always-on label.
+  "Act now."
+
+The two thresholds (alarm + awareness) replace the older single "guard zone"
+radius. Awareness is the wider band; alarm is the inner, strict band.
 
 ## What you see on the map
 
 ```
-                      target (red, in guard zone)
+                      target (red, in alarm tier)
                           ▼
                           ▲  ← 60 s fading trail
        ┌─────────── "0.34 nm · T-8m"  ← midpoint label
@@ -18,25 +26,21 @@ the tuning knobs, and the edge cases it handles.
        ▲
        │  dashed red from own boat to its CPA point
        │
-  ┌────●────┐  ← own boat (magenta arrow)
-  │amber    │
-  │ guard   │  ← translucent ring at the configured CPA radius
-  │ zone    │
-  └─────────┘
+       ●  ← own boat (magenta arrow)
 ```
 
 **Own boat** — magenta arrow pointing along heading. A dashed pink vector ahead
-shows a 5-minute projection at current SOG/COG.
-
-**Guard-zone ring** — amber circle around own boat at the configured CPA
-radius. Hidden when the radius is zero (alarm disabled).
+shows a configurable look-ahead at current SOG/COG. Optional helm-configured
+distance rings (Settings → Display → Distance rings) act as measurement
+scaffolding; they have no alarm semantics.
 
 **AIS vessels** — triangles coloured by ship type. A 60-second fading trail
-shows recent positions. Vessels in the guard zone turn red; vessels in the
-"advisory" band (up to 2× the radius / 2× the lookahead) turn amber.
+shows recent positions. Vessels in the alarm tier turn red and blink with an
+always-visible label; vessels in the awareness tier turn amber with a hover
+label only.
 
-**Crossing-situation lines** — drawn only when a target's projected CPA falls
-inside 2× the guard zone:
+**Crossing-situation lines** — drawn when a target's projected CPA falls into
+either tier:
 
 1. A dashed line from **own boat** to where own boat will be at the CPA
    timestamp (*own CPA point*).
@@ -45,8 +49,7 @@ inside 2× the guard zone:
 3. A midpoint label showing the CPA distance in nautical miles and TCPA as
    minutes.
 
-Red inside the guard zone (alarm active), amber between 1× and 2× (advisory,
-no alarm).
+Red for alarm-tier targets, amber for awareness-tier targets.
 
 ## The alarm
 
@@ -63,23 +66,25 @@ Two buttons:
   cleared by a page reload — a new watch is a fresh start.
 
 Audio is orchestrated by `wwwroot/js/platform/audioAlert.js` and uses different pulse
-rates for `danger` (1 s, used by CPA and SHALLOW) and `warn` (3 s, used by
+rates for `danger` (1 s, used by CPA-alarm and SHALLOW) and `warn` (3 s, used by
 WIND SHIFT). A single looped tone so it's obvious to a sleeping captain.
+Awareness-tier targets never trigger audio.
 
 ## Tuning
 
 Settings → Alarms:
 
-| Setting               | Default    | What it does                                  |
-|-----------------------|------------|-----------------------------------------------|
-| Guard Zone (CPA)      | 0.5 nm     | Alarm fires if projected CPA is below this.   |
-| Guard Zone Lookahead  | 10 min     | Only vessels whose CPA happens within this window trigger. |
-| Depth Alarm           | 3 m        | Overrides CPA in the banner priority order.   |
-| Wind Shift Alarm      | 15° / 5 min| TWD change over 5 min, advisory-level (warn). |
+| Setting               | Default     | What it does                                  |
+|-----------------------|-------------|-----------------------------------------------|
+| CPA & TCPA Alarm      | 0.1 nm / 30 min | Audible alarm fires when projected CPA is below the distance AND TCPA is inside the window. |
+| CPA & TCPA Awareness  | 1.0 nm / 30 min | Silent on-chart cross + hover label. Setter clamps awareness ≥ alarm so the alarm always sits inside an awareness band. |
+| Depth Alarm           | 2 m         | Overrides CPA in the banner priority order.   |
+| Wind Shift Alarm      | 30° / 10 min| TWD change over the lookback, advisory-level (warn). |
 
 All persisted to `localStorage` via `IAppSettings`; they take effect live —
-no reload needed. The JS side is kept in sync via `setGuardZone(radiusNm,
-lookaheadMin)`.
+no reload needed. The classifier runs server-side
+(`Cpa.ClassifyThreat` inside `AisPushService.BuildSnapshot`); the JS layer
+just reads the precomputed `cpaThreat` field on each vessel payload.
 
 ## How the math works (`OnaPlotter/Utilities/Cpa.cs`)
 
@@ -185,13 +190,15 @@ push, which happens at 3 Hz on a fast delta feed.
 
 | Concern                        | File                                                      |
 |--------------------------------|-----------------------------------------------------------|
-| CPA math (C#)                  | `OnaPlotter/Utilities/Cpa.cs`                             |
+| CPA math + ClassifyThreat (C#) | `OnaPlotter/Utilities/Cpa.cs`                             |
 | CPA math (JS)                  | `OnaPlotter/wwwroot/js/geoMath.js` (`computeCpa`)         |
-| Guard-zone radius / lookahead  | `OnaPlotter/Services/AppSettingsService.cs`               |
+| Alarm + awareness thresholds   | `OnaPlotter/Services/AppSettingsService.cs` (`CpaAlarmNm`, `TcpaAlarmMin`, `CpaAwarenessNm`, `TcpaAwarenessMin`) |
 | Moored auto-mute               | `OnaPlotter/Services/MooredVesselTracker.cs`              |
 | Alarm pipeline (C#)            | `OnaPlotter/Services/AlarmManager.cs` (`Evaluate`, `DismissAsync`, `SnoozeActiveAsync`, `SnoozeAsync`) |
 | CPA alarm rule                 | `OnaPlotter/Services/Alarms/CpaAlarmRule.cs`              |
+| Chip classifier (C#)           | `OnaPlotter/Services/Map/AisPushService.cs` (`ComputeVesselThreat`, `ThreatToWireString`) |
 | Audio (JS)                     | `OnaPlotter/wwwroot/js/platform/audioAlert.js`            |
-| Guard-zone ring + CPA lines    | `OnaPlotter/wwwroot/js/leafletInterop.js` (`drawGuardZone`, `updateCpaLine`) |
+| Chip rendering + CPA lines     | `OnaPlotter/wwwroot/js/aisLayer.js`                       |
+| Distance rings (helm scaffold) | `OnaPlotter/wwwroot/js/aisLayer.js` (`setDistanceRings`)  |
 | Settings UI                    | `OnaPlotter/Components/Pages/Settings.razor`              |
 | Tests                          | `OnaPlotter.Tests/CpaTests.cs`, `MooredVesselTrackerTests.cs`, `geoMath.test.js` |

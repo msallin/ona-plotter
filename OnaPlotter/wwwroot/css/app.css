@@ -9723,6 +9723,33 @@ html[data-slow-client="1"] #mapDiv {
         0 0 4px rgba(255, 255, 255, 0.55);
 }
 
+/* Distance-ring labels. Same text-only chip pattern as the guard
+   ring labels but neutral grey - the rings carry no alarm semantics
+   and the colour should not compete with the amber CPA / TCPA
+   rings for attention. */
+.distance-ring-label {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    color: #cbd5e1;             /* slate-300 - readable over dark tiles */
+    font-size: 10px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+    padding: 0 !important;
+    text-shadow:
+        0 0 2px rgba(0, 0, 0, 0.55),
+        0 0 4px rgba(0, 0, 0, 0.35);
+    pointer-events: none;
+}
+.distance-ring-label::before { display: none !important; }
+.theme-effective-light .distance-ring-label {
+    color: #475569;             /* slate-600 - AA on white tiles */
+    text-shadow:
+        0 0 2px rgba(255, 255, 255, 0.85),
+        0 0 4px rgba(255, 255, 255, 0.55);
+}
+
 /* CPA / crossing-situation labels on the map.
    Same theme-flip strategy as .ais-label: dark pill by default, white
    pill in light + high-contrast so the label reads as paper-on-chart

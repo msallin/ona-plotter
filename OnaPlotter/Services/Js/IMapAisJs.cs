@@ -71,17 +71,4 @@ public interface IMapAisJs
     /// surface a "vessel no longer on the chart" toast.</summary>
     Task<bool> FocusVesselAsync(string context);
 
-    /// <summary>Toggle the on-map guard-zone ring (Misc layers section).
-    /// Independent of the CPA alarm pipeline - the alarm still fires
-    /// off the radius / lookahead values. Helms can declutter the
-    /// chart without disabling the alarm itself.</summary>
-    Task SetGuardZoneVisibleAsync(bool visible);
-
-    /// <summary>Toggle the outer dashed warning-band ring at
-    /// <c>guardRadius × warningFactor</c>. Helps the helm see why
-    /// amber CPA chips appear in the band between the inner danger
-    /// ring and the outer warning ring; some helms prefer the
-    /// cleaner single-ring look and turn this off. Independent of
-    /// the inner ring's visibility.</summary>
-    Task SetGuardZoneWarningRingVisibleAsync(bool visible);
 }
