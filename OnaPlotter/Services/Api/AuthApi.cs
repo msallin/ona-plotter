@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using System.Text.Json;
 using OnaPlotter.Models;
 using OnaPlotter.Services.Json;
@@ -111,7 +112,18 @@ public sealed class AuthApi : IAuthApi
             new KeyValuePair<string, string>("username", username),
             new KeyValuePair<string, string>("password", password),
         }.ToDictionary(kv => kv.Key, kv => kv.Value));
-        using var content = new StringContent(bodyJson, System.Text.Encoding.UTF8, "application/json");
+        // Content-Type MUST be exactly "application/json" - no charset.
+        // signalk-server's /signalk/v1/auth/login does a strict equality
+        // check on the Content-Type header (tokensecurity.ts:674): the
+        // JSON branch returns 200 + { token, timeToLive }; anything else
+        // (including "application/json; charset=utf-8" which is what
+        // StringContent's 3-arg ctor produces) falls into the browser-
+        // form branch - 302 + HttpOnly JAUTHENTICATION cookie + redirect
+        // to /. The HttpClient auto-follows the 302, the JSON parser
+        // chokes on the home page HTML, and the helm sees a silent
+        // "login failed" toast even though the cookie was actually set.
+        using var content = new StringContent(bodyJson);
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(ProbeTimeout);
