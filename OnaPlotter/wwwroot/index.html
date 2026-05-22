@@ -44,6 +44,11 @@
                 var raw = localStorage.getItem('ona.theme');
                 var known = ['light', 'dark', 'system', 'high-contrast'];
                 var safe = known.indexOf(raw) >= 0 ? raw : 'system';
+                // Night-mode renders as dark + red-shift regardless of the stored
+                // theme; mirror MainLayout.EffectiveTheme here so first paint after
+                // a cold boot doesn't flash the light theme before Blazor takes over.
+                var night = localStorage.getItem('ona.nightMode') === 'true';
+                if (night) safe = 'dark';
                 var bs;
                 if (safe === 'dark') bs = 'dark';
                 else if (safe === 'system') {
@@ -54,6 +59,7 @@
                 var html = document.documentElement;
                 html.setAttribute('data-bs-theme', bs);
                 html.classList.add('theme-' + safe);
+                if (night) html.classList.add('night-mode-global');
             } catch (_) {
                 document.documentElement.setAttribute('data-bs-theme', 'dark');
             }

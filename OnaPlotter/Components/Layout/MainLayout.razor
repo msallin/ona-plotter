@@ -18,7 +18,7 @@
 @implements IAsyncDisposable
 
 <a href="#main-content" class="skip-link">Skip to content</a>
-<div class="page theme-@Settings.Theme @(Settings.NightMode ? "night-mode-global" : "") @(Settings.SidebarCollapsed ? "sidebar-collapsed" : "")">
+<div class="page theme-@EffectiveTheme @(Settings.NightMode ? "night-mode-global" : "") @(Settings.SidebarCollapsed ? "sidebar-collapsed" : "")">
     <div class="sidebar">
         <NavMenu />
     </div>
@@ -556,6 +556,11 @@
     // scoped class fails to recolour body because body sits above
     // .page in the DOM and reads var(--sk-bg) at its own scope.
     private IJSObjectReference? themeModule;
+    // Night-mode collapses the rendered theme to "dark" so the red-shift overlay sits on
+    // the dark palette - layering red text over the light / high-contrast theme's bright
+    // surfaces was the "night mode looks broken" helm complaint. Settings.Theme is
+    // preserved so toggling night off restores the helm's pick.
+    private string EffectiveTheme => Settings.NightMode ? "dark" : Settings.Theme;
     private DotNetObjectReference<MainLayout>? fsSelfRef;
     // Element reference for the fullscreen button. fullscreen.js wires
     // a native click listener to this ref instead of going through
@@ -729,7 +734,7 @@
                 try
                 {
                     await themeModule.InvokeVoidAsync("setTheme",
-                        Settings.Theme);
+                        EffectiveTheme);
                     await themeModule.InvokeVoidAsync("setNightMode",
                         Settings.NightMode);
                 }
@@ -1083,7 +1088,7 @@
             themeModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/platform/themeApply.js");
             try
             {
-                await themeModule.InvokeVoidAsync("setTheme", Settings.Theme);
+                await themeModule.InvokeVoidAsync("setTheme", EffectiveTheme);
                 await themeModule.InvokeVoidAsync("setNightMode",
                     Settings.NightMode);
             }
