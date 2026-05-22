@@ -36,6 +36,12 @@ public partial class Map
     // the helm has already typed a different name, leave it alone;
     // only append when the field still shows the source route's name.
     private string? routeEditOriginalName;
+    // Coords as they were at edit-start. CancelRouteEdit uses this
+    // as the baseline for "did the helm change anything?" so an
+    // unmodified edit can be cancelled without a Discard / Keep-
+    // editing confirmation dialog. Empty array for fresh routes; the
+    // loaded geometry for in-place edits.
+    private double[][]? routeEditInitialCoords;
 
     // --- Route Editing --------------------------------------------------
 
@@ -44,8 +50,12 @@ public partial class Map
         // Close the Add flyout when the user picks Route - the menu
         // stayed open on entry to edit mode and then floated on top of
         // the edit panel. Matches the FabCreate* callbacks which all
-        // set fabMenuOpen=false first.
+        // set fabMenuOpen=false first. The right-click context menu
+        // can also be open when the helm reaches a route via "click
+        // route -> Edit" mid-context-menu; close it for the same
+        // reason so it doesn't float over the edit overlay.
         fabMenuOpen = false;
+        contextMenuVisible = false;
         routeEditMode = true;
         routeEditId = null;                     // fresh route, not an in-place edit
         // Prefill with the date-stamped default plus a numeric suffix
@@ -57,6 +67,15 @@ public partial class Map
         routeEditName = OnaPlotter.Utilities.UniqueRouteName.Suggest(
             $"Route {DateTime.Now:yyyyMMdd}",
             availableRoutes.Select(r => r.Name ?? string.Empty));
+        // Baselines for the cancel-without-confirm path. Fresh route
+        // starts with zero waypoints and the prefilled name; any
+        // deviation counts as an edit. routeEditCoords is also seeded
+        // empty so a Cancel before the first stats-poll tick (where
+        // the JS hand-off would normally populate it) reads as
+        // "unchanged" instead of null-vs-empty "dirty".
+        routeEditOriginalName = routeEditName;
+        routeEditInitialCoords = System.Array.Empty<double[]>();
+        routeEditCoords = System.Array.Empty<double[]>();
         routeEditStats = "0 WP / 0 nm";
         InstallEditNavGuard();
         if (_editJs is not null)
@@ -69,14 +88,18 @@ public partial class Map
 
     private async Task CancelRouteEdit()
     {
-        // Discarding significant work should require intent. 2+ waypoints
-        // is the threshold where the helm has genuinely built something
-        // (single point is just a tap, two points is a line they'd rather
-        // not lose). Uses the native confirm() dialog - same pattern as
-        // the "Remove polar?" prompt in Settings. Empty / single-point
-        // edits skip the prompt so Esc-to-bail still feels immediate.
+        // Discarding significant work should require intent. The helm
+        // gets the Discard / Keep-editing modal whenever the current
+        // geometry or name differs from what was loaded at edit-start
+        // (fresh route: empty + suggested name; in-place edit: the
+        // saved route's waypoints + name). If nothing changed, cancel
+        // bails silently - "I have to confirm even though I made no
+        // changes" was a real helm-feedback gripe and led to either
+        // muscle-memory tap-throughs or paranoid "did I touch
+        // anything?" double-takes.
         int wpCount = routeEditCoords?.Length ?? 0;
-        if (wpCount >= 2)
+        bool dirty = IsRouteEditDirty();
+        if (dirty)
         {
             // Action-verb labels instead of the default "Cancel" /
             // "Confirm": the route-edit bar already has a "Cancel"
@@ -90,18 +113,22 @@ public partial class Map
                 cancelLabel: "Keep editing");
             if (!ok) return;
         }
-        if (wpCount > 0)
+        if (wpCount > 0 && dirty)
             // Quieted: 2 s instead of the default 4 s. Confirmation
             // already happened via the Discard / Keep-editing modal,
             // so this toast is just a "yep, gone" acknowledgement,
             // not a warning. Helm-feedback: longer dwell felt like
-            // an apology.
+            // an apology. Suppressed entirely when nothing was
+            // discarded (helm cancelled an untouched edit) - the
+            // toast in that case would announce work that didn't
+            // exist.
             Toasts.Show($"Route edit cancelled ({wpCount} waypoints discarded)",
                 ToastLevel.Info, durationSec: 2);
 
         routeEditMode = false;
         routeEditId = null;
         routeEditOriginalName = null;
+        routeEditInitialCoords = null;
         routeEditCoords = null;
         routeStatsTimer?.Dispose();
         routeStatsTimer = null;
@@ -132,6 +159,27 @@ public partial class Map
             }
             catch (JSDisconnectedException) { }
         }
+    }
+
+    /// <summary>True when the current edit-mode geometry or name
+    /// differs from what was loaded at edit-start. Drives the
+    /// Cancel-without-confirm path: an unchanged edit is safe to
+    /// discard silently. Geometry comparison reuses the same shallow
+    /// CoordsEqual helper as UpdateRouteStats - exact match required
+    /// (so a marker that was dragged and then dragged back to the
+    /// same fix still reads as dirty until the helm explicitly
+    /// re-snaps, which matches the helm's expectation that "I moved
+    /// it" is an edit even if the final position is identical).</summary>
+    private bool IsRouteEditDirty()
+    {
+        // Coords have changed: any add/remove/move or reverse counts.
+        if (!CoordsEqual(routeEditCoords, routeEditInitialCoords)) return true;
+        // Name has changed: covers the "open existing route, just
+        // rename, cancel" flow. routeEditOriginalName is set to the
+        // initial name in every entry point so empty != non-empty
+        // also reads as dirty.
+        if ((routeEditName ?? "") != (routeEditOriginalName ?? "")) return true;
+        return false;
     }
 
     // UndoLastWaypoint() and the corresponding "Undo" button on the
@@ -225,10 +273,15 @@ public partial class Map
         }
 
         fabMenuOpen = false;
+        contextMenuVisible = false;
         routeEditMode = true;
         routeEditId = routeId;
         routeEditName = draft.Name ?? "";
-        routeEditOriginalName = null;
+        routeEditOriginalName = routeEditName;
+        // Use the draft as the baseline for "no edits made" - the
+        // helm chose to restore THIS state, so re-cancelling it
+        // immediately shouldn't prompt for confirmation.
+        routeEditInitialCoords = draft.Coords.Select(c => (double[])c.Clone()).ToArray();
         routeEditCoords = draft.Coords;
         routeEditStats = $"{draft.Coords.Length} WP";   // refreshed by next poll tick
         InstallEditNavGuard();
@@ -284,7 +337,21 @@ public partial class Map
         routeEditId = route.Id;                 // save will PUT in place
         routeEditName = route.Name ?? "";
         routeEditOriginalName = routeEditName;  // baseline for SaveAsCopy
+        // Snapshot the loaded geometry so cancel can detect "no
+        // edits made" and skip the Discard / Keep-editing prompt.
+        // Deep-copy each row - the inner arrays would otherwise
+        // shadow-update when the helm drags a waypoint. Also seed
+        // routeEditCoords with a separate copy so the dirty check
+        // works before the first stats-poll tick (otherwise null vs
+        // initial would read as dirty on an immediate cancel).
+        routeEditInitialCoords = coords.Select(c => (double[])c.Clone()).ToArray();
+        routeEditCoords = coords.Select(c => (double[])c.Clone()).ToArray();
         chartPanelOpen = false; // Close layers panel so user can see the map.
+        // Same reason as in StartRouteEdit: the right-click menu may
+        // still be open when the helm reaches Edit via "click route
+        // -> Edit"; close it so it doesn't float over the edit
+        // overlay.
+        contextMenuVisible = false;
         InstallEditNavGuard();
 
         // Editing the currently-active route: hide the active-route
@@ -622,6 +689,7 @@ public partial class Map
             routeEditMode = false;
             routeEditId = null;
             routeEditOriginalName = null;
+            routeEditInitialCoords = null;
             routeEditCoords = null;
             routeStatsTimer?.Dispose();
             routeStatsTimer = null;

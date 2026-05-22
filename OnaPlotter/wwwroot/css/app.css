@@ -2623,6 +2623,35 @@ html:fullscreen .hud-stack-br {
     box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.12) !important;
 }
 
+/* Route-edit per-leg distance label, anchored at the segment midpoint.
+   Subtler than .measure-tooltip on purpose: a long route shows N
+   pills at once and the chrome shouldn't dominate the polyline that's
+   being planned. Smaller font + tighter padding + no shadow. */
+.route-edit-leg-tooltip {
+    background: rgba(15, 17, 22, 0.82) !important;
+    border: 1px solid rgba(167, 139, 250, 0.35) !important;
+    color: var(--sk-text) !important;
+    font-size: 10.5px !important;
+    font-weight: 500 !important;
+    padding: 1px 6px !important;
+    border-radius: 4px !important;
+    line-height: 1.2 !important;
+    font-variant-numeric: tabular-nums !important;
+    white-space: nowrap !important;
+    pointer-events: none !important;
+}
+.route-edit-leg-tooltip::before { display: none !important; }
+:root.theme-effective-light .route-edit-leg-tooltip {
+    background: rgba(255, 255, 255, 0.92) !important;
+    border: 1px solid var(--sk-border) !important;
+    color: var(--sk-text) !important;
+}
+:root.theme-high-contrast .route-edit-leg-tooltip {
+    background: #ffffff !important;
+    border: 1.5px solid #000000 !important;
+    color: #000000 !important;
+}
+
 /* COG vector time/distance label */
 .vector-label {
     background: rgba(30, 34, 44, 0.85) !important;
@@ -8121,7 +8150,13 @@ html[data-slow-client="1"] #mapDiv {
     border-radius: 8px;
     border: 1px solid rgba(167, 139, 250, 0.3);
     color: var(--sk-text);
-    width: 220px;
+    /* Fit to content but cap so the panel doesn't drift wider than
+       the HUD stack below. The full coordinate row
+       "47.5000° N, 11.5750° E" fits inside 250 px; the previous
+       fixed 220 px clipped the longitude on east/west extremes and
+       forced an ellipsis even when there was room on screen. */
+    width: fit-content;
+    max-width: 250px;
     max-height: calc(100vh - 220px);
     overflow: hidden;
     display: flex;
@@ -8265,7 +8300,7 @@ html[data-slow-client="1"] #mapDiv {
 /* Touch - pinch the row tighter but keep the tap target on the × big
    enough to hit reliably (44x44 min per Apple HIG). */
 @media (pointer: coarse) {
-    .route-edit-list { width: 200px; font-size: 0.8rem; }
+    .route-edit-list { width: fit-content; max-width: 250px; font-size: 0.8rem; }
     .route-edit-wp-row { padding: 6px 10px; }
     /* 44x44 to match WCAG / Apple HIG per the comment above. Previously
        32x32 in this block, which the comment itself cited as wrong. */

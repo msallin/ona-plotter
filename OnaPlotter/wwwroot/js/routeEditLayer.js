@@ -22,6 +22,13 @@ let routeEditCoords = [];
 let routeEditMarkers = [];
 let routeEditLine = null;
 let routeEditHitLine = null;
+// One tooltip per leg, anchored at the segment midpoint, showing the
+// leg's distance. Rebuilt on every redrawEditLine call so drag /
+// insert / remove all keep the labels in sync. Distance only (no
+// bearing) - bearing changes leg-by-leg as the boat sails the route
+// and the active-route layer renders the live numbers; the static
+// edit-time label is for "is this leg too long?" planning.
+let routeEditLegLabels = [];
 // Set briefly inside insertEditVertexOnSegment; consumed by the
 // map-click handler on the very next click event. Stops an
 // insert-on-leg from also appending the point at the end of the
@@ -75,6 +82,49 @@ function scheduleRedrawEditLine() {
     });
 }
 
+// Compact leg-label format: "850 m" under 1 km, "1.23 nm" above. The
+// drag-delta tooltip uses the same threshold so the units stay
+// consistent across the edit overlay.
+function formatLegDistance(meters) {
+    return meters < 1000
+        ? `${meters.toFixed(0)} m`
+        : `${(meters * NM_PER_METER).toFixed(2)} nm`;
+}
+
+function clearLegLabels() {
+    if (routeEditLayer) {
+        for (const t of routeEditLegLabels) routeEditLayer.removeLayer(t);
+    }
+    routeEditLegLabels = [];
+}
+
+// Rebuild the per-leg distance labels at each segment midpoint. Cheap
+// enough at route-editing scale (< 100 waypoints) to recreate every
+// redraw; the alternative (track per-segment tooltip refs and update
+// in place) would need to handle insert / remove / reverse which
+// already correctly trigger a full redraw via rebuildRouteEditMarkers.
+function rebuildLegLabels() {
+    clearLegLabels();
+    if (!routeEditLayer || routeEditCoords.length < 2) return;
+    for (let i = 1; i < routeEditCoords.length; i++) {
+        const a = routeEditCoords[i - 1];
+        const b = routeEditCoords[i];
+        const midLat = (a[0] + b[0]) / 2;
+        const midLng = (a[1] + b[1]) / 2;
+        const d = haversineMeters(a[0], a[1], b[0], b[1]);
+        const t = L.tooltip({
+            permanent: true,
+            direction: 'center',
+            className: 'route-edit-leg-tooltip',
+            interactive: false,
+        })
+            .setLatLng([midLat, midLng])
+            .setContent(formatLegDistance(d))
+            .addTo(routeEditLayer);
+        routeEditLegLabels.push(t);
+    }
+}
+
 function redrawEditLine() {
     if (!routeEditLine && routeEditCoords.length >= 2) {
         routeEditLine = L.polyline(routeEditCoords, {
@@ -110,6 +160,7 @@ function redrawEditLine() {
         routeEditLine.setLatLngs(routeEditCoords);
         if (routeEditHitLine) routeEditHitLine.setLatLngs(routeEditCoords);
     }
+    rebuildLegLabels();
 }
 
 // Pick the segment closest to `ll` (pixel distance at current zoom,
@@ -191,8 +242,15 @@ function bindEditMarker(marker, idx) {
         // Bind once; setTooltipContent on each drag event is cheaper
         // than rebinding a fresh tooltip at ~60 Hz during a long drag.
         // We reposition explicitly via setLatLng, so no `sticky` needed.
+        // direction:'top' + a > marker-half-height offset keeps the
+        // Δ label above the cursor/finger so the helm can read it
+        // mid-drag instead of staring at a marker that hides its own
+        // delta. -18 clears the 24 px draggable icon (12 px to top
+        // edge + a little air).
         ghostLine.bindTooltip('Δ 0 m', {
-            permanent: true, direction: 'center',
+            permanent: true,
+            direction: 'top',
+            offset: [0, -18],
             className: 'measure-tooltip'
         }).openTooltip(origLL);
     });
@@ -251,6 +309,7 @@ export function stopRouteEdit() {
     routeEditMarkers = [];
     routeEditLine = null;
     routeEditHitLine = null;
+    routeEditLegLabels = [];
     routeEditAddStack = [];
 }
 
@@ -348,6 +407,7 @@ export function dispose() {
     routeEditMarkers = [];
     routeEditLine = null;
     routeEditHitLine = null;
+    routeEditLegLabels = [];
     routeEditSuppressNextMapClick = false;
     routeEditAddStack = [];
     mapRef = null;

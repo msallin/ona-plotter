@@ -105,8 +105,16 @@ function bindPolygonVertex(marker, idx) {
             color: POLYGON_COLOR, weight: 1.5, opacity: 0.7, dashArray: '3,4',
             interactive: false
         }).addTo(polygonEditLayer);
+        // direction:'top' + a > marker-half-height offset keeps the
+        // Δ label above the cursor/finger so the helm can read it
+        // mid-drag instead of staring at a marker that hides its own
+        // delta. -18 clears the 24 px draggable vertex icon (12 px
+        // to top edge + a little air).
         ghostLine.bindTooltip('Δ 0 m', {
-            permanent: true, direction: 'center', className: 'measure-tooltip'
+            permanent: true,
+            direction: 'top',
+            offset: [0, -18],
+            className: 'measure-tooltip'
         }).openTooltip(origLL);
     });
 
