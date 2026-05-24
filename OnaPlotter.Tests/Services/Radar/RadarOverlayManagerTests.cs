@@ -151,15 +151,17 @@ public class RadarOverlayManagerTests
     }
 
     [Test]
-    public async Task Enable_Reads_BearingAlignment_From_Controls()
+    public async Task Enable_Does_Not_Read_BearingAlignment_From_Controls()
     {
-        // Mayara exposes a `bearingAlignment` per-radar control the helm
-        // tunes at install when the antenna isn't aligned with the bow.
-        // The manager reads it at enable-time and threads it into the
-        // start config so the JS overlay can compensate. A live HALO 31
-        // observed at openplotter.local published 0.087 rad (5°) here
-        // and Mayara didn't pre-apply it to the wire `bearing` field,
-        // leaving the picture rotated until we compensate ourselves.
+        // Regression: the manager used to read `bearingAlignment` from
+        // /controls and thread it into the JS overlay. On a live HALO 31
+        // with the radar's own bearingAlignment set to -10° this produced
+        // a 10°-off picture because the radar firmware already shifts its
+        // azimuth output by that amount (so the wire `angle` is bow-
+        // relative-corrected before mayara sees it). Reading the control
+        // and adding it again client-side double-counted the offset.
+        // Pin that no control read happens at enable time and that the
+        // start config carries only the helm-tunable bits.
         var (mgr, host, api) = NewManager();
         api.ControlsByRadar["r1"] = new Dictionary<string, ControlValue>
         {
@@ -171,20 +173,8 @@ public class RadarOverlayManagerTests
         await mgr.OnRadarListUpdatedAsync([Radar("r1", "transmit")]);
 
         await Assert.That(host.Started.Count).IsEqualTo(1);
-        await Assert.That(host.Started[0].BearingAlignmentRad).IsEqualTo(0.087266);
-    }
-
-    [Test]
-    public async Task Enable_Defaults_BearingAlignment_To_Zero_When_Absent()
-    {
-        // Most radars don't expose bearingAlignment (or set it to 0).
-        // No control fetched -> 0 forwarded -> no extra rotation. Keeps
-        // the picture identical for installs that don't need the
-        // calibration.
-        var (mgr, host, _) = NewManager();
-        await mgr.OnRadarListUpdatedAsync([Radar("r1", "transmit")]);
-
-        await Assert.That(host.Started[0].BearingAlignmentRad).IsEqualTo(0.0);
+        // Wire-bearing opt-in still flows through.
+        await Assert.That(host.Started[0].UseWireBearing).IsFalse();
     }
 
     [Test]

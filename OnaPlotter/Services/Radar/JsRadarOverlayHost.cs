@@ -41,7 +41,6 @@ public sealed class JsRadarOverlayHost : IRadarOverlayHost
                 legend = cfg.Legend,
                 opacity = cfg.Opacity,
                 useWireBearing = cfg.UseWireBearing,
-                bearingAlignmentRad = cfg.BearingAlignmentRad,
             });
         }
         catch (JSDisconnectedException)

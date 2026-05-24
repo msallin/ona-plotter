@@ -609,11 +609,13 @@
                     <span class="input-group-text">°</span>
                 </div>
                 <small class="text-muted">
-                    Helm-side trim added to every spoke on top of the radar's own
-                    <code>bearingAlignment</code>. Use when the picture is still off after
-                    enabling the overlay - dial visually against the chart until echoes line
-                    up. Stop-gap for installs where the radar provider hasn't yet shipped a
-                    compensation fix; reset to 0 once the upstream fix lands.
+                    Helm-side trim added to every spoke. The radar's own
+                    <code>bearingAlignment</code> is applied by the radar firmware to its
+                    azimuth output and already reaches us bow-relative-corrected, so set
+                    that one in your radar's UI (Mayara). Use this trim only for the
+                    residual hair-off after dialling the radar - tune visually against
+                    the chart until echoes line up. Leave at 0 when the radar's own
+                    alignment fully matches your chart.
                 </small>
             </div>
         </div>

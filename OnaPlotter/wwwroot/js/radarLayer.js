@@ -99,14 +99,15 @@ let ringsEnabled = true;
 let ringsCount = 4;
 
 // Helm-side bearing trim in degrees, added to every spoke's canvas
-// index on top of the radar's installation bearingAlignment. Default
-// 0. Workaround for residual misalignment when the radar provider
-// (e.g. Mayara) has a known compensation gap that's slated for an
-// upstream fix - the helm dials the picture into alignment from the
-// plotter Settings page rather than waiting for the fix. Module-
-// scoped because it's a per-helm preference applied to every active
-// overlay; setRadarBearingCorrection walks active overlays so a live
-// edit takes effect on the next sweep.
+// index. Default 0. The radar's own `bearingAlignment` control is
+// applied by the radar firmware to its azimuth encoder before the
+// spoke leaves the antenna, so the wire `angle` is already
+// bow-relative-corrected and we don't read that control here.
+// This trim is the helm's residual fine-tune knob: dial the picture
+// into alignment from the plotter Settings page if a hair-off remains.
+// Module-scoped because it's a per-helm preference applied to every
+// active overlay; setRadarBearingCorrection walks active overlays so
+// a live edit takes effect on the next sweep.
 let helmBearingCorrectionDeg = 0;
 
 /**
@@ -180,6 +181,11 @@ export function setRangeRingsConfig(enabled, count) {
  *                                      whenever the radar has no HS
  *                                      sensor wired in (the common
  *                                      case on a recreational install).
+ *                                      Recent Mayara main does emit
+ *                                      `bearing = heading_true + angle`
+ *                                      correctly when SK true heading
+ *                                      is wired in, so the opt-in path
+ *                                      is now safe on that provider too.
  */
 export function enableRadarOverlay(deps, cfg) {
     if (activeRadars.has(cfg.radarId)) return;
@@ -316,21 +322,16 @@ class RadarOverlay {
         // the correct paint as long as boatState.headingRad is true-
         // north (see boatState comment above).
         this.useWireBearing = !!cfg.useWireBearing;
-        // Installation-time radar bearing alignment, in spoke units.
-        // Mirrors the per-radar Mayara `bearingAlignment` control which
-        // the helm tunes at commissioning when the antenna isn't
-        // mechanically aligned with the bow. Added to the bow-relative
-        // angle before the heading offset so the picture lines up with
-        // the chart regardless of mount orientation. Read once at
-        // construction; helm-driven updates require toggling the
-        // overlay off+on.
-        const baRad = Number(cfg.bearingAlignmentRad) || 0;
-        this.bearingAlignmentSpokes = Math.round(baRad * this.spokes / (2 * Math.PI));
-        // Combined offset = radar installation alignment + helm-side
-        // trim. Recomputed in _updateTotalAlignment whenever either
-        // input changes (setRadarBearingCorrection walks active
-        // overlays). _spokeIndex reads this single field per spoke
-        // so the painter avoids a per-spoke add+round.
+        // Helm-side bearing trim, in spoke units. The radar's own
+        // installation bearing alignment is applied by the radar
+        // firmware to its azimuth encoder, so the wire `angle` is
+        // already bow-relative-corrected and the wire `bearing` is
+        // already (heading_true + angle); no client-side reading of
+        // the bearingAlignment control is needed. This field captures
+        // only the residual helm-tunable trim from Settings, refreshed
+        // whenever the helm changes the value via setRadarBearingCorrection.
+        // _spokeIndex reads this single field per spoke so the painter
+        // avoids a per-spoke add+round.
         this.totalAlignmentSpokes = 0;
         this._updateTotalAlignment();
 
@@ -695,12 +696,12 @@ class RadarOverlay {
 
     /** Recompute the combined alignment offset. Called on construction
      *  and whenever the helm-side trim changes via
-     *  setRadarBearingCorrection. The radar-side bearingAlignment is
-     *  immutable for the overlay's lifetime so it doesn't trigger this
-     *  path - only the helm trim does. */
+     *  setRadarBearingCorrection. The radar's own bearingAlignment is
+     *  applied by firmware and reflected in the wire `angle` / `bearing`
+     *  fields already, so the only client-side contribution here is the
+     *  helm trim. */
     _updateTotalAlignment() {
-        const helmSpokes = Math.round(helmBearingCorrectionDeg * this.spokes / 360);
-        this.totalAlignmentSpokes = this.bearingAlignmentSpokes + helmSpokes;
+        this.totalAlignmentSpokes = Math.round(helmBearingCorrectionDeg * this.spokes / 360);
     }
 
     /** Map a spoke's wire angle/bearing onto our canvas's north-up
@@ -957,21 +958,28 @@ function headingToSpokeOffset(headingRad, spokesPerRevolution) {
  * Decide which spoke index on the north-up canvas to paint into.
  *
  * Default (useWireBearing=false): compose `angle + alignment + heading`
- * from the spoke's bow-relative angle, the radar's installation
- * bearing alignment (antenna-vs-bow offset), and the boat's
- * TRUE-NORTH heading. The wire's optional `bearing` field is ignored
- * because at least one production provider (Mayara) fills it with
- * the radar's internal HS-corrected value rather than true-north -
- * paints every spoke bow-up when the radar has no heading sensor
- * wired in.
+ * from the spoke's bow-relative angle, an optional client-side
+ * alignment offset, and the boat's TRUE-NORTH heading. The wire's
+ * optional `bearing` field is ignored because at least one production
+ * provider (Mayara) used to fill it with the radar's internal HS-
+ * corrected value rather than true-north - paints every spoke bow-up
+ * when the radar has no heading sensor wired in.
  *
  * Opt-in (useWireBearing=true): trust the wire's `bearing` as
  * true-north when present. For helms whose provider verifiably
  * emits true-north bearings; saves one add per spoke at the cost
- * of correctness on non-conforming providers. The bearing alignment
- * is still applied because Mayara doesn't compensate for it before
- * filling the field (observed on a HALO 31 install with
- * bearingAlignment = 5° and bearing == angle on the wire).
+ * of correctness on non-conforming providers. Recent Mayara main does
+ * emit `bearing = heading_true + angle` correctly when SK true heading
+ * is wired in, so the opt-in path is safe on that provider too.
+ *
+ * The radar's own bearingAlignment (antenna-vs-bow installation
+ * offset) is applied by the radar firmware to its azimuth output;
+ * the wire `angle` and `bearing` fields are already
+ * bow-relative-corrected. Do NOT pass it again here - the previous
+ * client-side compensation was a workaround for a Mayara version
+ * that turned out to be a stale-install / heading-zero artefact, not
+ * a server-side gap. The `alignmentSpokes` parameter is reserved for
+ * the helm's residual fine-tune trim from Settings.
  *
  * Both paths funnel through wrapSpoke for the defensive modulo.
  *
@@ -979,16 +987,16 @@ function headingToSpokeOffset(headingRad, spokesPerRevolution) {
  * @param {number} headingRad   Boat heading (radians, 0..2pi from true north).
  * @param {number} spokesPerRevolution
  * @param {boolean} useWireBearing
- * @param {number}  [bearingAlignmentSpokes=0]  Radar antenna installation
- *   offset in spoke units. 0 = antenna pointing 0° aligns with bow.
+ * @param {number}  [alignmentSpokes=0]  Helm-tunable trim in spoke units
+ *   (Settings → Bearing trim). 0 = no extra rotation.
  */
 function computeSpokeIndex(spoke, headingRad, spokesPerRevolution, useWireBearing,
-                           bearingAlignmentSpokes = 0) {
+                           alignmentSpokes = 0) {
     if (useWireBearing && spoke.bearing != null) {
-        return wrapSpoke(spoke.bearing + bearingAlignmentSpokes, spokesPerRevolution);
+        return wrapSpoke(spoke.bearing + alignmentSpokes, spokesPerRevolution);
     }
     return wrapSpoke(
-        spoke.angle + bearingAlignmentSpokes
+        spoke.angle + alignmentSpokes
             + headingToSpokeOffset(headingRad, spokesPerRevolution),
         spokesPerRevolution);
 }
