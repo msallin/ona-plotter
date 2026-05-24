@@ -67,6 +67,12 @@ jobs:
           node-version: '22.x'
           registry-url: 'https://registry.npmjs.org'
 
+      # esbuild is required by the MinifyPublishedJs target in
+      # OnaPlotter.csproj. The Release publish below fails with a
+      # clear MSBuild error if node_modules/esbuild is missing.
+      - name: Install JS toolchain (esbuild)
+        run: npm ci
+
       - name: Publish OnaPlotter (Release + AOT)
         run: dotnet publish OnaPlotter/OnaPlotter.csproj -c Release -o publish
 
