@@ -607,6 +607,18 @@ public sealed class AppSettingsService : IAppSettings
         {
             _initLock.Release();
         }
+
+        // Wake up subscribers that were constructed BEFORE init landed
+        // (DI singletons like SignalKBaseUrl resolve their URL in the
+        // ctor using whatever values the auto-properties had at that
+        // moment - i.e. the type defaults, not the persisted KV). Without
+        // this fan-out a stored StandaloneMode=true / StandaloneServerUrl
+        // never reaches the WS pipeline on startup: the helm has to
+        // toggle the switch off-and-on to trigger the next Set*Async,
+        // which is where the fan-out historically happened. Fires
+        // outside the lock so a subscriber that calls back into the
+        // service doesn't deadlock.
+        OnSettingsChanged?.Invoke();
     }
 
     public async Task SetNightModeAsync(bool value)

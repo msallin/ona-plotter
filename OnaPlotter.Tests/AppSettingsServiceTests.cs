@@ -47,6 +47,46 @@ public class AppSettingsServiceTests
     }
 
     [Test]
+    public async Task InitializeAsync_FiresOnSettingsChangedOnce()
+    {
+        // DI singletons that construct BEFORE InitializeAsync runs
+        // (SignalKBaseUrl is the canonical example) subscribe to
+        // OnSettingsChanged and re-evaluate their cached state when it
+        // fires. Without a fan-out at the end of init, a stored
+        // StandaloneMode + StandaloneServerUrl never reaches the WS
+        // pipeline on startup - the helm has to toggle the switch to
+        // force a Set*Async fan-out before the URL takes effect.
+        var kv = new InMemoryKv();
+        await kv.SetAsync("standaloneMode.v1", "true");
+        await kv.SetAsync("standaloneServerUrl.v1", "http://openplotter.local:3000");
+        var svc = new AppSettingsService(kv);
+        int fired = 0;
+        svc.OnSettingsChanged += () => fired++;
+
+        await svc.InitializeAsync();
+
+        await Assert.That(fired).IsEqualTo(1);
+        await Assert.That(svc.StandaloneMode).IsTrue();
+        await Assert.That(svc.StandaloneServerUrl).IsEqualTo("http://openplotter.local:3000");
+    }
+
+    [Test]
+    public async Task InitializeAsync_SecondCallDoesNotRefire()
+    {
+        // The double-init guard short-circuits the second call entirely;
+        // a second fan-out would surprise subscribers that paid the
+        // first-load cost and don't expect a second pass on a no-op.
+        var svc = new AppSettingsService(new InMemoryKv());
+        await svc.InitializeAsync();
+        int fired = 0;
+        svc.OnSettingsChanged += () => fired++;
+
+        await svc.InitializeAsync();
+
+        await Assert.That(fired).IsEqualTo(0);
+    }
+
+    [Test]
     public async Task SetPersists()
     {
         var kv = new InMemoryKv();
