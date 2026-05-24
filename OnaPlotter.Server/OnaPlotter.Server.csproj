@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- NativeAOT slashes the runtime image: a self-contained
+         executable of ~12 to 15 MB on linux-x64 vs the ~70 MB
+         framework-dependent baseline, so the final Docker image
+         lands around 35 to 50 MB on top of the ~10 MB
+         runtime-deps:alpine base. Trade-off is a longer publish
+         (the cross-compiler + linker step adds 1 to 3 min on top of
+         the WASM AOT compilation in the referenced OnaPlotter
+         project). Gate on Release so `dotnet run` and Debug
+         publishes stay fast for local dev. -->
+    <PublishAot Condition="'$(Configuration)' == 'Release'">true</PublishAot>
+    <!-- Smaller binary; matches the WASM client's invariant culture
+         posture so a Spanish helm sees the same number formatting
+         in standalone server logs as the WASM bundle uses. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Strip native debug symbols out of the published binary on
+         Release. Keeps the container image lean; if a crash needs
+         symbolicated stack traces, rebuild with /p:StripSymbols=false
+         locally. -->
+    <StripSymbols Condition="'$(Configuration)' == 'Release'">true</StripSymbols>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Hosts the published wwwroot from the Blazor project at the
+         root of the Kestrel content tree. The transitive reference
+         + the framework files extension below give us index.html,
+         the _framework/ AOT WASM assets, and the wwwroot/js interop
+         layer in a single publish artifact. -->
+    <ProjectReference Include="..\OnaPlotter\OnaPlotter.csproj" />
+    <!-- UseBlazorFrameworkFiles() lives here. Pulls in the static
+         file middleware tuned for Blazor's _framework/ directory
+         (correct MIME types, cache headers, brotli precompressed
+         negotiation). -->
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.*-*" />
+  </ItemGroup>
+
+</Project>
