@@ -341,28 +341,28 @@
                 }
             </section>
 
-            @* === TWD history strip ===
-               Render bar:
-                 - Suppress the chart entirely when fewer than 5 samples
-                   exist or the timespan is < 30 s. A 2-point line with
-                   a degenerate axis is misleading on a tactical display.
-                 - Sample count moves to the section header (right-
-                   aligned), separating "ambient state" from "chart
-                   legend" - the previous one-line meta concatenated
-                   three orthogonal facts. *@
+            @* === Wind history strip ===
+               Field-study finding: sailors want BOTH direction and
+               speed history visible without toggling, since they read
+               them together ("is the wind both shifting and building?").
+               We already buffer both channels (Awa/Aws or Twd/Tws),
+               so rendering both is purely a layout change.
+               Charts are suppressed individually when their channel
+               lacks >=5 samples or <30 s of span - a 2-point line on
+               a degenerate axis is misleading on a tactical display. *@
             @{
-                // Pull the active view's samples from the shared
-                // NavigationAverages buffer. Projection depends on
-                // (heroMode, historyView):
-                //   apparent + direction -> AWA (rad -> deg [0,360))
-                //   apparent + speed     -> AWS (m/s -> kn)
-                //   true     + direction -> TWD (rad -> deg [0,360))
-                //   true     + speed     -> TWS (m/s -> kn)
-                var visible = GetHistorySamples(heroMode, historyView);
-                bool hasUsableHistory = visible.Count >= 5
-                    && (visible[^1].Time - visible[0].Time).TotalSeconds >= 30;
+                var visibleDir = GetHistorySamples(heroMode, "direction");
+                var visibleSpd = GetHistorySamples(heroMode, "speed");
+                bool hasDirHistory = visibleDir.Count >= 5
+                    && (visibleDir[^1].Time - visibleDir[0].Time).TotalSeconds >= 30;
+                bool hasSpdHistory = visibleSpd.Count >= 5
+                    && (visibleSpd[^1].Time - visibleSpd[0].Time).TotalSeconds >= 30;
                 int totalHistoryCount = Avg.Twd.Count + Avg.Tws.Count
                                       + Avg.Awa.Count + Avg.Aws.Count;
+                // The two channels run at the same gated rate so their
+                // counts are close; surface the direction count as the
+                // single "samples" indicator.
+                int displayedSampleCount = Math.Max(visibleDir.Count, visibleSpd.Count);
             }
 
             @if (totalHistoryCount > 1)
@@ -370,34 +370,14 @@
                 <section class="wind-card wind-history-section" aria-label="Wind history">
                     <header class="wind-section-header">
                         <h2 class="wind-section-title">Wind history</h2>
-                        @* Direction / Speed toggle. Cruisers ask "is the
-                           breeze settling for the night?"; racers ask
-                           "is the wind shifting right?". Same chart
-                           machinery, different y-axis projection. *@
-                        <div class="segmented segmented-sm" role="group" aria-label="History view">
-                            <input type="radio" class="btn-check" name="@($"hview-{_uid}")"
-                                   id="@($"hview-dir-{_uid}")" autocomplete="off"
-                                   checked="@(historyView == "direction")"
-                                   @onchange='() => SetHistoryView("direction")' />
-                            <label class="btn" for="@($"hview-dir-{_uid}")">Direction</label>
-                            <input type="radio" class="btn-check" name="@($"hview-{_uid}")"
-                                   id="@($"hview-spd-{_uid}")" autocomplete="off"
-                                   checked="@(historyView == "speed")"
-                                   @onchange='() => SetHistoryView("speed")' />
-                            <label class="btn" for="@($"hview-spd-{_uid}")">Speed</label>
-                        </div>
-                        <span class="wind-section-meta wind-section-count">@visible.Count samples</span>
+                        <span class="wind-section-meta wind-section-count">@displayedSampleCount samples</span>
                     </header>
 
-                    @* TWD slope numeric headline, always-on. Three
-                       states: (a) numeric value with veering / backing /
-                       steady label and a directional glyph; (b) "Steady"
-                       when |slope| < 0.5 deg/min; (c) "Awaiting samples"
-                       when fewer than 5 samples in the 5-min slope window.
-                       Always reports TWD slope (the tactical shift
-                       signal) regardless of whether the chart below is
-                       in apparent or true mode - hence the explicit
-                       "TWD" tag in the label. *@
+                    @* TWD slope numeric headline, always-on. Always
+                       reports TWD slope (the tactical shift signal)
+                       regardless of whether the chart below is in
+                       apparent or true mode - hence the explicit "TWD"
+                       tag in the label. *@
                     <div class="wind-shift-headline" aria-live="polite">
                         @if (ShiftRate is double rate)
                         {
@@ -418,68 +398,39 @@
                         }
                     </div>
 
-                    @if (hasUsableHistory)
-                    {
-                        <svg class="wind-history-svg" viewBox="0 0 @WpWidth @WpHeight">
-        @* Compute axis bounds once per render. For Direction view we
-           use the unfolded degree range; for Speed view, knots. Mean
-           line follows the same axis. *@
-        @{
-            (double yMin, double yMax, double yMean) = ComputeYAxis(visible, historyView);
-            DateTime oldest = visible[0].Time;
-            DateTime newest = visible[^1].Time;
-            double timeSpan = Math.Max((newest - oldest).TotalSeconds, 1);
-            double yRange = yMax - yMin;
-            string axisUnit = historyView == "speed" ? "kn" : "°";
-            string axisFmt = historyView == "speed" ? "F1" : "F0";
-        }
+                    @* Direction chart. Stacked above speed because the
+                       shift headline above is the direction signal -
+                       reading top-to-bottom keeps the y-axis cluster
+                       (TWD slope -> direction chart -> speed chart)
+                       coherent. *@
+                    <div class="wind-history-subsection">
+                        <div class="wind-history-sublabel">@(heroMode == "true" ? "TWD" : "AWA") direction</div>
+                        @if (hasDirHistory)
+                        {
+                            @BuildHistoryChartSvg(visibleDir, "direction")
+                        }
+                        else
+                        {
+                            <p class="wind-history-empty">
+                                Collecting direction samples; chart appears once @(5 - visibleDir.Count) more land.
+                            </p>
+                        }
+                    </div>
 
-        @* Grid lines + axis labels. *@
-        @for (int i = 0; i <= 4; i++)
-        {
-            double y = WpPad + (WpPlotH * i / 4.0);
-            double yVal = yMax - yRange * i / 4.0;
-            <line x1="@WpPad" y1="@F(y)" x2="@(WpWidth - 10)" y2="@F(y)"
-                  style="stroke: var(--sk-border);" stroke-width="0.5" />
-            @SvgText(WpPad - 4, y, yVal.ToString(axisFmt, System.Globalization.CultureInfo.InvariantCulture),
-                "var(--sk-text-muted)", 10, anchor: "end")
-        }
-        @* Y-axis unit (top-left corner) so the helm doesn't have to
-           guess "is this kn or degrees?" when toggling views. *@
-        @SvgText(WpPad - 4, WpPad - 14, axisUnit, "var(--sk-text-muted)", 10, anchor: "end")
-
-        @* Mean line *@
-        @{
-            double meanY = WpPad + WpPlotH * (1 - (yMean - yMin) / yRange);
-        }
-        <line x1="@WpPad" y1="@F(meanY)" x2="@(WpWidth - 10)" y2="@F(meanY)"
-              style="stroke: var(--sev-ok);" stroke-width="1.5" stroke-dasharray="6,4" opacity="0.7" />
-
-        @* Data polyline. Accent blue so night mode red-shifts it. *@
-        <polyline fill="none" style="stroke: var(--sk-accent);" stroke-width="1.5" opacity="0.9"
-                  points="@HistoryPolylinePoints(visible, yMin, yMax, oldest, timeSpan)" />
-
-        @* Time axis labels. Format adapts to span (-Ns / -N.Nm / -Nm). *@
-        @for (int i = 0; i <= 3; i++)
-        {
-            double x = WpPad + (WpPlotW * i / 3.0);
-            double secsAgo = timeSpan * (1 - i / 3.0);
-            @SvgText(x, WpHeight - 4, FormatAgo(secsAgo),
-                "var(--sk-text-muted)", 10)
-        }
-
-        @* Inline mean legend top-right. *@
-        <line x1="@(WpWidth - 80)" y1="14" x2="@(WpWidth - 64)" y2="14"
-              style="stroke: var(--sev-ok);" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.7" />
-        @SvgText(WpWidth - 60, 14, "mean", "var(--sk-text-muted)", 10, anchor: "start")
-                        </svg>
-                    }
-                    else
-                    {
-                        <p class="wind-history-empty">
-                            Collecting samples; chart appears once @(5 - visible.Count) more land.
-                        </p>
-                    }
+                    @* Speed chart. *@
+                    <div class="wind-history-subsection">
+                        <div class="wind-history-sublabel">@(heroMode == "true" ? "TWS" : "AWS") speed</div>
+                        @if (hasSpdHistory)
+                        {
+                            @BuildHistoryChartSvg(visibleSpd, "speed")
+                        }
+                        else
+                        {
+                            <p class="wind-history-empty">
+                                Collecting speed samples; chart appears once @(5 - visibleSpd.Count) more land.
+                            </p>
+                        }
+                    </div>
                 </section>
             }
         </section>
@@ -562,21 +513,12 @@
     // helm's last pick survives a page reload.
     private string heroMode = "apparent";
 
-    // History view selector: "direction" plots the heading-style
-    // value over time (shift detection); "speed" plots the speed
-    // (settling / building trend). Orthogonal to apparent/true.
-    // Per-session (no persistence) - toggling history view is a
-    // quick diagnostic check, not a stable preference.
-    private string historyView = "direction";
-
     private async Task SetHeroMode(string mode)
     {
         if (heroMode == mode) return;
         heroMode = mode;
         await Settings.SetWindHeroModeAsync(mode);
     }
-
-    private void SetHistoryView(string view) => historyView = view;
 
     // Windplot: TWD + TWS over time. Samples come from the shared
     // NavigationAverages buffers so the chart, the AwsStats chips,
@@ -1049,14 +991,19 @@
         _seedCts?.Dispose();
     }
 
-    private static string F(double v) => v.ToString("F1");
-
     /// <summary>
     /// Computes y-axis bounds + mean for the history chart. For
-    /// "direction" view returns the unfolded TWD range padded by 5°
-    /// either side; for "speed" view returns the TWS range padded by
+    /// "direction" view returns the unfolded degree range padded by 5°
+    /// either side; for "speed" view returns the speed range padded by
     /// 1 kn either side. Floor on range width keeps a dead-flat trace
     /// from rendering as a hairline pinned to one grid stripe.
+    /// <para>Direction view also clamps the bounds to [0, 360] so the
+    /// auto-padding can't push tick labels into negatives when the
+    /// wind hugs the 0° / 360° (north) line - a sailor reading "-5°"
+    /// on a compass scale is wrong; that value should display as 355°.
+    /// We preserve the chosen range width by shifting the OPPOSITE
+    /// bound when clamping, so a flat trace stays mid-axis instead of
+    /// being pinned to the bottom.</para>
     /// </summary>
     private static (double Min, double Max, double Mean) ComputeYAxis(
         IReadOnlyList<OnaPlotter.Utilities.TimeSeriesSample> samples, string view)
@@ -1069,13 +1016,113 @@
             sum += s.Value;
         }
         double vMid = (vMin + vMax) / 2;
-        // View-specific minimum range + padding so a flat trace
-        // doesn't pin to a single grid stripe and the helm always
-        // sees breathing room above / below the data.
         double minRange = view == "speed" ? 4 : 20;
         double pad = view == "speed" ? 1 : 5;
         double range = Math.Max(vMax - vMin, minRange);
-        return (vMid - range / 2 - pad, vMid + range / 2 + pad, sum / samples.Count);
+        double minBound = vMid - range / 2 - pad;
+        double maxBound = vMid + range / 2 + pad;
+        if (view == "direction")
+        {
+            // Shift-clamp so labels stay in [0, 360]. Width is preserved
+            // up to the 360-wide ceiling; only data that genuinely
+            // spans more than the chart height (rare) loses range.
+            if (minBound < 0) { maxBound = Math.Min(360, maxBound - minBound); minBound = 0; }
+            if (maxBound > 360) { minBound = Math.Max(0, minBound - (maxBound - 360)); maxBound = 360; }
+        }
+        return (minBound, maxBound, sum / samples.Count);
+    }
+
+    /// <summary>
+    /// Builds the history-chart SVG as a single MarkupString rather
+    /// than 30+ individual Razor elements. Two reasons:
+    /// <list type="bullet">
+    ///   <item>We render the chart TWICE (direction + speed) so the
+    ///   helper avoids markup duplication.</item>
+    ///   <item>One MarkupString is a single diff for Blazor; the
+    ///   per-element diff cost of 5 grid lines + axis labels + mean
+    ///   line + polyline + 4 time labels added up under the throttled
+    ///   render rate.</item>
+    /// </list>
+    /// Inputs already projected (kn or deg) by <see cref="GetHistorySamples"/>.
+    /// </summary>
+    private MarkupString BuildHistoryChartSvg(
+        IReadOnlyList<OnaPlotter.Utilities.TimeSeriesSample> samples,
+        string view)
+    {
+        var (yMin, yMax, yMean) = ComputeYAxis(samples, view);
+        DateTime oldest = samples[0].Time;
+        DateTime newest = samples[^1].Time;
+        double timeSpanSecs = Math.Max((newest - oldest).TotalSeconds, 1);
+        double yRange = yMax - yMin;
+        string axisUnit = view == "speed" ? "kn" : "°";
+        string axisFmt = view == "speed" ? "F1" : "F0";
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+
+        var sb = new System.Text.StringBuilder(8192);
+        sb.Append("<svg class=\"wind-history-svg\" viewBox=\"0 0 ").Append(WpWidth)
+          .Append(' ').Append(WpHeight).Append("\">");
+
+        // Grid lines + Y-axis tick labels.
+        for (int i = 0; i <= 4; i++)
+        {
+            double y = WpPad + (WpPlotH * i / 4.0);
+            double yVal = yMax - yRange * i / 4.0;
+            sb.Append("<line x1=\"").Append(WpPad).Append("\" y1=\"").Append(y.ToString("F1", ci))
+              .Append("\" x2=\"").Append(WpWidth - 10).Append("\" y2=\"").Append(y.ToString("F1", ci))
+              .Append("\" style=\"stroke: var(--sk-border);\" stroke-width=\"0.5\" />");
+            AppendSvgText(sb, WpPad - 4, y, yVal.ToString(axisFmt, ci),
+                "var(--sk-text-muted)", 10, anchor: "end");
+        }
+
+        // Y-axis unit label (top-left corner).
+        AppendSvgText(sb, WpPad - 4, WpPad - 14, axisUnit, "var(--sk-text-muted)", 10, anchor: "end");
+
+        // Mean line.
+        double meanY = WpPad + WpPlotH * (1 - (yMean - yMin) / yRange);
+        sb.Append("<line x1=\"").Append(WpPad).Append("\" y1=\"").Append(meanY.ToString("F1", ci))
+          .Append("\" x2=\"").Append(WpWidth - 10).Append("\" y2=\"").Append(meanY.ToString("F1", ci))
+          .Append("\" style=\"stroke: var(--sev-ok);\" stroke-width=\"1.5\" stroke-dasharray=\"6,4\" opacity=\"0.7\" />");
+
+        // Data polyline (already stride-subsampled in HistoryPolylinePoints).
+        string polyline = HistoryPolylinePoints(samples, yMin, yMax, oldest, timeSpanSecs);
+        sb.Append("<polyline fill=\"none\" style=\"stroke: var(--sk-accent);\" stroke-width=\"1.5\" opacity=\"0.9\" points=\"")
+          .Append(polyline).Append("\" />");
+
+        // X-axis time labels.
+        for (int i = 0; i <= 3; i++)
+        {
+            double x = WpPad + (WpPlotW * i / 3.0);
+            double secsAgo = timeSpanSecs * (1 - i / 3.0);
+            AppendSvgText(sb, x, WpHeight - 4, FormatAgo(secsAgo), "var(--sk-text-muted)", 10);
+        }
+
+        // Inline "mean" legend (top-right).
+        sb.Append("<line x1=\"").Append(WpWidth - 80).Append("\" y1=\"14\" x2=\"").Append(WpWidth - 64)
+          .Append("\" y2=\"14\" style=\"stroke: var(--sev-ok);\" stroke-width=\"1.5\" stroke-dasharray=\"4,3\" opacity=\"0.7\" />");
+        AppendSvgText(sb, WpWidth - 60, 14, "mean", "var(--sk-text-muted)", 10, anchor: "start");
+
+        sb.Append("</svg>");
+        return new MarkupString(sb.ToString());
+    }
+
+    /// <summary>String-builder equivalent of <see cref="SvgText"/> for
+    /// the chart helper. Same attribute shape so a stylesheet rule
+    /// targeting "wind-history-svg text" applies uniformly.</summary>
+    private static void AppendSvgText(System.Text.StringBuilder sb,
+        double x, double y, string content, string fill, int fontSize,
+        string? fontWeight = null, string anchor = "middle")
+    {
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        sb.Append("<text x=\"").Append(x.ToString("F1", ci))
+          .Append("\" y=\"").Append(y.ToString("F1", ci))
+          .Append("\" style=\"fill: ").Append(fill).Append(";\" font-size=\"").Append(fontSize)
+          .Append('"');
+        if (fontWeight is not null)
+            sb.Append(" font-weight=\"").Append(fontWeight).Append('"');
+        sb.Append(" text-anchor=\"").Append(anchor)
+          .Append("\" dominant-baseline=\"central\">")
+          .Append(System.Net.WebUtility.HtmlEncode(content))
+          .Append("</text>");
     }
 
     /// <summary>

@@ -118,16 +118,35 @@ public class NavigationAveragesTests
                 resolution,
                 ct);
 
+        // Per-channel 5 s gate, mirroring production.
+        private DateTime _twsGate = DateTime.MinValue;
+        private DateTime _awsGate = DateTime.MinValue;
+        private DateTime _twdGate = DateTime.MinValue;
+        private DateTime _awaGate = DateTime.MinValue;
+
         // Mirror of NavigationAverages.Sample to keep the unit-test
         // sampler in lockstep with production logic. Any change to
         // production must also land here - a parity test would
         // close the loop, but the mirror is short enough to inspect.
         public void PublicSample(NavigationData d)
         {
-            if (d.WindSpeedTrue is double tws) Tws.Add(tws);
-            if (d.WindSpeedApparent is double aws) Aws.Add(aws);
-            if (d.WindDirectionTrue is double twd) Twd.Add(twd);
-            if (d.WindAngleApparent is double awa) Awa.Add(awa);
+            var now = _time.GetUtcNow().UtcDateTime;
+            if (d.WindSpeedTrue is double tws && Gate(_twsGate, now))
+            {
+                Tws.Add(tws); _twsGate = now;
+            }
+            if (d.WindSpeedApparent is double aws && Gate(_awsGate, now))
+            {
+                Aws.Add(aws); _awsGate = now;
+            }
+            if (d.WindDirectionTrue is double twd && Gate(_twdGate, now))
+            {
+                Twd.Add(twd); _twdGate = now;
+            }
+            if (d.WindAngleApparent is double awa && Gate(_awaGate, now))
+            {
+                Awa.Add(awa); _awaGate = now;
+            }
             if (d.WindAngleTrue is double twa) Twa.Add(twa);
             if (d.SpeedOverGround is double sog)
             {
@@ -139,6 +158,9 @@ public class NavigationAveragesTests
             }
             if (d.CourseNextPointVmg is double vmg) Vmg.Add(vmg);
         }
+
+        private static bool Gate(DateTime last, DateTime now) =>
+            (now - last).TotalMilliseconds >= NavigationAverages.LiveWindSamplePeriodMs;
 
         public void Dispose() { }
     }
@@ -233,6 +255,68 @@ public class NavigationAveragesTests
         h.Sample();
 
         await Assert.That(h.Avg.VmgMean1Min).IsEqualTo(4.0);
+    }
+
+    [Test]
+    public async Task Tws_LiveAdds_GatedToFiveSeconds()
+    {
+        // Pins the 5 s per-channel gate that bounds the Wind page's
+        // sample count and keeps memory + per-render walk costs flat
+        // regardless of SignalK delta rate. Without the gate a vessel
+        // publishing wind at 5 Hz would push 18 000 samples into the
+        // 1-hour-visible slice instead of the 720 that the seed grain
+        // implies, and the chart's sample-count chip would grow without
+        // bound until 24 h retention kicked in.
+        var h = new SampleHarness();
+
+        // Five deltas in 4 seconds: only the first one is accepted.
+        for (int i = 0; i < 5; i++)
+        {
+            h.Nav.Apply("environment.wind.speedTrue", 5.0 + i);
+            h.Sample();
+            h.Clock.Advance(TimeSpan.FromSeconds(1));
+        }
+        await Assert.That(h.Avg.Tws.Count).IsEqualTo(1);
+
+        // After the gate window elapses the next delta is accepted.
+        h.Clock.Advance(TimeSpan.FromSeconds(1));   // total 5 s since last add
+        h.Nav.Apply("environment.wind.speedTrue", 9.0);
+        h.Sample();
+        await Assert.That(h.Avg.Tws.Count).IsEqualTo(2);
+    }
+
+    [Test]
+    public async Task WindGates_ArePerChannel_NotShared()
+    {
+        // A delta carrying only AWS must not starve the next TWS-only
+        // delta that arrives inside the 5 s window. Per-channel gates
+        // give each wind path its own admission cadence.
+        var h = new SampleHarness();
+        h.Nav.Apply("environment.wind.speedApparent", 6.0);
+        h.Sample();
+        h.Clock.Advance(TimeSpan.FromSeconds(1));
+        h.Nav.Apply("environment.wind.speedTrue", 5.0);
+        h.Sample();
+
+        await Assert.That(h.Avg.Aws.Count).IsEqualTo(1);
+        await Assert.That(h.Avg.Tws.Count).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task Twa_LiveAdds_Unthrottled()
+    {
+        // TWA feeds the HUD dial only and stays full-rate (5 min
+        // retention bounds memory). Pins this to keep the dial's
+        // smoothness from regressing if a future change generalises
+        // the wind gate to every channel.
+        var h = new SampleHarness();
+        for (int i = 0; i < 5; i++)
+        {
+            h.Nav.Apply("environment.wind.angleTrueWater", 0.1 * i);
+            h.Sample();
+            h.Clock.Advance(TimeSpan.FromSeconds(1));
+        }
+        await Assert.That(h.Avg.Twa.Count).IsEqualTo(5);
     }
 
     [Test]

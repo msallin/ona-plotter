@@ -28,9 +28,33 @@ public sealed class NavigationAverages : INavigationAverages, IDisposable
     /// the back of the buffer.</summary>
     public const int WindRetentionMin = 1440;
 
+    /// <summary>Period between live sample additions for the four
+    /// 24 h-retention wind channels (Tws / Aws / Twd / Awa). SignalK
+    /// publishes wind deltas at 5-10 Hz on a well-instrumented vessel,
+    /// which would push 432 000+ samples per channel into the 24 h
+    /// buffer in a day and bloat the Wind page's per-render sample-set
+    /// walk past the throttled render budget. 5 s matches the seed
+    /// fetch's resolution so the chart's "N samples" reading stays
+    /// stable instead of growing with the delta rate; chips and stats
+    /// still compute over enough samples (12/min × window) for
+    /// meaningful gust / lull / sigma. TWA (HUD dial only, 5 min
+    /// retention) stays unthrottled - smoothness of the dial matters
+    /// more than memory there.</summary>
+    public const int LiveWindSamplePeriodMs = 5_000;
+
     private readonly SignalkClient _client;
     private readonly TimeProvider _time;
     private bool _disposed;
+
+    // Per-channel timestamps of the last accepted live add, for the
+    // 5 s gate on the four long-retention wind channels. Per-channel
+    // (not a single shared gate) so that a delta carrying only AWS
+    // doesn't starve TWS the next time its delta arrives within the
+    // window.
+    private DateTime _twsGateUtc = DateTime.MinValue;
+    private DateTime _awsGateUtc = DateTime.MinValue;
+    private DateTime _twdGateUtc = DateTime.MinValue;
+    private DateTime _awaGateUtc = DateTime.MinValue;
 
     public RollingScalarSeries Tws { get; }
     public RollingScalarSeries Aws { get; }
@@ -113,10 +137,29 @@ public sealed class NavigationAverages : INavigationAverages, IDisposable
 
     private void Sample(NavigationData d)
     {
-        if (d.WindSpeedTrue is double tws) Tws.Add(tws);
-        if (d.WindSpeedApparent is double aws) Aws.Add(aws);
-        if (d.WindDirectionTrue is double twd) Twd.Add(twd);
-        if (d.WindAngleApparent is double awa) Awa.Add(awa);
+        var now = _time.GetUtcNow().UtcDateTime;
+        if (d.WindSpeedTrue is double tws && WindGatePassed(_twsGateUtc, now))
+        {
+            Tws.Add(tws);
+            _twsGateUtc = now;
+        }
+        if (d.WindSpeedApparent is double aws && WindGatePassed(_awsGateUtc, now))
+        {
+            Aws.Add(aws);
+            _awsGateUtc = now;
+        }
+        if (d.WindDirectionTrue is double twd && WindGatePassed(_twdGateUtc, now))
+        {
+            Twd.Add(twd);
+            _twdGateUtc = now;
+        }
+        if (d.WindAngleApparent is double awa && WindGatePassed(_awaGateUtc, now))
+        {
+            Awa.Add(awa);
+            _awaGateUtc = now;
+        }
+        // TWA stays full-rate: HUD dial smoothness over 30 s is the
+        // only consumer, and the 5 min retention bounds memory anyway.
         if (d.WindAngleTrue is double twa) Twa.Add(twa);
         if (d.SpeedOverGround is double sog)
         {
@@ -133,6 +176,9 @@ public sealed class NavigationAverages : INavigationAverages, IDisposable
         }
         if (d.CourseNextPointVmg is double vmg) Vmg.Add(vmg);
     }
+
+    private static bool WindGatePassed(DateTime last, DateTime now) =>
+        (now - last).TotalMilliseconds >= LiveWindSamplePeriodMs;
 
     /// <inheritdoc/>
     public Task<TrackPoint[]?> SeedWindAsync(

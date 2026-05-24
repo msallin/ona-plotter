@@ -9339,7 +9339,25 @@ html[data-slow-client="1"] #mapDiv {
     height: auto;
     max-width: 100%;
 }
-/* Inline empty state inside the TWD section when sample count is
+/* Two stacked subsections (direction + speed) inside the history
+   card. Small label above each chart names the source so the helm
+   knows which axis they're reading without re-checking the
+   page-level Apparent/True chip. */
+.wind-history-subsection {
+    margin-top: 0.5rem;
+}
+.wind-history-subsection:first-of-type {
+    margin-top: 0.25rem;
+}
+.wind-history-sublabel {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--sk-text-muted);
+    margin-bottom: 0.15rem;
+}
+/* Inline empty state inside the history section when sample count is
    too low for a useful chart. Avoids the "2-point line on a
    degenerate axis" confusion the previous render produced. */
 .wind-history-empty {
