@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="OnaPlotter/OnaPlotter.csproj" />
+  <Project Path="OnaPlotter.Server/OnaPlotter.Server.csproj" />
   <Project Path="OnaPlotter.Tests/OnaPlotter.Tests.csproj" />
   <Folder Name="/OnaPlotter.UiTests/">
     <File Path="OnaPlotter.UiTests/README.md" />
