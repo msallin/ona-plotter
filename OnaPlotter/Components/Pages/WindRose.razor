@@ -699,7 +699,7 @@
         heroMode = Settings.WindHeroMode;
 
         UpdateCurrentReadouts();
-        SignalkClient.OnDataChanged += HandleSignalkData;
+        SignalkClient.OnDataChanged += HandleSignalkDataThrottled;
         await Polar.InitializeAsync();
 
         // Pre-warm NavigationAverages from server history for the
@@ -776,9 +776,57 @@
         catch (ObjectDisposedException) { }
     }
 
-    /// <summary>SignalkClient.OnDataChanged handler. Refreshes the
-    /// hero readouts on every delta, appends a polar dot if AWA + AWS
-    /// are both fresh AND the throttle gate is open, then evicts
+    /// <summary>Min ms between full WindRose re-renders. SignalK
+    /// deltas land per-path at policy=ideal, so a well-instrumented
+    /// vessel publishing position + SOG + COG + heading + wind + depth
+    /// fires 5-10 separate <c>OnDataChanged</c> events per second. The
+    /// WindRose render walks ~3600 buffered samples at the default 1h
+    /// window (WindStats + GetHistorySamples + ComputeYAxis), allocates
+    /// 720-entry snapshot lists, and diffs hundreds of SVG circles -
+    /// running that 5-10x per second locks up the WASM thread and
+    /// browsers eventually flag the page unresponsive.
+    /// <para>150 ms is the same value Map.razor uses for the same
+    /// reason; matches the human flicker-fusion ceiling
+    /// (compass / value chips don't move faster than ~6 Hz visibly).
+    /// Page-local: MainLayout, Alarm pipeline, and NavigationAverages
+    /// stay direct subscribers so live sampling stays at full rate.</para></summary>
+    private const long HandleDataThrottleMs = 150;
+    private long _lastHandleDataTicks;
+    private int _handleDataPending;
+
+    /// <summary>Leading + trailing throttle wrapper around the real
+    /// <see cref="HandleSignalkData"/> handler. First delta in a quiet
+    /// period fires immediately; subsequent deltas inside the window
+    /// are coalesced into a single trailing fire at window end. The
+    /// CAS-guarded pending flag ensures only one trailing scheduler is
+    /// parked at a time even if the SignalK receive loop surfaces
+    /// multiple deltas concurrently.</summary>
+    private void HandleSignalkDataThrottled()
+    {
+        long now = Environment.TickCount64;
+        long elapsed = now - _lastHandleDataTicks;
+        if (elapsed >= HandleDataThrottleMs)
+        {
+            _lastHandleDataTicks = now;
+            HandleSignalkData();
+            return;
+        }
+        if (Interlocked.CompareExchange(ref _handleDataPending, 1, 0) != 0) return;
+        _ = ScheduleTrailingHandleDataAsync((int)(HandleDataThrottleMs - elapsed));
+    }
+
+    private async Task ScheduleTrailingHandleDataAsync(int delayMs)
+    {
+        try { await Task.Delay(delayMs); }
+        catch { /* clock weirdness; drain anyway below */ }
+        _handleDataPending = 0;
+        _lastHandleDataTicks = Environment.TickCount64;
+        HandleSignalkData();
+    }
+
+    /// <summary>SignalkClient.OnDataChanged handler (after throttle).
+    /// Refreshes the hero readouts, appends a polar dot if AWA + AWS
+    /// are both fresh AND the 5 s sample gate is open, then evicts
     /// samples older than the polar's retention window before re-render.</summary>
     private async void HandleSignalkData()
     {
@@ -956,7 +1004,7 @@
 
     public void Dispose()
     {
-        SignalkClient.OnDataChanged -= HandleSignalkData;
+        SignalkClient.OnDataChanged -= HandleSignalkDataThrottled;
         _seedCts?.Cancel();
         _seedCts?.Dispose();
     }
