@@ -246,12 +246,14 @@ yesterday's WASM with today's HTML.
 
 ## Branching + commits
 
-`master` is the deploy branch. `v1-ship` is active development, typically
-matching `master` modulo the in-flight commit. Pattern: commit on
-`v1-ship`, push, then ff master via `git push origin v1-ship:master`.
-When the local `master` worktree is locked (worktree dir under
-`.claude/worktrees/`), direct push is the only way; don't checkout master
-from the main worktree.
+`master` is the deploy branch and the only long-lived branch. Commit
+directly to `master`. Topic branches under `.claude/worktrees/` are
+fine for in-flight work; push them straight to `master` via
+`git push origin <branch>:master` (fast-forward only) when ready -
+don't open a long-lived integration branch in between. When the local
+`master` worktree is locked (worktree dir under `.claude/worktrees/`),
+direct push is the only way; don't checkout master from the main
+worktree.
 
 Squash before push. Semantic prefix in subject: `feat(scope):`,
 `fix(scope):`, `refactor(scope):`, `chore(scope):`. Helm is the user;
