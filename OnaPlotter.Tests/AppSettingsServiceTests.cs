@@ -983,20 +983,6 @@ public class AppSettingsServiceTests
     }
 
     [Test]
-    public async Task SetWindPageCompact_RoundTrips()
-    {
-        var kv = new InMemoryKv();
-        var svc = new AppSettingsService(kv);
-        await svc.InitializeAsync();
-        await svc.SetWindPageCompactAsync(true);
-
-        var svc2 = new AppSettingsService(kv);
-        await svc2.InitializeAsync();
-        await Assert.That(svc2.WindPageCompact).IsTrue();
-    }
-
-
-    [Test]
     public async Task SetMapOrientation_RoundTrips_AndFires()
     {
         // MapOrientation steers the rotation of the chart canvas; the

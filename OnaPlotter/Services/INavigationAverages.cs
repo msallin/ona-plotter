@@ -23,14 +23,15 @@ public interface INavigationAverages
 {
     // ---- Underlying buffers (variable-window queries) ----------
 
-    /// <summary>True wind speed (m/s) - 180 min retention.</summary>
+    /// <summary>True wind speed (m/s) - 24 h retention.</summary>
     RollingScalarSeries Tws { get; }
-    /// <summary>Apparent wind speed (m/s) - 180 min retention.</summary>
+    /// <summary>Apparent wind speed (m/s) - 24 h retention.</summary>
     RollingScalarSeries Aws { get; }
-    /// <summary>True wind direction (radians, compass-from) - 180 min retention.</summary>
+    /// <summary>True wind direction (radians, compass-from) - 24 h retention.</summary>
     RollingDirectionSeries Twd { get; }
-    /// <summary>Apparent wind angle (radians, bow-relative ±π) - 5 min retention.
-    /// Drives the smoothed AW arrow on the chart-HUD wind dial.</summary>
+    /// <summary>Apparent wind angle (radians, bow-relative ±π) - 24 h retention.
+    /// Drives the smoothed AW arrow on the chart-HUD wind dial and
+    /// the Wind page history chart in apparent-direction mode.</summary>
     RollingDirectionSeries Awa { get; }
     /// <summary>True wind angle (radians, bow-relative ±π) - 5 min retention.
     /// Drives the smoothed TW arrow on the chart-HUD wind dial.</summary>
@@ -98,8 +99,9 @@ public interface INavigationAverages
     /// live data still flows.</para>
     /// </summary>
     /// <param name="trackApi">History API client.</param>
-    /// <param name="window">How far back to fetch. Default 3 h matches
-    /// the longest WindRose history-window selector.</param>
+    /// <param name="window">How far back to fetch. Default 1 h matches
+    /// the Wind page's default unified window; callers re-seed with a
+    /// larger window when the helm picks a longer history.</param>
     /// <param name="resolution">Server sampling cadence. 5 s gives
     /// enough resolution for the gust / variance chips; coarser
     /// resolutions smooth the variance estimate low.</param>

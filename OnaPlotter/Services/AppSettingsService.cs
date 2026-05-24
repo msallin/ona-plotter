@@ -31,7 +31,6 @@ public sealed class AppSettingsService : IAppSettings
     public bool ChartsSeeded { get; private set; }
     public string Theme { get; private set; } = "system";
     public string WindHeroMode { get; private set; } = "apparent";
-    public bool WindPageCompact { get; private set; }
     public string MapOrientation { get; private set; } = "north";
     public string ShipOrientationSource { get; private set; } =
         OnaPlotter.Utilities.ShipOrientationResolver.DefaultSetting;
@@ -377,7 +376,6 @@ public sealed class AppSettingsService : IAppSettings
             // intermediate use Theme = "dark" instead.
             Theme = NormalizeTheme(await LoadString("theme"));
             WindHeroMode = NormalizeWindHeroMode(await LoadString("windHeroMode.v1"));
-            WindPageCompact = await LoadBool("windPageCompact.v1", false);
             MapOrientation = await LoadString("mapOrientation") ?? "north";
             // Round-trip through the resolver so a corrupt /
             // schema-skew localStorage value lands at the default
@@ -694,13 +692,6 @@ public sealed class AppSettingsService : IAppSettings
         "apparent" or "true" => raw,
         _ => "apparent",
     };
-
-    public async Task SetWindPageCompactAsync(bool value)
-    {
-        WindPageCompact = value;
-        await Save("windPageCompact.v1", value ? "true" : "false");
-        OnSettingsChanged?.Invoke();
-    }
 
     public async Task SetMapOrientationAsync(string value)
     {

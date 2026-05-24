@@ -22,6 +22,12 @@ public sealed class NavigationAverages : INavigationAverages, IDisposable
     /// 360° per fix; including those poisons the rolling mean.</summary>
     public const double StationarySogMs = 0.25;
 
+    /// <summary>Wind-buffer retention (minutes) for TWS / AWS / TWD /
+    /// AWA. Matches the Wind page's longest unified history window
+    /// (24 h) so the helm can scrub the full day without falling off
+    /// the back of the buffer.</summary>
+    public const int WindRetentionMin = 1440;
+
     private readonly SignalkClient _client;
     private readonly TimeProvider _time;
     private bool _disposed;
@@ -49,12 +55,14 @@ public sealed class NavigationAverages : INavigationAverages, IDisposable
         _client = client ?? throw new ArgumentNullException(nameof(client));
         _time = time ?? TimeProvider.System;
 
-        // Wind: 180 min retention - covers WindRose's longest
-        // history window (3 h) and its 60-min chip query, plus the
-        // HUD's 1-min and 10-min canonical means as sub-windows.
-        Tws = new RollingScalarSeries(TimeSpan.FromMinutes(180), _time);
-        Aws = new RollingScalarSeries(TimeSpan.FromMinutes(180), _time);
-        Twd = new RollingDirectionSeries(TimeSpan.FromMinutes(180), _time);
+        // Wind: 1440 min (24 h) retention - covers the Wind page's
+        // longest unified history window. Same retention for AWA so
+        // an apparent-direction chart can be backfilled from server
+        // history (WindSeed includes environment.wind.angleApparent).
+        Tws = new RollingScalarSeries(TimeSpan.FromMinutes(WindRetentionMin), _time);
+        Aws = new RollingScalarSeries(TimeSpan.FromMinutes(WindRetentionMin), _time);
+        Twd = new RollingDirectionSeries(TimeSpan.FromMinutes(WindRetentionMin), _time);
+        Awa = new RollingDirectionSeries(TimeSpan.FromMinutes(WindRetentionMin), _time);
 
         // Boat motion: 5 min retention. The HUD wants 30 s smoothing;
         // 5 min leaves room for a future "what's my last 5 min mean"
@@ -68,10 +76,8 @@ public sealed class NavigationAverages : INavigationAverages, IDisposable
         CogTrue = new RollingDirectionSeries(TimeSpan.FromMinutes(5), _time);
         CogMagnetic = new RollingDirectionSeries(TimeSpan.FromMinutes(5), _time);
 
-        // Bow-relative wind angles (AWA / TWA): 5 min retention so
-        // they share the boat-motion lifetime; the HUD pulls a 30 s
-        // mean to keep the dial arrows from twitching on every gust.
-        Awa = new RollingDirectionSeries(TimeSpan.FromMinutes(5), _time);
+        // TWA stays HUD-only: bow-relative true wind angle for the
+        // dial arrow smoothing, no history-chart consumer.
         Twa = new RollingDirectionSeries(TimeSpan.FromMinutes(5), _time);
 
         _client.OnDataChanged += HandleDataChanged;
@@ -137,9 +143,9 @@ public sealed class NavigationAverages : INavigationAverages, IDisposable
     {
         if (_disposed) return Task.FromResult<TrackPoint[]?>(null);
         return SeedWindBuffersAsync(
-            Aws, Tws, Twd,
+            Aws, Tws, Twd, Awa,
             trackApi,
-            window ?? TimeSpan.FromHours(3),
+            window ?? TimeSpan.FromHours(1),
             resolution,
             ct);
     }
@@ -155,6 +161,7 @@ public sealed class NavigationAverages : INavigationAverages, IDisposable
         RollingScalarSeries aws,
         RollingScalarSeries tws,
         RollingDirectionSeries twd,
+        RollingDirectionSeries awa,
         ITrackApi trackApi,
         TimeSpan window,
         string resolution,
@@ -187,6 +194,7 @@ public sealed class NavigationAverages : INavigationAverages, IDisposable
         aws.Seed(SelectScalar(points, p => p.WindSpeedApparent));
         tws.Seed(SelectScalar(points, p => p.WindSpeedTrue));
         twd.Seed(SelectAngle(points, p => p.WindDirectionTrue));
+        awa.Seed(SelectAngle(points, p => p.WindAngleApparent));
 
         return points;
     }

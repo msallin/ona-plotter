@@ -20,38 +20,50 @@
 @*
    Layout: two-column grid on screens >= 960 px (iPad landscape and
    any helm display); single column below. Left = polar rose; right =
-   live readouts + TWD history. Both columns sit inside .wind-card so
-   the page reads as two grouped instrument clusters rather than four
-   floating tiles. Card chrome is now theme-agnostic - the previous
-   "card on light only" rationale was wrong; what was missing on dark
-   theme was containment, not contrast.
+   live readouts + history. Both columns sit inside .wind-card so the
+   page reads as two grouped instrument clusters rather than four
+   floating tiles.
 
    SVG colours come from theme tokens (no hex literals on the page)
    so night-mode + high-contrast modes follow without per-chart
    overrides. SVG text inherits Inter Variable via .wind-page svg
    text { font-family: inherit } - one rule fixes the "mixed fonts"
-   complaint everywhere SVG text appears (compass / ring / axis).
+   complaint everywhere SVG text appears.
 
-   Subtitle dropped: it described "apparent wind angle vs speed"
-   but the page now also shows TWD history, gust / lull, shift rate
-   and a polar overlay. A subtitle that paraphrases one widget while
-   ignoring the rest is noise.
+   Page-level controls: Apparent/True + a single time-window selector
+   govern ALL cards (rose dot retention, hero readout, variability
+   chips, history chart). The previous per-card selectors confused
+   helms who couldn't tell why "30m here, 2m there" produced mismatched
+   numbers for the same instant in time.
 *@
-<div class="app-page wind-page @(compactMode ? "wind-compact" : "")">
+<div class="app-page wind-page">
     <header class="app-page-header wind-page-header">
         <h1>Wind</h1>
-        @* Compact toggle: drops .wind-card chrome (background, border,
-           padding) and tightens grid gaps. Targeted at tacticians on
-           big helm screens (Tom in the field study) who want every
-           pixel for data, not breathing room. Persisted via
-           IAppSettings so the helm's pick survives a reload. *@
-        <button type="button"
-                class="wind-density-toggle @(compactMode ? "is-on" : "")"
-                aria-pressed="@compactMode"
-                title="@(compactMode ? "Switch to relaxed view" : "Switch to compact / tactical view")"
-                @onclick="ToggleCompact">
-            @(compactMode ? "Relaxed" : "Compact")
-        </button>
+        @* Apparent / True applies to the hero readout, the variability
+           chips, AND the history chart. The polar rose stays on AWA
+           (the rose's tactical reading is "where in my apparent wind
+           window am I sailing?" - a true-wind rose would answer a
+           different question and isn't worth the data-shape change). *@
+        <div class="segmented segmented-sm" role="group" aria-label="Wind reference">
+            <input type="radio" class="btn-check" name="@($"wind-mode-{_uid}")"
+                   id="@($"wind-mode-app-{_uid}")" autocomplete="off"
+                   checked="@(heroMode == "apparent")"
+                   @onchange='() => SetHeroMode("apparent")' />
+            <label class="btn" for="@($"wind-mode-app-{_uid}")">Apparent</label>
+            <input type="radio" class="btn-check" name="@($"wind-mode-{_uid}")"
+                   id="@($"wind-mode-true-{_uid}")" autocomplete="off"
+                   checked="@(heroMode == "true")"
+                   @onchange='() => SetHeroMode("true")' />
+            <label class="btn" for="@($"wind-mode-true-{_uid}")">True</label>
+        </div>
+        @* Unified time window. Drives rose retention, history chart
+           span, variability-chip window. Re-seeds the NavigationAverages
+           wind buffers when the helm picks a window larger than what
+           has been fetched so far. *@
+        <TimeWindowSelector Value="windowMinutes"
+                            ValueChanged="OnWindowChangedAsync"
+                            Choices="WindowChoices"
+                            AriaLabel="History window" />
     </header>
 
     <div class="wind-grid">
@@ -117,9 +129,16 @@
                 "var(--sk-text-muted)", 10, anchor: "start")
         }
 
-        @* Historical wind data points *@
+        @* Historical wind data points, filtered to the unified
+           window. The list is kept up to 24 h so picking a shorter
+           window (e.g. "10m") doesn't discard data that a re-widening
+           to "1h" would have to re-fetch. *@
+        @{
+            DateTime windowCutoff = DateTime.UtcNow - TimeSpan.FromMinutes(windowMinutes);
+        }
         @foreach (var pt in windPoints)
         {
+            if (pt.Time < windowCutoff) continue;
             <circle cx="@pt.X" cy="@pt.Y" r="2.5" fill="@pt.Color" opacity="0.6" />
         }
 
@@ -245,33 +264,19 @@
             }
         </section>
 
-        @* === Right column: live readouts + TWD history.
-           Was <aside> - semantically wrong: this column is the page's
-           primary live data, not a tangentially-related sidebar. <section>
-           announces correctly to screen readers ("region" / labelled). *@
-        <section class="wind-aside" aria-label="Live wind and direction history">
-            @* Hero card. Eyebrow + value pair, with an Apparent / True
-               toggle in the header so cruisers and tacticians (who
-               read TWD/TWS for anchoring + tactical decisions) and
-               racers (who read AWA/AWS for sail trim) both get the
-               number they actually want, without page-level config.
-               True mode shows TWD (compass-from-north) + TWS; apparent
-               shows AWA (0-360 relative to bow) + AWS. *@
+        @* === Right column: live readouts + history chart. <section>
+           (not <aside>) because this column is the page's primary
+           live data, not a tangentially-related sidebar - the
+           "region" landmark is correctly announced to screen readers. *@
+        <section class="wind-aside" aria-label="Live wind and history">
+            @* Hero card. Eyebrow + value pair. Apparent vs True is
+               driven from the page header so the same pick steers the
+               history chart and the variability chips. True mode shows
+               TWD (compass-from-north) + TWS; apparent shows AWA
+               (0-360 relative to bow) + AWS. *@
             <section class="wind-card wind-hero" aria-label="Live wind">
                 <div class="wind-hero-header">
                     <div class="wind-hero-eyebrow">@(heroMode == "true" ? "True wind" : "Apparent wind")</div>
-                    <div class="segmented segmented-sm" role="group" aria-label="Wind reference">
-                        <input type="radio" class="btn-check" name="@($"hero-{_uid}")"
-                               id="@($"hero-app-{_uid}")" autocomplete="off"
-                               checked="@(heroMode == "apparent")"
-                               @onchange='() => SetHeroMode("apparent")' />
-                        <label class="btn" for="@($"hero-app-{_uid}")">Apparent</label>
-                        <input type="radio" class="btn-check" name="@($"hero-{_uid}")"
-                               id="@($"hero-true-{_uid}")" autocomplete="off"
-                               checked="@(heroMode == "true")"
-                               @onchange='() => SetHeroMode("true")' />
-                        <label class="btn" for="@($"hero-true-{_uid}")">True</label>
-                    </div>
                 </div>
                 <div class="wind-hero-readouts">
                     <div class="wind-hero-primary">
@@ -283,50 +288,40 @@
                     </div>
                 </div>
 
-                @* Gust / Lull / Mean over the last 2 min. Renders
-                   nothing when sample count is too low so "this chip
-                   is silent" stays meaningful. The Shift chip moved
-                   out of here - it's now the always-on numeric
-                   headline above the history chart, where it belongs
-                   tactically (Marius and Tom both blocked without it
-                   per the field study). *@
-                @* AWS variability chips + window selector. The window
-                   used to be hard-coded at 2 min - great for racers
-                   spotting a recent gust but useless for cruisers
-                   asking "is this anchorage going to be gusty all
-                   night?" (Ulrike, field study). Selector applies to
-                   all four chips at once and snaps to a tight set:
-                   1m / 2m / 10m / 1h covers race tactical -> overnight
-                   anchoring without forcing a free numeric input. *@
-                @if (AwsStats is (double gust, double lull, double mean, double sigma))
+                @* Variability chips: gust / lull / mean / var over the
+                   unified window. Rendered only when the buffer has
+                   enough samples to compute meaningful stats, so a
+                   silent chip strip means "not enough data yet" rather
+                   than "the wind is dead calm". The Shift chip lives
+                   below as the always-on numeric headline above the
+                   history chart. *@
+                @{
+                    string windowLabel = WindowLabel(windowMinutes);
+                    string speedSourceLabel = heroMode == "true" ? "TWS" : "AWS";
+                }
+                @if (WindStats is (double gust, double lull, double mean, double sigma))
                 {
                     <div class="wind-badges">
                         <span class="instrument-badge @(gust > 3 ? "instrument-badge-warn" : "")"
-                              title="Peak AWS minus mean over the last @chipWindowMinutes min">
+                              title="Peak @speedSourceLabel minus mean over the last @windowLabel">
                             <span class="instrument-badge-label">Gust</span>
                             +@gust.ToString("F1") kn
                         </span>
                         <span class="instrument-badge"
-                              title="Lowest AWS minus mean over the last @chipWindowMinutes min">
+                              title="Lowest @speedSourceLabel minus mean over the last @windowLabel">
                             <span class="instrument-badge-label">Lull</span>
                             -@lull.ToString("F1") kn
                         </span>
                         <span class="instrument-badge"
-                              title="Mean AWS over the last @chipWindowMinutes min">
+                              title="Mean @speedSourceLabel over the last @windowLabel">
                             <span class="instrument-badge-label">Mean</span>
                             @mean.ToString("F1") kn
                         </span>
                         <span class="instrument-badge @(sigma > 4 ? "instrument-badge-warn" : "")"
-                              title="Standard deviation of AWS over the last @chipWindowMinutes min - higher = gustier / more variable">
-                            @* Helm feedback: "Σ" was math notation, not a
-                               sailor word. "Var" (variability) parses
-                               immediately and matches the tooltip copy. *@
+                              title="Standard deviation of @speedSourceLabel over the last @windowLabel - higher = gustier / more variable">
                             <span class="instrument-badge-label">Var</span>
                             ±@sigma.ToString("F1") kn
                         </span>
-                        <TimeWindowSelector @bind-Value="chipWindowMinutes"
-                                            Choices="ChipWindowChoices"
-                                            AriaLabel="Variability window" />
                     </div>
                 }
             </section>
@@ -342,13 +337,17 @@
                    three orthogonal facts. *@
             @{
                 // Pull the active view's samples from the shared
-                // NavigationAverages buffer. Direction view -> TWD
-                // (rad -> deg, normalised to [0, 360)); speed view ->
-                // TWS (m/s -> kn). One snapshot per render.
-                var visible = GetHistorySamples(historyView);
+                // NavigationAverages buffer. Projection depends on
+                // (heroMode, historyView):
+                //   apparent + direction -> AWA (rad -> deg [0,360))
+                //   apparent + speed     -> AWS (m/s -> kn)
+                //   true     + direction -> TWD (rad -> deg [0,360))
+                //   true     + speed     -> TWS (m/s -> kn)
+                var visible = GetHistorySamples(heroMode, historyView);
                 bool hasUsableHistory = visible.Count >= 5
                     && (visible[^1].Time - visible[0].Time).TotalSeconds >= 30;
-                int totalHistoryCount = Avg.Twd.Count + Avg.Tws.Count;
+                int totalHistoryCount = Avg.Twd.Count + Avg.Tws.Count
+                                      + Avg.Awa.Count + Avg.Aws.Count;
             }
 
             @if (totalHistoryCount > 1)
@@ -356,13 +355,10 @@
                 <section class="wind-card wind-history-section" aria-label="Wind history">
                     <header class="wind-section-header">
                         <h2 class="wind-section-title">Wind history</h2>
-                        @* Direction / Speed toggle. Cruisers (Ulrike)
-                           ask "is the breeze settling for the night?";
-                           racers (Marius, Tom) ask "is the wind shifting
-                           right?". Same chart machinery, different y-axis
-                           projection. Project-owned segmented control
-                           shares the chip vocabulary so it doesn't read
-                           as a third button system on the page. *@
+                        @* Direction / Speed toggle. Cruisers ask "is the
+                           breeze settling for the night?"; racers ask
+                           "is the wind shifting right?". Same chart
+                           machinery, different y-axis projection. *@
                         <div class="segmented segmented-sm" role="group" aria-label="History view">
                             <input type="radio" class="btn-check" name="@($"hview-{_uid}")"
                                    id="@($"hview-dir-{_uid}")" autocomplete="off"
@@ -375,20 +371,18 @@
                                    @onchange='() => SetHistoryView("speed")' />
                             <label class="btn" for="@($"hview-spd-{_uid}")">Speed</label>
                         </div>
-                        <TimeWindowSelector @bind-Value="windowMinutes"
-                                            Choices="WindowChoices"
-                                            AriaLabel="History window" />
                         <span class="wind-section-meta wind-section-count">@visible.Count samples</span>
                     </header>
 
-                    @* TWD slope numeric headline, always-on (replaces the
-                       prior conditional "Shift" chip). Field study
-                       finding T1/M2: Marius and Tom both want this as the
-                       tactical headline. Three states: (a) numeric value
-                       with veering/backing/steady label and a directional
-                       glyph; (b) "Steady" when |slope| < 0.5 deg/min;
-                       (c) "Awaiting samples" when fewer than 5 samples in
-                       the 5-min slope window. *@
+                    @* TWD slope numeric headline, always-on. Three
+                       states: (a) numeric value with veering / backing /
+                       steady label and a directional glyph; (b) "Steady"
+                       when |slope| < 0.5 deg/min; (c) "Awaiting samples"
+                       when fewer than 5 samples in the 5-min slope window.
+                       Always reports TWD slope (the tactical shift
+                       signal) regardless of whether the chart below is
+                       in apparent or true mode - hence the explicit
+                       "TWD" tag in the label. *@
                     <div class="wind-shift-headline" aria-live="polite">
                         @if (ShiftRate is double rate)
                         {
@@ -401,7 +395,7 @@
                                        : Math.Abs(rate) >= 1 ? "wind-shift-mid"
                                        : "wind-shift-weak";
                             <span class="wind-shift-value @cls">@glyph @sign@rate.ToString("F1")&deg;/min</span>
-                            <span class="wind-shift-label">@trend &middot; last @ShiftRateWindowMin min</span>
+                            <span class="wind-shift-label">@trend &middot; TWD over last @ShiftRateWindowMin min</span>
                         }
                         else
                         {
@@ -496,27 +490,26 @@
     private static readonly int[] compassDegrees = [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330];
 
     // Polar-scatter samples for the rose. The page owns this list -
-    // historical samples come from the SignalK history API on mount
-    // (see SeedWindAsync) and live samples come from
-    // SignalkClient.OnDataChanged throttled to 5s grain. The previous
-    // shape pulled from TrackBuffer.GetSnapshot(), but TrackBuffer is
-    // the Map page's position-trail ring; routing wind dots through it
-    // mixed two unrelated concerns (and put a hard 83-min ceiling on
-    // the polar's window). Keeping the list local means the polar's
-    // retention is decided here, in the page that owns it.
+    // historical samples come from the SignalK history API
+    // (SeedWindAsync) and live samples from SignalkClient.OnDataChanged
+    // throttled to 5s grain. The list retains up to PolarRetention
+    // (matches the longest unified window) so the helm can scrub
+    // 1m -> 24h -> 1m -> 24h without re-fetching every time the window
+    // shrinks. Render-side filtering trims to the current windowMinutes.
     private List<WindPoint> windPoints = [];
     private (double Angle, double SpeedKn)? currentWind;
     private (double TwdRad, double TwsKn)? currentTrueWind;
 
-    /// <summary>How far back the polar shows AWA samples. Matches the
-    /// rolling-buffer retention used by the history chart so seeded
-    /// data lines up across both columns.</summary>
-    private static readonly TimeSpan PolarRetention = TimeSpan.FromHours(3);
+    /// <summary>Polar scatter buffer retention. Matches the longest
+    /// unified history-window choice (24 h) so shortening then
+    /// re-widening the window doesn't lose data the page already has.</summary>
+    private static readonly TimeSpan PolarRetention = TimeSpan.FromHours(24);
 
     /// <summary>Live-sample throttle. SignalkClient.OnDataChanged
-    /// fires 1-3 Hz; without a gate a 3 h sit on the page would push
-    /// past 30 000 SVG circles. 5 s matches the seed cadence so the
-    /// dot density is consistent across historical + live regions.</summary>
+    /// fires 1-3 Hz; without a gate a long sit on the page would push
+    /// past 17 000 SVG circles at the 24 h ceiling. 5 s matches the
+    /// seed cadence so dot density is consistent across historical
+    /// and live regions.</summary>
     private const int LiveSampleIntervalMs = 5_000;
     private DateTime _lastLiveSampleUtc = DateTime.MinValue;
 
@@ -524,21 +517,19 @@
     // components on a page (unlikely but cheap) don't share a group.
     private readonly string _uid = Guid.NewGuid().ToString("N")[..6];
 
-    // Hero view selector: "apparent" shows AWA + AWS, "true" shows
-    // TWD + TWS. Cruisers + tacticians want true; racers want apparent.
-    // Default seeded from IAppSettings on init so the helm's last
-    // pick survives a page reload.
+    // Wind reference selector: "apparent" routes the hero, the
+    // history chart, and the variability chips to AWA / AWS;
+    // "true" routes them to TWD / TWS. The polar rose stays on AWA
+    // regardless. Default seeded from IAppSettings on init so the
+    // helm's last pick survives a page reload.
     private string heroMode = "apparent";
 
-    // History view selector: "direction" plots TWD over time (shift
-    // detection); "speed" plots TWS (settling / building trend).
-    // Per-session (no persistence) - toggling history view is a quick
-    // diagnostic check, not a stable preference.
+    // History view selector: "direction" plots the heading-style
+    // value over time (shift detection); "speed" plots the speed
+    // (settling / building trend). Orthogonal to apparent/true.
+    // Per-session (no persistence) - toggling history view is a
+    // quick diagnostic check, not a stable preference.
     private string historyView = "direction";
-
-    // Compact density: drops .wind-card chrome and tightens gaps.
-    // Persisted via IAppSettings.WindPageCompact.
-    private bool compactMode;
 
     private async Task SetHeroMode(string mode)
     {
@@ -549,12 +540,6 @@
 
     private void SetHistoryView(string view) => historyView = view;
 
-    private async Task ToggleCompact()
-    {
-        compactMode = !compactMode;
-        await Settings.SetWindPageCompactAsync(compactMode);
-    }
-
     // Windplot: TWD + TWS over time. Samples come from the shared
     // NavigationAverages buffers so the chart, the AwsStats chips,
     // and the HUD smoothed readouts all read the same series.
@@ -564,74 +549,96 @@
     private const int WpPlotW = WpWidth - WpPad - 10;
     private const int WpPlotH = WpHeight - WpPad - 20;
 
-    // User-selectable trailing window. Defaults to 30 min. 15 min for
-    // racers spotting a shift mid-leg; 1 h / 3 h for cruisers watching
-    // a sunset clock.
-    private int windowMinutes = 30;
+    // Page-level trailing window. Drives the rose's visible dots,
+    // the history chart span, and the variability chips. Default 1 h
+    // balances "what just happened on the last leg" (racer) and "is
+    // tonight settling?" (cruiser).
+    private int windowMinutes = 60;
 
-    private static readonly (int minutes, string label)[] WindowChoices =
+    /// <summary>Largest window already fetched from server history.
+    /// On <see cref="OnWindowChangedAsync"/> the page re-seeds only
+    /// when the helm picks a window LARGER than what we've already
+    /// covered; shrinking is a render-side decision (the buffer keeps
+    /// the data so re-widening to that window doesn't re-fetch).</summary>
+    private int _seededMinutes;
+
+    // Unified window choices. Short end (1m/2m/10m) keeps the
+    // variability chips usable for racers spotting a recent gust;
+    // long end (8h/16h/24h) lets cruisers replay an entire passage.
+    private static readonly (int Minutes, string Label)[] WindowChoices =
     [
-        (15,  "15m"),
-        (30,  "30m"),
-        (60,  "1h"),
-        (180, "3h"),
-    ];
-
-    // AWS variability window for the gust / lull / mean / sigma chips.
-    // 2 min is a sensible default for racers (recent-gust feel); cruisers
-    // anchoring overnight pick 1 h. Selector exposed inline with the
-    // chips so the helm can swap windows without leaving the page.
-    private int chipWindowMinutes = 2;
-
-    // Choices match Race / Cruise / Long / Overnight expectations:
-    //   1m  - "right now" / Marius mid-leg gust check
-    //   2m  - default; balance of recency and statistical settle
-    //  10m  - last leg / pre-tack assessment
-    //   1h  - evening anchorage decision (Ulrike's ask)
-    private static readonly (int minutes, string label)[] ChipWindowChoices =
-    [
-        (1,  "1m"),
-        (2,  "2m"),
-        (10, "10m"),
-        (60, "1h"),
+        (1,    "1m"),
+        (2,    "2m"),
+        (10,   "10m"),
+        (15,   "15m"),
+        (30,   "30m"),
+        (60,   "1h"),
+        (120,  "2h"),
+        (240,  "4h"),
+        (480,  "8h"),
+        (960,  "16h"),
+        (1440, "24h"),
     ];
 
     // Shift rate has its own optimal window (~5 min: long enough to
     // smooth GPS / sensor jitter, short enough to flag a genuine veer
     // on typical mesoscale wind systems). Kept const, not user-tunable
-    // - one less knob to fiddle with under sail.
+    // - one less knob to fiddle with under sail, and the headline
+    // semantics ("Veering/Backing over last 5 min") stay stable while
+    // the surrounding chart axis re-scales with the unified window.
     private const int ShiftRateWindowMin = 5;
 
-    // True when at least one live or historical wind reading exists.
-    // Used by the empty-state overlay.
+    // True when at least one live or historical wind reading exists
+    // for ANY of the four channels. Used by the empty-state overlay
+    // so a server that only publishes apparent data (no derived true
+    // wind) still renders the rose and chips instead of showing the
+    // "no environment.wind.*" message.
     private bool HasAnyWind =>
         currentWind is not null
+        || currentTrueWind is not null
         || windPoints.Count > 0
         || Avg.Twd.Count > 0
-        || Avg.Tws.Count > 0;
+        || Avg.Tws.Count > 0
+        || Avg.Awa.Count > 0
+        || Avg.Aws.Count > 0;
 
     /// <summary>
-    /// AWS variability over the helm-picked window: gust (+ above
-    /// mean), lull (- below mean), mean, and sigma (standard deviation
-    /// - a single-number summary of how variable the wind is). All
-    /// in knots; gust and lull are non-negative magnitudes. Backed by
-    /// the shared <see cref="INavigationAverages"/> rolling buffer
-    /// (m/s); converted to knots here for display.
+    /// Wind-speed variability over the unified window: gust (+ above
+    /// mean), lull (- below mean), mean, and sigma (standard deviation,
+    /// a single-number summary of how variable the wind is). Source
+    /// follows <see cref="heroMode"/> - AWS for apparent, TWS for true -
+    /// so the same chip strip is meaningful for racers reading the
+    /// boat's actual sail-trim feel and cruisers reading the ambient
+    /// wind field. All values in knots; gust/lull are non-negative
+    /// magnitudes. Backed by the shared <see cref="INavigationAverages"/>
+    /// rolling buffer (m/s); converted to knots here for display.
     /// </summary>
-    private (double Gust, double Lull, double Mean, double Sigma)? AwsStats
+    private (double Gust, double Lull, double Mean, double Sigma)? WindStats
     {
         get
         {
-            // warmupRatio: 0 here because the chip stats happily
-            // surface partial-window data on first connect - a 30s
-            // partial fill of a 60-min window is still useful, and
-            // the chip already shows "n samples" elsewhere so the
-            // helm can read the coverage themselves.
-            var stats = Avg.Aws.Stats(TimeSpan.FromMinutes(chipWindowMinutes), warmupRatio: 0);
+            // warmupRatio: 0 here because chips happily surface
+            // partial-window data on first connect - a 30s partial
+            // fill of a 60-min window is still useful, and the chip
+            // strip lives alongside the sample count so the helm can
+            // read coverage themselves.
+            var source = heroMode == "true" ? Avg.Tws : Avg.Aws;
+            var stats = source.Stats(TimeSpan.FromMinutes(windowMinutes), warmupRatio: 0);
             if (stats is null) return null;
             var s = stats.Value;
             return (s.Gust * MsToKnots, s.Lull * MsToKnots, s.Mean * MsToKnots, s.Sigma * MsToKnots);
         }
+    }
+
+    /// <summary>Human-readable label for the active window (matches
+    /// the segmented control's button text), used in chip tooltips so
+    /// the helm doesn't have to re-derive "what window am I looking at"
+    /// when hovering a Gust badge.</summary>
+    private static string WindowLabel(int minutes)
+    {
+        foreach (var (mins, label) in WindowChoices)
+            if (mins == minutes) return label;
+        return $"{minutes}m";
     }
 
     /// <summary>
@@ -690,44 +697,66 @@
         // flip to the persisted value once settings landed).
         await Settings.InitializeAsync();
         heroMode = Settings.WindHeroMode;
-        compactMode = Settings.WindPageCompact;
 
         UpdateCurrentReadouts();
         SignalkClient.OnDataChanged += HandleSignalkData;
         await Polar.InitializeAsync();
 
-        // Pre-warm NavigationAverages from server history so the helm
-        // sees the recent shift trend + AWS chips immediately instead
-        // of after a 5-min stare. Fire-and-forget: a transport failure
-        // here must not block the page rendering; live deltas still
-        // flow. Seed for 3 h to match the longest history-window
-        // selector; resolution 5 s preserves enough variance for the
-        // gust/lull chips (30 s grain smooths sigma artificially low).
-        _seedCts = new CancellationTokenSource();
-        _ = SeedWindAsync(_seedCts.Token);
+        // Pre-warm NavigationAverages from server history for the
+        // default window so the helm sees the recent shift trend +
+        // variability chips immediately instead of after a 5-min stare.
+        // Fire-and-forget: a transport failure here must not block the
+        // page rendering; live deltas still flow. Resolution 5 s
+        // preserves enough variance for gust/lull (30 s grain smooths
+        // sigma artificially low).
+        _ = ReseedAsync(windowMinutes);
     }
 
-    private async Task SeedWindAsync(CancellationToken ct)
+    /// <summary>Re-seed the shared wind buffers when the helm picks a
+    /// larger window than what has already been fetched. Shrinking the
+    /// window is a render-side decision (the buffer is bounded by
+    /// <see cref="PolarRetention"/> so a 24 h → 1 m → 24 h shuffle
+    /// only ever costs the initial 24 h fetch, not three).</summary>
+    private async Task OnWindowChangedAsync(int newMinutes)
     {
+        if (newMinutes == windowMinutes) return;
+        windowMinutes = newMinutes;
+        if (newMinutes > _seededMinutes)
+        {
+            await ReseedAsync(newMinutes);
+        }
+        // Re-render is implicit via the bound state change; no
+        // StateHasChanged needed.
+    }
+
+    private async Task ReseedAsync(int windowMin)
+    {
+        // Cancel any in-flight seed before starting the next so two
+        // concurrent fetches don't race to feed the same buffer.
+        _seedCts?.Cancel();
+        _seedCts?.Dispose();
+        _seedCts = new CancellationTokenSource();
+        var ct = _seedCts.Token;
         try
         {
             var seeded = await Avg.SeedWindAsync(
                 TrackApi,
-                window: PolarRetention,
+                window: TimeSpan.FromMinutes(windowMin),
                 resolution: "5s",
                 ct: ct);
             if (seeded is null || ct.IsCancellationRequested) return;
 
-            // Merge seeded historical samples into the polar list. Any
-            // live samples that landed between page mount and seed
-            // completion are timestamped newer than the seed's latest,
-            // so concatenating [seed asc, existing live] gives the
-            // monotonic-ascending order eviction depends on. A defensive
-            // sort handles the edge case where clock skew lets a live
-            // sample carry a ts older than the seed's most recent.
+            _seededMinutes = Math.Max(_seededMinutes, windowMin);
+
+            // Merge seeded historical samples into the polar list:
+            // only add points OLDER than the oldest existing entry, so
+            // a re-seed for a larger window extends the buffer
+            // backwards without duplicating the overlap region.
+            DateTime cutoff = windPoints.Count > 0 ? windPoints[0].Time : DateTime.MaxValue;
             var merged = new List<WindPoint>(seeded.Length + windPoints.Count);
             foreach (var pt in seeded)
             {
+                if (pt.Timestamp >= cutoff) continue;
                 if (TryBuildWindPoint(
                         pt.WindAngleApparent, pt.WindSpeedApparent, pt.Timestamp, out var wp))
                 {
@@ -735,6 +764,8 @@
                 }
             }
             merged.AddRange(windPoints);
+            // Defensive sort: handles clock skew where a live sample
+            // carries a ts older than the seed's most recent.
             merged.Sort(static (a, b) => a.Time.CompareTo(b.Time));
             windPoints = merged;
             EvictStaleSamples();
@@ -985,14 +1016,20 @@
     /// <summary>Pulls the trailing-window samples from
     /// <see cref="INavigationAverages"/> and projects them into the
     /// active view's display unit (kn for speed, deg [0, 360) for
-    /// direction). Each render evaluates this once and the result
-    /// is reused for axis bounds + polyline emission.</summary>
-    private IReadOnlyList<OnaPlotter.Utilities.TimeSeriesSample> GetHistorySamples(string view)
+    /// direction). Source buffer follows the unified mode:
+    ///   apparent + speed     -> AWS
+    ///   apparent + direction -> AWA
+    ///   true     + speed     -> TWS
+    ///   true     + direction -> TWD
+    /// Each render evaluates this once and the result is reused for
+    /// axis bounds + polyline emission.</summary>
+    private IReadOnlyList<OnaPlotter.Utilities.TimeSeriesSample> GetHistorySamples(string mode, string view)
     {
         var window = TimeSpan.FromMinutes(windowMinutes);
         if (view == "speed")
         {
-            var raw = Avg.Tws.SnapshotIn(window);
+            var source = mode == "true" ? Avg.Tws : Avg.Aws;
+            var raw = source.SnapshotIn(window);
             var result = new List<OnaPlotter.Utilities.TimeSeriesSample>(raw.Count);
             foreach (var s in raw)
             {
@@ -1000,8 +1037,11 @@
             }
             return result;
         }
-        // Direction view: rad -> deg, normalised to [0, 360).
-        var rawDir = Avg.Twd.SnapshotIn(window);
+        // Direction view: rad -> deg, normalised to [0, 360). AWA in
+        // apparent mode is bow-relative ±π in the buffer; the same
+        // normalisation maps that to 0..360 (port wind shows as 270..359).
+        var dirSource = mode == "true" ? Avg.Twd : Avg.Awa;
+        var rawDir = dirSource.SnapshotIn(window);
         var dirResult = new List<OnaPlotter.Utilities.TimeSeriesSample>(rawDir.Count);
         foreach (var s in rawDir)
         {

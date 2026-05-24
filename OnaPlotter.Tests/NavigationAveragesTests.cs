@@ -81,10 +81,11 @@ public class NavigationAveragesTests
         public TestNavigationAverages(TimeProvider time)
         {
             _time = time;
-            Tws = new(TimeSpan.FromMinutes(180), time);
-            Aws = new(TimeSpan.FromMinutes(180), time);
-            Twd = new(TimeSpan.FromMinutes(180), time);
-            Awa = new(TimeSpan.FromMinutes(5), time);
+            var windRetention = TimeSpan.FromMinutes(NavigationAverages.WindRetentionMin);
+            Tws = new(windRetention, time);
+            Aws = new(windRetention, time);
+            Twd = new(windRetention, time);
+            Awa = new(windRetention, time);
             Twa = new(TimeSpan.FromMinutes(5), time);
             Sog = new(TimeSpan.FromMinutes(5), time);
             Vmg = new(TimeSpan.FromMinutes(5), time);
@@ -111,9 +112,9 @@ public class NavigationAveragesTests
             string resolution = "5s",
             CancellationToken ct = default)
             => NavigationAverages.SeedWindBuffersAsync(
-                Aws, Tws, Twd,
+                Aws, Tws, Twd, Awa,
                 trackApi,
-                window ?? TimeSpan.FromHours(3),
+                window ?? TimeSpan.FromHours(1),
                 resolution,
                 ct);
 
