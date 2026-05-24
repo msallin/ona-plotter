@@ -68,6 +68,20 @@
     <InternalsVisibleTo Include="OnaPlotter.Tests" />
   </ItemGroup>
 
+  <!-- Don't ship the JS test files to clients. They run locally
+       under Node's built-in test runner against the wwwroot/js
+       interop layer; their production siblings (aisLayer.js,
+       geoMath.js, etc.) are what the browser actually loads. The
+       default content glob would otherwise pull *.test.js + the
+       __tests__ directory into the published bundle, adding weight
+       and handing a small attack surface to anyone curious about
+       internals. -->
+  <ItemGroup>
+    <Content Remove="wwwroot\js\**\*.test.js" />
+    <Content Remove="wwwroot\js\**\*.test.mjs" />
+    <Content Remove="wwwroot\js\__tests__\**" />
+  </ItemGroup>
+
   <!-- (Removed: <BlazorWebAssemblyLazyLoad> for System.Private.Xml*.)
        The lazy-XML setup landed in F2/2 to shave ~97 KB brotli off
        the boot bundle for sessions that never open Resources /
@@ -138,6 +152,40 @@
                       Lines="@(OnaVersionLines)"
                       Overwrite="true"
                       WriteOnlyWhenDifferent="true" />
+  </Target>
+
+  <!-- Minify the hand-written JS interop layer on Release publish.
+       Blazor's _framework JS is already minified by Microsoft; this
+       covers wwwroot/js where the Leaflet glue, AIS layer, error
+       relay etc. live (~25 files, mostly hand-formatted for
+       readability). esbuild produces identical-but-compact output
+       in one invocation: no bundling, no source-map by default, no
+       path changes - the same files Blazor expects to import live
+       at the same paths, just smaller. ~30 to 40 percent size cut,
+       brotli stacks on top.
+
+       Requires `node_modules/esbuild` to exist - run `npm ci`
+       (or `npm install`) from the repo root once before the first
+       Release publish. CI's publish workflow does this in its npm
+       step; locally the deploy.ps1 wrapper / `dotnet publish` user
+       has to remember it. The CheckEsbuildPresent guard below
+       surfaces a clear error instead of a cryptic npx failure. -->
+  <Target Name="CheckEsbuildPresent" BeforeTargets="MinifyPublishedJs"
+          Condition="'$(Configuration)' == 'Release'">
+    <Error Text="esbuild not found in node_modules. Run 'npm ci' from the repo root before publishing in Release."
+           Condition="!Exists('$(MSBuildThisFileDirectory)..\node_modules\esbuild\package.json')" />
+  </Target>
+
+  <Target Name="MinifyPublishedJs"
+          AfterTargets="Publish"
+          Condition="'$(Configuration)' == 'Release'">
+    <ItemGroup>
+      <_JsToMinify Include="$(PublishDir)wwwroot\js\**\*.js" />
+    </ItemGroup>
+    <Message Text="esbuild: minifying wwwroot/js in $(PublishDir)" Importance="high" />
+    <Exec Command="npx --no-install esbuild --minify --allow-overwrite --outdir=&quot;$(PublishDir)wwwroot\js&quot; --outbase=&quot;$(PublishDir)wwwroot\js&quot; @(_JsToMinify->'&quot;%(FullPath)&quot;', ' ')"
+          WorkingDirectory="$(MSBuildThisFileDirectory)..\"
+          Condition="'@(_JsToMinify)' != ''" />
   </Target>
 
 </Project>
