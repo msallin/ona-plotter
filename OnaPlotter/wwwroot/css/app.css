@@ -9001,50 +9001,6 @@ html[data-slow-client="1"] #mapDiv {
    SVG colours moved off hex literals onto theme tokens so night-mode
    and high-contrast follow without per-chart overrides. */
 
-.wind-grid {
-    display: grid;
-    /* 480 + 32 + 520 keeps the rose and the right column visually
-       balanced and stops the TWD chart growing to 1500 px on wide
-       monitors. justify-content: start so the grid hugs the left
-       edge instead of centring inside huge gutters. */
-    grid-template-columns: minmax(380px, 480px) minmax(0, 520px);
-    gap: 2rem;
-    align-items: start;
-    justify-content: start;
-}
-@media (max-width: 959px) {
-    .wind-grid {
-        grid-template-columns: minmax(0, 1fr);
-        gap: 1.25rem;
-    }
-}
-
-/* Unified card chrome for every section on the page. Was previously
-   theme-conditional (light theme only had a card; dark theme had
-   nothing) which left the dark-theme right column reading as three
-   floating tiles instead of one instrument cluster. Containment is
-   what was missing, not contrast - so the card now ships on every
-   theme. Surface colour comes from the theme tokens; on dark it's a
-   subtle slate-800, on light a slate-50. */
-.wind-card {
-    background: var(--sk-surface);
-    border: 1px solid var(--sk-border);
-    border-radius: 10px;
-    padding: 1rem 1.25rem;
-}
-
-/* Page header for the Wind page: h1 + page-level controls (Apparent/
-   True + time window) on one row. align-items: center so the chips
-   sit visually centred against the h1's cap-height rather than its
-   baseline (which used to leave them looking dropped). */
-.wind-page-header {
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 1rem;
-    flex-wrap: wrap;
-}
-
 /* Polar-curve key chip. Sits just below the rose canvas, identifies
    the dashed cyan curve (when polar data is loaded) as a target
    boat-speed polar - not a wind shape - so the helm doesn't
@@ -9119,16 +9075,6 @@ html[data-slow-client="1"] #mapDiv {
     color: var(--sk-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.06em;
-}
-
-/* Right column container - styled as a section, not aria-aside, so
-   screen readers don't announce it as "complementary". Holds hero +
-   chips + TWD history vertically. */
-.wind-aside {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    min-width: 0;
 }
 
 /* Live "current wind" hero. Eyebrow ("Apparent wind") sits ABOVE the
@@ -9338,24 +9284,6 @@ html[data-slow-client="1"] #mapDiv {
     width: 100%;
     height: auto;
     max-width: 100%;
-}
-/* Two stacked subsections (direction + speed) inside the history
-   card. Small label above each chart names the source so the helm
-   knows which axis they're reading without re-checking the
-   page-level Apparent/True chip. */
-.wind-history-subsection {
-    margin-top: 0.5rem;
-}
-.wind-history-subsection:first-of-type {
-    margin-top: 0.25rem;
-}
-.wind-history-sublabel {
-    font-size: 0.7rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--sk-text-muted);
-    margin-bottom: 0.15rem;
 }
 /* Inline empty state inside the history section when sample count is
    too low for a useful chart. Avoids the "2-point line on a

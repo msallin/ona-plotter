@@ -18,67 +18,122 @@
    without earning its screen real estate. *@
 
 @*
-   Layout: two-column grid on screens >= 960 px (iPad landscape and
-   any helm display); single column below. Left = polar rose; right =
-   live readouts + history. Both columns sit inside .wind-card so the
-   page reads as two grouped instrument clusters rather than four
-   floating tiles.
+   Layout: stacked card column, matching the Stats / History design
+   language. Selectors -> Hero -> Rose -> Direction history -> Speed
+   history. The previous two-column grid (rose | aside) was unique
+   to this page; aligning on .card / .card-body makes muscle memory
+   carry between pages.
 
    SVG colours come from theme tokens (no hex literals on the page)
    so night-mode + high-contrast modes follow without per-chart
    overrides. SVG text inherits Inter Variable via .wind-page svg
-   text { font-family: inherit } - one rule fixes the "mixed fonts"
-   complaint everywhere SVG text appears.
+   text { font-family: inherit }.
 
-   Page-level controls: Apparent/True + a single time-window selector
-   govern ALL cards (rose dot retention, hero readout, variability
-   chips, history chart). The previous per-card selectors confused
-   helms who couldn't tell why "30m here, 2m there" produced mismatched
-   numbers for the same instant in time.
+   Page-level controls: a single time-window dropdown + an
+   Apparent/True Map-Table-style button group govern every card
+   (rose dot retention, hero readout, variability chips, history
+   charts).
 *@
 <div class="app-page wind-page">
-    <header class="app-page-header wind-page-header">
+    <header class="app-page-header">
         <h1>Wind</h1>
-        @* Apparent / True applies to the hero readout, the variability
-           chips, AND the history chart. The polar rose stays on AWA
-           (the rose's tactical reading is "where in my apparent wind
-           window am I sailing?" - a true-wind rose would answer a
-           different question and isn't worth the data-shape change). *@
-        <div class="segmented segmented-sm" role="group" aria-label="Wind reference">
-            <input type="radio" class="btn-check" name="@($"wind-mode-{_uid}")"
-                   id="@($"wind-mode-app-{_uid}")" autocomplete="off"
-                   checked="@(heroMode == "apparent")"
-                   @onchange='() => SetHeroMode("apparent")' />
-            <label class="btn" for="@($"wind-mode-app-{_uid}")">Apparent</label>
-            <input type="radio" class="btn-check" name="@($"wind-mode-{_uid}")"
-                   id="@($"wind-mode-true-{_uid}")" autocomplete="off"
-                   checked="@(heroMode == "true")"
-                   @onchange='() => SetHeroMode("true")' />
-            <label class="btn" for="@($"wind-mode-true-{_uid}")">True</label>
-        </div>
-        @* Unified time window. Drives rose retention, history chart
-           span, variability-chip window. Re-seeds the NavigationAverages
-           wind buffers when the helm picks a window larger than what
-           has been fetched so far. *@
-        <TimeWindowSelector Value="windowMinutes"
-                            ValueChanged="OnWindowChangedAsync"
-                            Choices="WindowChoices"
-                            AriaLabel="History window" />
+        <p class="app-page-subtitle">
+            Live wind, polar history, and direction / speed trends.
+        </p>
     </header>
 
-    <div class="wind-grid">
-        @* === Left column: the polar rose + colour legend === *@
-        <section class="wind-card wind-rose-section" aria-label="Wind rose">
+    @* Selector card. Dropdown for the time window (matches Stats'
+       preset picker), button-group for the wind reference (matches
+       History's Map/Table chooser). Both controls drive every card
+       on the page. *@
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <select class="form-select form-select-sm" style="width:auto;"
+                        title="Trailing window for the rose, chips, and history charts"
+                        aria-label="Trailing time window"
+                        @onchange="OnWindowSelectChanged">
+                    @foreach (var entry in WindowOptionsLong)
+                    {
+                        <option value="@entry.Minutes" selected="@(windowMinutes == entry.Minutes)">@entry.DropdownLabel</option>
+                    }
+                </select>
+                <div class="btn-group btn-group-sm" role="group" aria-label="Wind reference">
+                    <button type="button"
+                            class="btn @(heroMode == "apparent" ? "btn-primary" : "btn-outline-secondary")"
+                            @onclick='() => SetHeroMode("apparent")'
+                            title="Show apparent wind (AWA + AWS) - sail-trim reading">Apparent</button>
+                    <button type="button"
+                            class="btn @(heroMode == "true" ? "btn-primary" : "btn-outline-secondary")"
+                            @onclick='() => SetHeroMode("true")'
+                            title="Show true wind (TWD + TWS) - tactical / anchoring reading">True</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @* === Live wind hero card (on top, per the field study). Eyebrow
+       + value pair; the Apparent/True button-group in the selector
+       card controls the source. *@
+    <div class="card mb-3">
+        <div class="card-body wind-hero" aria-label="Live wind">
+            <div class="wind-hero-header">
+                <div class="wind-hero-eyebrow">@(heroMode == "true" ? "True wind" : "Apparent wind")</div>
+            </div>
+            <div class="wind-hero-readouts">
+                <div class="wind-hero-primary">
+                    <span class="wind-hero-value">@HeroSpeedDisplay</span>
+                    <span class="wind-hero-unit">kn</span>
+                </div>
+                <div class="wind-hero-secondary">
+                    <span class="wind-hero-angle">@HeroAngleDisplay</span>
+                </div>
+            </div>
+
+            @* Variability chips: gust / lull / mean / var over the
+               unified window. Rendered only when the buffer has enough
+               samples to compute meaningful stats. *@
+            @{
+                string windowLabel = WindowLabel(windowMinutes);
+                string speedSourceLabel = heroMode == "true" ? "TWS" : "AWS";
+            }
+            @if (WindStats is (double gust, double lull, double mean, double sigma))
+            {
+                <div class="wind-badges">
+                    <span class="instrument-badge @(gust > 3 ? "instrument-badge-warn" : "")"
+                          title="Peak @speedSourceLabel minus mean over the last @windowLabel">
+                        <span class="instrument-badge-label">Gust</span>
+                        +@gust.ToString("F1") kn
+                    </span>
+                    <span class="instrument-badge"
+                          title="Lowest @speedSourceLabel minus mean over the last @windowLabel">
+                        <span class="instrument-badge-label">Lull</span>
+                        -@lull.ToString("F1") kn
+                    </span>
+                    <span class="instrument-badge"
+                          title="Mean @speedSourceLabel over the last @windowLabel">
+                        <span class="instrument-badge-label">Mean</span>
+                        @mean.ToString("F1") kn
+                    </span>
+                    <span class="instrument-badge @(sigma > 4 ? "instrument-badge-warn" : "")"
+                          title="Standard deviation of @speedSourceLabel over the last @windowLabel - higher = gustier / more variable">
+                        <span class="instrument-badge-label">Var</span>
+                        ±@sigma.ToString("F1") kn
+                    </span>
+                </div>
+            }
+        </div>
+    </div>
+
+    @* === Wind rose card === *@
+    <div class="card mb-3">
+        <div class="card-body" aria-label="Wind rose">
             <div class="wind-rose-canvas">
                 @if (!HasAnyWind)
                 {
-                    @* State-aware empty state - the helm landing on the page
-                       with no rose data wants to know WHY. Three diagnoses:
-                       (a) no SignalK feed at all, (b) feed up but cold-start
-                       (no environment.wind.* paths yet), (c) feed up but
-                       stale (link wedged after a few good deltas). The
-                       SignalkClient already exposes IsConnected and
-                       IsDataStale, so the page just dispatches on those. *@
+                    @* State-aware empty state. Three diagnoses: no
+                       SignalK feed; feed up but cold-start; feed up
+                       but stale. *@
                     var emptyState = ResolveEmptyState();
                     <div class="instrument-empty-state" role="status">
                         <strong>@emptyState.Title</strong>
@@ -259,14 +314,8 @@
             </div>
 
             @* Polar key. Renders only when the polar service has data
-               AND TWS is published, i.e. exactly the conditions that
-               make the dashed cyan curve visible on the rose. Names
-               the curve as a BOAT-SPEED target (radial axis here is
-               wind speed for the dots; same line shows boat speed at
-               TWA for current TWS) so the helm doesn't mis-read it
-               as "wind shape". The "more in SailSteer" hint points to
-               the dedicated tactical polar view; both pages share the
-               same PolarService, no duplication. *@
+               AND TWS is published. Names the curve as a BOAT-SPEED
+               target so the helm doesn't mis-read it as "wind shape". *@
             @if (Polar.HasPolar && SignalkClient.Data.WindSpeedTrue is not null)
             {
                 <div class="wind-polar-key">
@@ -277,164 +326,99 @@
                     <a class="wind-polar-key-link" href="/sailsteer">SailSteer &rarr;</a>
                 </div>
             }
-        </section>
-
-        @* === Right column: live readouts + history chart. <section>
-           (not <aside>) because this column is the page's primary
-           live data, not a tangentially-related sidebar - the
-           "region" landmark is correctly announced to screen readers. *@
-        <section class="wind-aside" aria-label="Live wind and history">
-            @* Hero card. Eyebrow + value pair. Apparent vs True is
-               driven from the page header so the same pick steers the
-               history chart and the variability chips. True mode shows
-               TWD (compass-from-north) + TWS; apparent shows AWA
-               (0-360 relative to bow) + AWS. *@
-            <section class="wind-card wind-hero" aria-label="Live wind">
-                <div class="wind-hero-header">
-                    <div class="wind-hero-eyebrow">@(heroMode == "true" ? "True wind" : "Apparent wind")</div>
-                </div>
-                <div class="wind-hero-readouts">
-                    <div class="wind-hero-primary">
-                        <span class="wind-hero-value">@HeroSpeedDisplay</span>
-                        <span class="wind-hero-unit">kn</span>
-                    </div>
-                    <div class="wind-hero-secondary">
-                        <span class="wind-hero-angle">@HeroAngleDisplay</span>
-                    </div>
-                </div>
-
-                @* Variability chips: gust / lull / mean / var over the
-                   unified window. Rendered only when the buffer has
-                   enough samples to compute meaningful stats, so a
-                   silent chip strip means "not enough data yet" rather
-                   than "the wind is dead calm". The Shift chip lives
-                   below as the always-on numeric headline above the
-                   history chart. *@
-                @{
-                    string windowLabel = WindowLabel(windowMinutes);
-                    string speedSourceLabel = heroMode == "true" ? "TWS" : "AWS";
-                }
-                @if (WindStats is (double gust, double lull, double mean, double sigma))
-                {
-                    <div class="wind-badges">
-                        <span class="instrument-badge @(gust > 3 ? "instrument-badge-warn" : "")"
-                              title="Peak @speedSourceLabel minus mean over the last @windowLabel">
-                            <span class="instrument-badge-label">Gust</span>
-                            +@gust.ToString("F1") kn
-                        </span>
-                        <span class="instrument-badge"
-                              title="Lowest @speedSourceLabel minus mean over the last @windowLabel">
-                            <span class="instrument-badge-label">Lull</span>
-                            -@lull.ToString("F1") kn
-                        </span>
-                        <span class="instrument-badge"
-                              title="Mean @speedSourceLabel over the last @windowLabel">
-                            <span class="instrument-badge-label">Mean</span>
-                            @mean.ToString("F1") kn
-                        </span>
-                        <span class="instrument-badge @(sigma > 4 ? "instrument-badge-warn" : "")"
-                              title="Standard deviation of @speedSourceLabel over the last @windowLabel - higher = gustier / more variable">
-                            <span class="instrument-badge-label">Var</span>
-                            ±@sigma.ToString("F1") kn
-                        </span>
-                    </div>
-                }
-            </section>
-
-            @* === Wind history strip ===
-               Field-study finding: sailors want BOTH direction and
-               speed history visible without toggling, since they read
-               them together ("is the wind both shifting and building?").
-               We already buffer both channels (Awa/Aws or Twd/Tws),
-               so rendering both is purely a layout change.
-               Charts are suppressed individually when their channel
-               lacks >=5 samples or <30 s of span - a 2-point line on
-               a degenerate axis is misleading on a tactical display. *@
-            @{
-                var visibleDir = GetHistorySamples(heroMode, "direction");
-                var visibleSpd = GetHistorySamples(heroMode, "speed");
-                bool hasDirHistory = visibleDir.Count >= 5
-                    && (visibleDir[^1].Time - visibleDir[0].Time).TotalSeconds >= 30;
-                bool hasSpdHistory = visibleSpd.Count >= 5
-                    && (visibleSpd[^1].Time - visibleSpd[0].Time).TotalSeconds >= 30;
-                int totalHistoryCount = Avg.Twd.Count + Avg.Tws.Count
-                                      + Avg.Awa.Count + Avg.Aws.Count;
-                // The two channels run at the same gated rate so their
-                // counts are close; surface the direction count as the
-                // single "samples" indicator.
-                int displayedSampleCount = Math.Max(visibleDir.Count, visibleSpd.Count);
-            }
-
-            @if (totalHistoryCount > 1)
-            {
-                <section class="wind-card wind-history-section" aria-label="Wind history">
-                    <header class="wind-section-header">
-                        <h2 class="wind-section-title">Wind history</h2>
-                        <span class="wind-section-meta wind-section-count">@displayedSampleCount samples</span>
-                    </header>
-
-                    @* TWD slope numeric headline, always-on. Always
-                       reports TWD slope (the tactical shift signal)
-                       regardless of whether the chart below is in
-                       apparent or true mode - hence the explicit "TWD"
-                       tag in the label. *@
-                    <div class="wind-shift-headline" aria-live="polite">
-                        @if (ShiftRate is double rate)
-                        {
-                            string trend = Math.Abs(rate) < 0.5 ? "Steady"
-                                         : rate > 0 ? "Veering" : "Backing";
-                            string glyph = Math.Abs(rate) < 0.5 ? "—"
-                                         : rate > 0 ? "▲" : "▼";
-                            string sign = rate >= 0 ? "+" : "";
-                            string cls = Math.Abs(rate) >= 3 ? "wind-shift-strong"
-                                       : Math.Abs(rate) >= 1 ? "wind-shift-mid"
-                                       : "wind-shift-weak";
-                            <span class="wind-shift-value @cls">@glyph @sign@rate.ToString("F1")&deg;/min</span>
-                            <span class="wind-shift-label">@trend &middot; TWD over last @ShiftRateWindowMin min</span>
-                        }
-                        else
-                        {
-                            <span class="wind-shift-empty">Awaiting samples for shift detection</span>
-                        }
-                    </div>
-
-                    @* Direction chart. Stacked above speed because the
-                       shift headline above is the direction signal -
-                       reading top-to-bottom keeps the y-axis cluster
-                       (TWD slope -> direction chart -> speed chart)
-                       coherent. *@
-                    <div class="wind-history-subsection">
-                        <div class="wind-history-sublabel">@(heroMode == "true" ? "TWD" : "AWA") direction</div>
-                        @if (hasDirHistory)
-                        {
-                            @BuildHistoryChartSvg(visibleDir, "direction")
-                        }
-                        else
-                        {
-                            <p class="wind-history-empty">
-                                Collecting direction samples; chart appears once @(5 - visibleDir.Count) more land.
-                            </p>
-                        }
-                    </div>
-
-                    @* Speed chart. *@
-                    <div class="wind-history-subsection">
-                        <div class="wind-history-sublabel">@(heroMode == "true" ? "TWS" : "AWS") speed</div>
-                        @if (hasSpdHistory)
-                        {
-                            @BuildHistoryChartSvg(visibleSpd, "speed")
-                        }
-                        else
-                        {
-                            <p class="wind-history-empty">
-                                Collecting speed samples; chart appears once @(5 - visibleSpd.Count) more land.
-                            </p>
-                        }
-                    </div>
-                </section>
-            }
-        </section>
+        </div>
     </div>
+
+    @* === Wind history (two cards, one per axis) ===
+       Sailors read direction and speed together ("is the wind both
+       shifting and building?") so the previous one-section / two-
+       chart layout split into two distinct cards: each one stands
+       on its own, can be scrolled to or focused independently, and
+       carries its own title + the TWD shift headline lives with the
+       direction card where it semantically belongs. Charts are
+       suppressed individually when their channel lacks >=5 samples
+       or <30 s of span. *@
+    @{
+        var visibleDir = GetHistorySamples(heroMode, "direction");
+        var visibleSpd = GetHistorySamples(heroMode, "speed");
+        bool hasDirHistory = visibleDir.Count >= 5
+            && (visibleDir[^1].Time - visibleDir[0].Time).TotalSeconds >= 30;
+        bool hasSpdHistory = visibleSpd.Count >= 5
+            && (visibleSpd[^1].Time - visibleSpd[0].Time).TotalSeconds >= 30;
+        int totalHistoryCount = Avg.Twd.Count + Avg.Tws.Count
+                              + Avg.Awa.Count + Avg.Aws.Count;
+        string dirSourceLabel = heroMode == "true" ? "TWD" : "AWA";
+        string spdSourceLabel = heroMode == "true" ? "TWS" : "AWS";
+    }
+
+    @if (totalHistoryCount > 1)
+    {
+        @* Direction history card. Title names the source; the TWD
+           shift headline always reports true-wind slope (the tactical
+           signal) regardless of which source the chart is showing -
+           the "TWD over last 5 min" wording in the label makes that
+           explicit so a helm in apparent mode doesn't conflate. *@
+        <div class="card mb-3">
+            <div class="card-body wind-history-section" aria-label="Wind direction history">
+                <header class="wind-section-header">
+                    <h2 class="wind-section-title">@dirSourceLabel direction history</h2>
+                    <span class="wind-section-meta wind-section-count">@visibleDir.Count samples</span>
+                </header>
+
+                <div class="wind-shift-headline" aria-live="polite">
+                    @if (ShiftRate is double rate)
+                    {
+                        string trend = Math.Abs(rate) < 0.5 ? "Steady"
+                                     : rate > 0 ? "Veering" : "Backing";
+                        string glyph = Math.Abs(rate) < 0.5 ? "—"
+                                     : rate > 0 ? "▲" : "▼";
+                        string sign = rate >= 0 ? "+" : "";
+                        string cls = Math.Abs(rate) >= 3 ? "wind-shift-strong"
+                                   : Math.Abs(rate) >= 1 ? "wind-shift-mid"
+                                   : "wind-shift-weak";
+                        <span class="wind-shift-value @cls">@glyph @sign@rate.ToString("F1")&deg;/min</span>
+                        <span class="wind-shift-label">@trend &middot; TWD over last @ShiftRateWindowMin min</span>
+                    }
+                    else
+                    {
+                        <span class="wind-shift-empty">Awaiting samples for shift detection</span>
+                    }
+                </div>
+
+                @if (hasDirHistory)
+                {
+                    @BuildHistoryChartSvg(visibleDir, "direction")
+                }
+                else
+                {
+                    <p class="wind-history-empty">
+                        Collecting direction samples; chart appears once @(5 - visibleDir.Count) more land.
+                    </p>
+                }
+            </div>
+        </div>
+
+        @* Speed history card. *@
+        <div class="card mb-3">
+            <div class="card-body wind-history-section" aria-label="Wind speed history">
+                <header class="wind-section-header">
+                    <h2 class="wind-section-title">@spdSourceLabel speed history</h2>
+                    <span class="wind-section-meta wind-section-count">@visibleSpd.Count samples</span>
+                </header>
+
+                @if (hasSpdHistory)
+                {
+                    @BuildHistoryChartSvg(visibleSpd, "speed")
+                }
+                else
+                {
+                    <p class="wind-history-empty">
+                        Collecting speed samples; chart appears once @(5 - visibleSpd.Count) more land.
+                    </p>
+                }
+            </div>
+        </div>
+    }
 </div>
 
 @code {
@@ -502,10 +486,6 @@
     private const int LiveSampleIntervalMs = 5_000;
     private DateTime _lastLiveSampleUtc = DateTime.MinValue;
 
-    // Per-instance suffix for radio-group names so two WindRose
-    // components on a page (unlikely but cheap) don't share a group.
-    private readonly string _uid = Guid.NewGuid().ToString("N")[..6];
-
     // Wind reference selector: "apparent" routes the hero, the
     // history chart, and the variability chips to AWA / AWS;
     // "true" routes them to TWD / TWS. The polar rose stays on AWA
@@ -545,20 +525,35 @@
     // Unified window choices. Short end (1m/2m/10m) keeps the
     // variability chips usable for racers spotting a recent gust;
     // long end (8h/16h/24h) lets cruisers replay an entire passage.
-    private static readonly (int Minutes, string Label)[] WindowChoices =
+    // Two labels per entry:
+    //   * DropdownLabel ("Last 1 hour") for the selector card's
+    //     <option> text - matches the Stats / History dropdown shape.
+    //   * ShortLabel ("1h") for chip tooltips where space is tight.
+    private static readonly (int Minutes, string ShortLabel, string DropdownLabel)[] WindowOptionsLong =
     [
-        (1,    "1m"),
-        (2,    "2m"),
-        (10,   "10m"),
-        (15,   "15m"),
-        (30,   "30m"),
-        (60,   "1h"),
-        (120,  "2h"),
-        (240,  "4h"),
-        (480,  "8h"),
-        (960,  "16h"),
-        (1440, "24h"),
+        (1,    "1m",  "Last 1 min"),
+        (2,    "2m",  "Last 2 min"),
+        (10,   "10m", "Last 10 min"),
+        (15,   "15m", "Last 15 min"),
+        (30,   "30m", "Last 30 min"),
+        (60,   "1h",  "Last 1 hour"),
+        (120,  "2h",  "Last 2 hours"),
+        (240,  "4h",  "Last 4 hours"),
+        (480,  "8h",  "Last 8 hours"),
+        (960,  "16h", "Last 16 hours"),
+        (1440, "24h", "Last 24 hours"),
     ];
+
+    /// <summary>Dropdown change-handler. Parses the option value and
+    /// hands off to <see cref="OnWindowChangedAsync"/> so the seed +
+    /// re-render path stays single-sourced.</summary>
+    private async Task OnWindowSelectChanged(ChangeEventArgs e)
+    {
+        if (e.Value is string s && int.TryParse(s, out int min))
+        {
+            await OnWindowChangedAsync(min);
+        }
+    }
 
     // Shift rate has its own optimal window (~5 min: long enough to
     // smooth GPS / sensor jitter, short enough to flag a genuine veer
@@ -610,14 +605,14 @@
         }
     }
 
-    /// <summary>Human-readable label for the active window (matches
-    /// the segmented control's button text), used in chip tooltips so
-    /// the helm doesn't have to re-derive "what window am I looking at"
-    /// when hovering a Gust badge.</summary>
+    /// <summary>Short human-readable label for the active window
+    /// (e.g. "1h", "30m"), used in chip tooltips so the helm doesn't
+    /// have to re-derive "what window am I looking at" when hovering
+    /// a Gust badge.</summary>
     private static string WindowLabel(int minutes)
     {
-        foreach (var (mins, label) in WindowChoices)
-            if (mins == minutes) return label;
+        foreach (var entry in WindowOptionsLong)
+            if (entry.Minutes == minutes) return entry.ShortLabel;
         return $"{minutes}m";
     }
 
