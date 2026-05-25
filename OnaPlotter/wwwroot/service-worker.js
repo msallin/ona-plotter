@@ -1237,7 +1237,19 @@
 //                  navigation.speedThroughWater) and
 //                  AutopilotTargetHeadingMagnetic; SignalkClient's
 //                  fast tier subscribes both.
-const CACHE_NAME = 'ona-plotter-v114';
+// v114 -> v115: networkFirstWithCacheFallback gains a 2.5 s timeout
+//               so a slow upstream (Pi-class SK Node host serving a
+//               flurry of /js/* + /css/* fetches after a CACHE_NAME
+//               bump) falls back to the cached copy instead of
+//               blocking the WASM bootstrap. Pairs with the publish-
+//               time stamp-cache-name.mjs becoming content-based:
+//               together they ensure (a) CACHE_NAME only bumps when
+//               app-shell contents actually change, and (b) even
+//               when it does bump, a slow refill never freezes the
+//               page. Helm-visible bug fixed: after deploys, reload
+//               would freeze for tens of seconds until enough
+//               modules trickled in.
+const CACHE_NAME = 'ona-plotter-v115';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
@@ -1507,13 +1519,33 @@ self.addEventListener('fetch', (event) => {
  *  a fresh deploy lands in the helm's browser on the next page load
  *  rather than the load-after-that. The browser-level HTTP cache +
  *  Kestrel's ETag/no-cache headers keep the wire cost down (304 with
- *  no body when unchanged). On network failure (offline / refused),
- *  serves the previously-cached copy so the app still launches.
- *  Caches every successful 2xx response so the offline fallback has
- *  something to fall back to. */
+ *  no body when unchanged). On network failure (offline / refused /
+ *  slow), serves the previously-cached copy so the app still
+ *  launches. Caches every successful 2xx response so the offline
+ *  fallback has something to fall back to.
+ *
+ *  Ceiling on the network race: NETWORK_FIRST_TIMEOUT_MS. The
+ *  unbounded `await fetch(request)` we used pre-timeout could block
+ *  the WASM bootstrap waiting on a slow upstream - the SignalK Node
+ *  server on a Pi-class device can stall serving a flurry of /js/*
+ *  + /css/* modules immediately after a CACHE_NAME bump emptied the
+ *  app-shell cache and forced every module through this handler.
+ *  Helm-visible as "the page reloads and then freezes for tens of
+ *  seconds" until enough fetches complete for Blazor to mount.
+ *  With the timeout, a slow upstream lands the helm on the
+ *  previously-cached copy in 2.5 s, the page boots, and a fresh
+ *  fetch backfills the cache on the next reload. The window is
+ *  long enough that a healthy local LAN/loopback always wins the
+ *  race (a same-LAN Kestrel responds in milliseconds; the timeout
+ *  only ever triggers when something is genuinely slow). */
+const NETWORK_FIRST_TIMEOUT_MS = 2500;
+
 async function networkFirstWithCacheFallback(request) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), NETWORK_FIRST_TIMEOUT_MS);
     try {
-        const response = await fetch(request);
+        const response = await fetch(request, { signal: controller.signal });
+        clearTimeout(timeoutId);
         if (response.ok) {
             try {
                 const clone = response.clone();
@@ -1523,8 +1555,13 @@ async function networkFirstWithCacheFallback(request) {
         }
         return response;
     } catch (_) {
-        // Offline / refused / aborted. Fall back to whatever the
-        // cache has from a previous online visit.
+        clearTimeout(timeoutId);
+        // Offline / refused / aborted (incl. our own timeout above).
+        // Fall back to whatever the cache has from a previous online
+        // visit. No background-refresh kicker here: a slow upstream
+        // would likely also time out the kicker; the NEXT page load
+        // races fresh against another 2.5 s window and naturally
+        // catches up when the host is responsive again.
         try {
             const cached = await caches.match(request);
             if (cached) return cached;
