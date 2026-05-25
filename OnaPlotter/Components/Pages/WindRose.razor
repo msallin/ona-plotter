@@ -200,10 +200,14 @@
             bool isCardinal = deg is 0 or 90 or 180 or 270;
             <line x1="@x1" y1="@y1" x2="@x2" y2="@y2"
                   style="stroke: var(--sk-border);" stroke-width="0.5" />
+            @* Cardinals get an accent-tinted fill instead of plain
+               text colour so they pop under sun glare / polarised
+               lenses where bold weight alone disappears. Numeric
+               inter-mediates stay muted to keep the hierarchy. *@
             @SvgText(lx, ly, CompassLabel(deg),
-                isCardinal ? "var(--sk-text)" : "var(--sk-text-muted)",
-                isCardinal ? 13 : 10,
-                fontWeight: isCardinal ? "600" : null)
+                isCardinal ? "var(--sk-accent)" : "var(--sk-text-muted)",
+                isCardinal ? 14 : 10,
+                fontWeight: isCardinal ? "700" : null)
         }
 
         @* Speed ring labels (knots). Placed just INSIDE each ring at
@@ -394,7 +398,7 @@
            signal) regardless of which source the chart shows. *@
         <div class="card card-dir">
             <div class="card-body wind-history-section" aria-label="Wind direction history">
-                <div class="wind-hero-eyebrow">@dirSourceLabel direction</div>
+                <div class="wind-hero-eyebrow">@dirSourceLabel</div>
 
                 <div class="wind-shift-headline" aria-live="polite">
                     @if (ShiftRate is double rate)
@@ -447,7 +451,7 @@
            than the direction chart and the two read as misaligned. *@
         <div class="card card-spd">
             <div class="card-body wind-history-section" aria-label="Wind speed history">
-                <div class="wind-hero-eyebrow">@spdSourceLabel speed</div>
+                <div class="wind-hero-eyebrow">@spdSourceLabel</div>
                 <div class="wind-shift-headline wind-shift-placeholder" aria-hidden="true"></div>
 
                 @if (hasSpdHistory)
@@ -973,21 +977,19 @@
 
     /// <summary>
     /// Formats a "seconds ago" value as a short human-readable label
-    /// for the TWD time axis. Adapts to the magnitude:
-    ///   &lt; 60 s -> "-Ns"   (e.g. "-15s")
-    ///   &lt; 10 min -> "-N.Nm" (e.g. "-3.5m")
-    ///   otherwise -> "-Nm"   (e.g. "-25m")
+    /// for the chart's time axis. Adapts to the magnitude:
+    ///   &lt; 60 s  -> "-Ns" (e.g. "-15s")
+    ///   otherwise -> "-Nm" (e.g. "-10m")
     /// At the rightmost tick (now) returns "now" rather than "-0s".
-    /// Replaces an integer-minute formatter that produced "-0m -0m
-    /// -0m -0m" when the visible span was under a minute.
+    /// <para>Once the value crosses 1 min the decimal is dropped:
+    /// "-9.9m" on a 15-min axis reads as false precision. Whole-
+    /// minute ticks parse faster ("-15m / -10m / -5m / now").</para>
     /// </summary>
     private static string FormatAgo(double secsAgo)
     {
         if (secsAgo < 0.5) return "now";
         if (secsAgo < 60)  return $"-{(int)Math.Round(secsAgo)}s";
-        double mins = secsAgo / 60.0;
-        if (mins < 10) return $"-{mins.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)}m";
-        return $"-{(int)Math.Round(mins)}m";
+        return $"-{(int)Math.Round(secsAgo / 60.0)}m";
     }
 
     /// <summary>
@@ -1199,7 +1201,10 @@
             // Reconstruct the rightmost (newest) sample's x. Easier:
             // it's pinned to (WpPad + WpPlotW * (lastT/timeSpanSecs)).
             double lastX = WpPad + WpPlotW;   // last sample is at t=timeSpanSecs
-            sb.Append("<polygon style=\"fill: var(--sk-accent); opacity: 0.15;\" points=\"")
+            // 0.28 opacity commits to area-chart semantics; 0.15 was
+            // a half-measure that read as visual noise rather than a
+            // meaningful visual differentiator.
+            sb.Append("<polygon style=\"fill: var(--sk-accent); opacity: 0.28;\" points=\"")
               .Append(polyline).Append(' ')
               .Append(lastX.ToString("F1", ci)).Append(',').Append(bottomY.ToString("F1", ci))
               .Append(' ')

@@ -9248,10 +9248,14 @@ html[data-slow-client="1"] #mapDiv {
     font-weight: 500;
 }
 
+/* Variability chips: 2x2 grid so Gust pairs with Lull and Mean
+   with Var (semantic pairs the helm scans together). A flex-wrap
+   row reorders based on card width, which made the pair-reading
+   inconsistent across viewport tiers. */
 .wind-badges {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem 0.6rem;
 }
 
 /* Project-owned segmented control. Was Bootstrap btn-group +
@@ -9333,7 +9337,11 @@ html[data-slow-client="1"] #mapDiv {
     flex-wrap: wrap;
 }
 .wind-shift-value {
-    font-size: 1.5rem;
+    /* 1.25rem instead of 1.5rem: at 1.5 the headline competed with
+       the chart for primary-read attention; the tactical signal IS
+       the chart, the headline is a derived summary. Severity colour
+       still carries the urgency. */
+    font-size: 1.25rem;
     font-weight: 600;
     color: var(--sk-text);
     line-height: 1.1;
