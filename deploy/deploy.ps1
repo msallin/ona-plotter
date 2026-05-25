@@ -26,6 +26,24 @@ $PackageJsonTemplate = Join-Path $PSScriptRoot "package.json.template"
 if (-not $SkipBuild) {
     Write-Host "Publishing Release build..." -ForegroundColor Cyan
 
+    # Ensure the JS toolchain is installed. The MinifyPublishedJs target
+    # in OnaPlotter.csproj invokes esbuild on Release publish and the
+    # CheckEsbuildPresent guard fails the publish with a clear MSBuild
+    # error if node_modules is missing. npm install (incremental) is
+    # cheap when the tree is already populated, so a fresh-clone deploy
+    # works without manual setup.
+    $NodeModulesDir = Join-Path $RepoRoot "node_modules"
+    if (-not (Test-Path $NodeModulesDir)) {
+        Write-Host "Installing JS toolchain (one-time)..." -ForegroundColor Cyan
+        Push-Location $RepoRoot
+        try {
+            npm install
+            if ($LASTEXITCODE -ne 0) { throw "npm install failed" }
+        } finally {
+            Pop-Location
+        }
+    }
+
     # WASM AOT sometimes leaves a half-written PE image in obj/ after a prior
     # aborted publish, which then fails the next run with "PE image does not
     # have metadata". Nuking obj/Release and bin/Release avoids this without
