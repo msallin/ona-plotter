@@ -9001,6 +9001,56 @@ html[data-slow-client="1"] #mapDiv {
    SVG colours moved off hex literals onto theme tokens so night-mode
    and high-contrast follow without per-chart overrides. */
 
+/* Wind-page responsive grid. Three viewport tiers:
+   * Phone / narrow tablet (< 960 px): single column, source order =
+     reading order (Selector -> Hero -> Rose -> Direction -> Speed).
+     Stacked because the rose's native ~420 width plus a usable right
+     aside (~300 px for the chips + readouts) needs ~720 px of grid
+     space; below that we'd squeeze both. 960 matches the previous
+     loved layout's breakpoint so the helm's muscle memory carries.
+   * iPad landscape (960-1279 px): two columns. Rose anchors the
+     left at its native ~420-480 square; the aside on the right
+     stacks Selector + Hero. Histories span full-width below so the
+     chart + TWD shift headline keep glance-readable width under
+     glare - pairing them at this width crushes each below 430 px.
+   * Chart-station monitor (>= 1280 px): three columns. Rose still
+     anchors the left full-height; Selector + Hero stack in the middle
+     aside; both histories finally pair on the bottom row at ~430 px
+     each, matching their native 420×180.
+   align-items: start keeps cards top-aligned so a tall rose card
+   doesn't stretch a short selector card on iPad.
+*/
+.wind-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+    align-items: start;
+}
+@media (min-width: 960px) {
+    .wind-grid {
+        grid-template-columns: minmax(380px, 480px) minmax(0, 1fr);
+        grid-template-areas:
+            "rose  selector"
+            "rose  hero"
+            "dir   dir"
+            "spd   spd";
+    }
+    .card-rose     { grid-area: rose; }
+    .card-selector { grid-area: selector; }
+    .card-hero     { grid-area: hero; }
+    .card-dir      { grid-area: dir; }
+    .card-spd      { grid-area: spd; }
+}
+@media (min-width: 1280px) {
+    .wind-grid {
+        grid-template-columns: minmax(420px, 520px) minmax(0, 1fr) minmax(0, 1fr);
+        grid-template-areas:
+            "rose  selector selector"
+            "rose  hero     hero"
+            "rose  dir      spd";
+    }
+}
+
 /* Polar-curve key chip. Sits just below the rose canvas, identifies
    the dashed cyan curve (when polar data is loaded) as a target
    boat-speed polar - not a wind shape - so the helm doesn't

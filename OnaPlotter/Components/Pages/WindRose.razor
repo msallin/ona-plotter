@@ -42,11 +42,17 @@
         </p>
     </header>
 
+    @* Responsive grid wrapping every card below. Single column on
+       phone, 2-col on iPad landscape (rose | aside-with-selector-and-
+       hero, histories full-width below), 3-col on chart-station
+       monitors (rose | selector+hero | histories paired). See
+       .wind-grid in app.css. *@
+    <div class="wind-grid">
     @* Selector card. Dropdown for the time window (matches Stats'
        preset picker), button-group for the wind reference (matches
        History's Map/Table chooser). Both controls drive every card
        on the page. *@
-    <div class="card mb-3">
+    <div class="card card-selector">
         <div class="card-body">
             <div class="d-flex align-items-center gap-2 flex-wrap">
                 <select class="form-select form-select-sm" style="width:auto;"
@@ -72,10 +78,9 @@
         </div>
     </div>
 
-    @* === Live wind hero card (on top, per the field study). Eyebrow
-       + value pair; the Apparent/True button-group in the selector
-       card controls the source. *@
-    <div class="card mb-3">
+    @* === Live wind hero card. Eyebrow + value pair; the Apparent/
+       True button-group in the selector card controls the source. *@
+    <div class="card card-hero">
         <div class="card-body wind-hero" aria-label="Live wind">
             <div class="wind-hero-header">
                 <div class="wind-hero-eyebrow">@(heroMode == "true" ? "True wind" : "Apparent wind")</div>
@@ -126,7 +131,7 @@
     </div>
 
     @* === Wind rose card === *@
-    <div class="card mb-3">
+    <div class="card card-rose">
         <div class="card-body" aria-label="Wind rose">
             <div class="wind-rose-canvas">
                 @if (!HasAnyWind)
@@ -358,7 +363,7 @@
            signal) regardless of which source the chart is showing -
            the "TWD over last 5 min" wording in the label makes that
            explicit so a helm in apparent mode doesn't conflate. *@
-        <div class="card mb-3">
+        <div class="card card-dir">
             <div class="card-body wind-history-section" aria-label="Wind direction history">
                 <header class="wind-section-header">
                     <h2 class="wind-section-title">@dirSourceLabel direction history</h2>
@@ -399,7 +404,7 @@
         </div>
 
         @* Speed history card. *@
-        <div class="card mb-3">
+        <div class="card card-spd">
             <div class="card-body wind-history-section" aria-label="Wind speed history">
                 <header class="wind-section-header">
                     <h2 class="wind-section-title">@spdSourceLabel speed history</h2>
@@ -419,6 +424,7 @@
             </div>
         </div>
     }
+    </div>
 </div>
 
 @code {
