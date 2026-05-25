@@ -188,4 +188,28 @@
           Condition="'@(_JsToMinify)' != ''" />
   </Target>
 
+  <!-- Stamp the published service-worker.js CACHE_NAME with the git
+       hash so a new build invalidates the browser's installed SW
+       cache. Source carries a hand-bumped placeholder
+       (const CACHE_NAME = 'ona-plotter-vNNN'); this target rewrites
+       it in the publish output only, leaving the source clean. Runs
+       after MinifyPublishedJs so the stamped name lives in the
+       version the helm actually downloads.
+
+       OnaGitHash is computed by the StampBuildInfo target earlier
+       in the build; on git-less environments it falls back to
+       "unknown", in which case every cacheless deploy lands on the
+       same key. That's a deliberate trade-off vs failing the build
+       in environments that have no .git directory (tarball builds,
+       certain CI containers). -->
+  <Target Name="StampPublishedServiceWorker"
+          AfterTargets="MinifyPublishedJs"
+          Condition="'$(Configuration)' == 'Release'">
+    <PropertyGroup>
+      <_SwPath>$(PublishDir)wwwroot\service-worker.js</_SwPath>
+    </PropertyGroup>
+    <Exec Command="node &quot;$(MSBuildThisFileDirectory)..\scripts\stamp-cache-name.mjs&quot; &quot;$(_SwPath)&quot; &quot;$(OnaGitHash)&quot;"
+          Condition="Exists('$(_SwPath)')" />
+  </Target>
+
 </Project>
