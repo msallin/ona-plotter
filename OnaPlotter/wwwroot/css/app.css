@@ -9030,10 +9030,16 @@ html[data-slow-client="1"] #mapDiv {
     .wind-grid {
         grid-template-columns: minmax(380px, 480px) minmax(0, 1fr);
         grid-template-areas:
-            "rose  selector"
-            "rose  hero"
-            "dir   dir"
-            "spd   spd";
+            "selector selector"
+            "rose     hero"
+            "dir      spd";
+        /* Histories share a row so they have equal heights via the
+           grid (both auto-size to their content, but sharing a row
+           means the taller one pulls the shorter one to match). The
+           speed card carries an invisible placeholder where the
+           direction card has its shift headline so the two charts'
+           y-offsets line up. */
+        grid-auto-rows: auto;
     }
     .card-rose     { grid-area: rose; }
     .card-selector { grid-area: selector; }
@@ -9045,10 +9051,61 @@ html[data-slow-client="1"] #mapDiv {
     .wind-grid {
         grid-template-columns: minmax(420px, 520px) minmax(0, 1fr) minmax(0, 1fr);
         grid-template-areas:
-            "rose  selector selector"
-            "rose  hero     hero"
-            "rose  dir      spd";
+            "selector selector selector"
+            "rose     hero     hero"
+            "rose     dir      spd";
     }
+}
+
+/* Rose card centers its canvas vertically inside the card-body so
+   the 3-col tier (where the rose spans two grid rows alongside
+   hero + history) doesn't leave a void below the rose. At narrower
+   tiers the canvas naturally fills the card-body so this is a
+   no-op there. */
+.card-rose .card-body {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+/* Inline "?" help button + panel. Lives in the selector card top-
+   row, owns the data-coverage explanation for the whole page so
+   per-card "N samples" chrome is unnecessary. ms-auto on the
+   button shoves it to the right edge so the dropdown + Apparent/
+   True controls stay grouped at the left. */
+.wind-help-btn {
+    width: 2rem;
+    height: 2rem;
+    font-weight: 600;
+    line-height: 1;
+    padding: 0;
+}
+.wind-help-panel {
+    margin-top: 0.75rem;
+    padding: 0.75rem 1rem;
+    border-left: 3px solid var(--sk-accent);
+    background: rgba(255, 255, 255, 0.025);
+    font-size: 0.85rem;
+    color: var(--sk-text-muted);
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+.wind-help-panel strong {
+    color: var(--sk-text);
+    font-weight: 600;
+}
+
+/* History card chart: keep the speed chart's empty placeholder row
+   the same height as the direction card's shift headline so both
+   charts start at the same y-offset within their cards. */
+.wind-shift-placeholder {
+    /* Match .wind-shift-headline's effective height: ~one line of
+       1rem-ish text + the 0.5rem gap from .wind-history-section.
+       Sized via the same min-height so a theme tweak to the
+       headline propagates here too. */
+    min-height: 1.6rem;
 }
 
 /* Polar-curve key chip. Sits just below the rose canvas, identifies

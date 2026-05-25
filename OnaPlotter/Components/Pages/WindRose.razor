@@ -50,8 +50,10 @@
     <div class="wind-grid">
     @* Selector card. Dropdown for the time window (matches Stats'
        preset picker), button-group for the wind reference (matches
-       History's Map/Table chooser). Both controls drive every card
-       on the page. *@
+       History's Map/Table chooser), and a "?" help toggle that owns
+       the data-resolution + sample-coverage explanation for the
+       whole page (so individual history cards don't have to repeat
+       "N samples" - that count is true for every chart). *@
     <div class="card card-selector">
         <div class="card-body">
             <div class="d-flex align-items-center gap-2 flex-wrap">
@@ -74,7 +76,24 @@
                             @onclick='() => SetHeroMode("true")'
                             title="Show true wind (TWD + TWS) - tactical / anchoring reading">True</button>
                 </div>
+                <button type="button"
+                        class="btn btn-sm @(helpMode ? "btn-primary" : "btn-outline-secondary") wind-help-btn ms-auto"
+                        aria-pressed="@helpMode"
+                        title="What's in the rose / chips / charts?"
+                        @onclick="ToggleHelpMode">?</button>
             </div>
+            @if (helpMode)
+            {
+                @* Hover-style tooltip won't fire on touch; this inline
+                   panel owns the same explanation so a tablet helm can
+                   read it. Single source of truth for the data shape
+                   that every card on the page renders. *@
+                <div class="wind-help-panel" role="note">
+                    <div><strong>Resolution.</strong> Live samples and the server-history seed share a <strong>5 s grain</strong>. A "1 h" window therefore covers ~720 samples per chart.</div>
+                    <div><strong>Charts.</strong> Polyline + variability chips run over the trailing window picked above. The rose dot scatter covers the same window.</div>
+                    <div><strong>Apparent vs True.</strong> Apparent reads AWA (bow-relative) + AWS (boat-relative speed) for sail trim. True reads TWD (compass-from-north) + TWS for tactical / anchoring decisions. The polar rose always plots AWA dots.</div>
+                </div>
+            }
         </div>
     </div>
 
@@ -104,26 +123,36 @@
             }
             @if (WindStats is (double gust, double lull, double mean, double sigma))
             {
+                @* Chip labels carry the direction (Gust above mean,
+                   Lull below mean); the numeric value is the *magnitude*
+                   of deviation. Showing "+4.9" / "-6.6" with a kn
+                   suffix reads as "wind is negative 6.6 kn" - confusing.
+                   Drop the signs; the labels do the work.
+                   Warn thresholds are relative to mean so a 5 kn gust
+                   in 12 kn wind doesn't trigger the same chrome as a
+                   5 kn gust in 6 kn wind. *@
+                double gustWarnAt = Math.Max(2, mean * 0.4);
+                double varWarnAt  = Math.Max(2.5, mean * 0.3);
                 <div class="wind-badges">
-                    <span class="instrument-badge @(gust > 3 ? "instrument-badge-warn" : "")"
-                          title="Peak @speedSourceLabel minus mean over the last @windowLabel">
+                    <span class="instrument-badge @(gust > gustWarnAt ? "instrument-badge-warn" : "")"
+                          title="Peak @speedSourceLabel above mean over the last @windowLabel">
                         <span class="instrument-badge-label">Gust</span>
-                        +@gust.ToString("F1") kn
+                        @gust.ToString("F1") kn
                     </span>
                     <span class="instrument-badge"
-                          title="Lowest @speedSourceLabel minus mean over the last @windowLabel">
+                          title="Lowest @speedSourceLabel below mean over the last @windowLabel">
                         <span class="instrument-badge-label">Lull</span>
-                        -@lull.ToString("F1") kn
+                        @lull.ToString("F1") kn
                     </span>
                     <span class="instrument-badge"
                           title="Mean @speedSourceLabel over the last @windowLabel">
                         <span class="instrument-badge-label">Mean</span>
                         @mean.ToString("F1") kn
                     </span>
-                    <span class="instrument-badge @(sigma > 4 ? "instrument-badge-warn" : "")"
+                    <span class="instrument-badge @(sigma > varWarnAt ? "instrument-badge-warn" : "")"
                           title="Standard deviation of @speedSourceLabel over the last @windowLabel - higher = gustier / more variable">
                         <span class="instrument-badge-label">Var</span>
-                        ±@sigma.ToString("F1") kn
+                        @sigma.ToString("F1") kn
                     </span>
                 </div>
             }
@@ -358,31 +387,39 @@
 
     @if (totalHistoryCount > 1)
     {
-        @* Direction history card. Title names the source; the TWD
-           shift headline always reports true-wind slope (the tactical
-           signal) regardless of which source the chart is showing -
-           the "TWD over last 5 min" wording in the label makes that
-           explicit so a helm in apparent mode doesn't conflate. *@
+        @* Direction history card. Card titles mirror the hero's
+           eyebrow style ("APPARENT WIND") so glance-reading the page
+           reads as one typographic system. Below the title, the TWD
+           shift headline reports true-wind slope (the tactical
+           signal) regardless of which source the chart shows. *@
         <div class="card card-dir">
             <div class="card-body wind-history-section" aria-label="Wind direction history">
-                <header class="wind-section-header">
-                    <h2 class="wind-section-title">@dirSourceLabel direction history</h2>
-                    <span class="wind-section-meta wind-section-count">@visibleDir.Count samples</span>
-                </header>
+                <div class="wind-hero-eyebrow">@dirSourceLabel direction</div>
 
                 <div class="wind-shift-headline" aria-live="polite">
                     @if (ShiftRate is double rate)
                     {
-                        string trend = Math.Abs(rate) < 0.5 ? "Steady"
+                        bool steady = Math.Abs(rate) < 0.5;
+                        string trend = steady ? "Steady"
                                      : rate > 0 ? "Veering" : "Backing";
-                        string glyph = Math.Abs(rate) < 0.5 ? "—"
-                                     : rate > 0 ? "▲" : "▼";
-                        string sign = rate >= 0 ? "+" : "";
+                        string glyph = steady ? ""
+                                     : rate > 0 ? "▲ " : "▼ ";
                         string cls = Math.Abs(rate) >= 3 ? "wind-shift-strong"
                                    : Math.Abs(rate) >= 1 ? "wind-shift-mid"
                                    : "wind-shift-weak";
-                        <span class="wind-shift-value @cls">@glyph @sign@rate.ToString("F1")&deg;/min</span>
-                        <span class="wind-shift-label">@trend &middot; TWD over last @ShiftRateWindowMin min</span>
+                        @* Drop the numeric value when steady - "-0.0°/min"
+                           with the muted dash glyph read as broken. *@
+                        if (steady)
+                        {
+                            <span class="wind-shift-value @cls">Steady</span>
+                            <span class="wind-shift-label">TWD over last @ShiftRateWindowMin min</span>
+                        }
+                        else
+                        {
+                            string sign = rate > 0 ? "+" : "";
+                            <span class="wind-shift-value @cls">@glyph@sign@rate.ToString("F1")&deg;/min</span>
+                            <span class="wind-shift-label">@trend &middot; TWD over last @ShiftRateWindowMin min</span>
+                        }
                     }
                     else
                     {
@@ -403,13 +440,15 @@
             </div>
         </div>
 
-        @* Speed history card. *@
+        @* Speed history card. Empty spacer row sits where the
+           direction card carries its shift headline, so the two
+           charts line up vertically at the same y-offset within
+           their cards. Without it the speed chart starts higher
+           than the direction chart and the two read as misaligned. *@
         <div class="card card-spd">
             <div class="card-body wind-history-section" aria-label="Wind speed history">
-                <header class="wind-section-header">
-                    <h2 class="wind-section-title">@spdSourceLabel speed history</h2>
-                    <span class="wind-section-meta wind-section-count">@visibleSpd.Count samples</span>
-                </header>
+                <div class="wind-hero-eyebrow">@spdSourceLabel speed</div>
+                <div class="wind-shift-headline wind-shift-placeholder" aria-hidden="true"></div>
 
                 @if (hasSpdHistory)
                 {
@@ -505,6 +544,15 @@
         heroMode = mode;
         await Settings.SetWindHeroModeAsync(mode);
     }
+
+    /// <summary>Toggled by the topbar "?" button. When true, a small
+    /// inline panel below the selectors explains the data shape
+    /// (sample resolution, what each card shows, apparent vs true).
+    /// Mirrors SailSteer's helpMode pattern; covers touch where the
+    /// HTML title attribute's hover tooltip doesn't fire.</summary>
+    private bool helpMode;
+
+    private void ToggleHelpMode() => helpMode = !helpMode;
 
     // Windplot: TWD + TWS over time. Samples come from the shared
     // NavigationAverages buffers so the chart, the AwsStats chips,
@@ -993,18 +1041,15 @@
     }
 
     /// <summary>
-    /// Computes y-axis bounds + mean for the history chart. For
-    /// "direction" view returns the unfolded degree range padded by 5°
-    /// either side; for "speed" view returns the speed range padded by
-    /// 1 kn either side. Floor on range width keeps a dead-flat trace
-    /// from rendering as a hairline pinned to one grid stripe.
-    /// <para>Direction view also clamps the bounds to [0, 360] so the
-    /// auto-padding can't push tick labels into negatives when the
-    /// wind hugs the 0° / 360° (north) line - a sailor reading "-5°"
-    /// on a compass scale is wrong; that value should display as 355°.
-    /// We preserve the chosen range width by shifting the OPPOSITE
-    /// bound when clamping, so a flat trace stays mid-axis instead of
-    /// being pinned to the bottom.</para>
+    /// Computes y-axis bounds + mean for the history chart, snapping
+    /// the bounds to a "nice" step so the four interior tick labels
+    /// land on round numbers (10°, 30°, etc.) instead of awkward
+    /// 32° increments that come from naïve range/4 division.
+    /// <para>Direction view clamps the bounds to [0, 360] so labels
+    /// stay on a real compass scale; we preserve the chosen range
+    /// width up to the 360 ceiling by shifting the OPPOSITE bound
+    /// when clamping. Speed view uses smaller min-range + pad since
+    /// 1 kn variations matter visually.</para>
     /// </summary>
     private static (double Min, double Max, double Mean) ComputeYAxis(
         IReadOnlyList<OnaPlotter.Utilities.TimeSeriesSample> samples, string view)
@@ -1024,13 +1069,56 @@
         double maxBound = vMid + range / 2 + pad;
         if (view == "direction")
         {
-            // Shift-clamp so labels stay in [0, 360]. Width is preserved
-            // up to the 360-wide ceiling; only data that genuinely
-            // spans more than the chart height (rare) loses range.
             if (minBound < 0) { maxBound = Math.Min(360, maxBound - minBound); minBound = 0; }
             if (maxBound > 360) { minBound = Math.Max(0, minBound - (maxBound - 360)); maxBound = 360; }
         }
+        // Snap to a nice step so the 4 interior tick labels read
+        // 180/200/220/240/260 (step 20) instead of 180/212/244/276/308
+        // (step 32). The clamp for direction may have produced a
+        // 360-wide range here; the snap still yields a nice step
+        // (e.g. 90) at that extreme.
+        (minBound, maxBound) = SnapToNiceAxis(minBound, maxBound, view);
         return (minBound, maxBound, sum / samples.Count);
+    }
+
+    /// <summary>
+    /// Picks an axis (min, max) where the implied tick step (max-min)/4
+    /// is a "nice" round number. Selects the smallest step from the
+    /// preferred set that fits the raw range; then floors min and
+    /// ceils max to multiples of that step.
+    /// <para>Direction view: prefers 5/10/15/20/30/45/60/90 (compass-
+    /// friendly). Speed view: prefers 1/2/5/10/20 (knot-friendly).</para>
+    /// Raw input:  (212, 308) -> step 24 -> rounded step 30 -> (210, 330).
+    /// Raw input:  (180, 308) -> step 32 -> rounded step 50 -> (150, 350).
+    /// </summary>
+    private static (double Min, double Max) SnapToNiceAxis(double rawMin, double rawMax, string view)
+    {
+        ReadOnlySpan<double> stepsDir = stackalloc double[] { 5, 10, 15, 20, 30, 45, 60, 90 };
+        ReadOnlySpan<double> stepsSpd = stackalloc double[] { 1, 2, 5, 10, 20 };
+        var steps = view == "speed" ? stepsSpd : stepsDir;
+        double rawSpan = rawMax - rawMin;
+        if (rawSpan <= 0) return (rawMin, rawMax);
+        double rawStep = rawSpan / 4.0;
+        double chosen = steps[^1];   // fallback: largest
+        foreach (var s in steps)
+        {
+            if (s >= rawStep) { chosen = s; break; }
+        }
+        double snappedMin = Math.Floor(rawMin / chosen) * chosen;
+        double snappedMax = snappedMin + chosen * 4;
+        if (view == "direction")
+        {
+            // Re-clamp to [0, 360] after the snap; if the snap pushed
+            // past either edge, slide the whole range inside.
+            if (snappedMin < 0) { snappedMax -= snappedMin; snappedMin = 0; }
+            if (snappedMax > 360)
+            {
+                double over = snappedMax - 360;
+                snappedMin = Math.Max(0, snappedMin - over);
+                snappedMax = 360;
+            }
+        }
+        return (snappedMin, snappedMax);
     }
 
     /// <summary>
@@ -1045,6 +1133,11 @@
     ///   render rate.</item>
     /// </list>
     /// Inputs already projected (kn or deg) by <see cref="GetHistorySamples"/>.
+    /// <para>Speed view fills the area below the polyline so the
+    /// helm distinguishes the two charts from peripheral vision -
+    /// without that the direction and speed charts look identical
+    /// (same blue line on same dark background) and require reading
+    /// the axis unit label to tell apart.</para>
     /// </summary>
     private MarkupString BuildHistoryChartSvg(
         IReadOnlyList<OnaPlotter.Utilities.TimeSeriesSample> samples,
@@ -1057,6 +1150,7 @@
         double yRange = yMax - yMin;
         string axisUnit = view == "speed" ? "kn" : "°";
         string axisFmt = view == "speed" ? "F1" : "F0";
+        bool isSpeed = view == "speed";
         var ci = System.Globalization.CultureInfo.InvariantCulture;
 
         var sb = new System.Text.StringBuilder(8192);
@@ -1072,11 +1166,11 @@
               .Append("\" x2=\"").Append(WpWidth - 10).Append("\" y2=\"").Append(y.ToString("F1", ci))
               .Append("\" style=\"stroke: var(--sk-border);\" stroke-width=\"0.5\" />");
             AppendSvgText(sb, WpPad - 4, y, yVal.ToString(axisFmt, ci),
-                "var(--sk-text-muted)", 10, anchor: "end");
+                "var(--sk-text-muted)", AxisFontSize, anchor: "end");
         }
 
         // Y-axis unit label (top-left corner).
-        AppendSvgText(sb, WpPad - 4, WpPad - 14, axisUnit, "var(--sk-text-muted)", 10, anchor: "end");
+        AppendSvgText(sb, WpPad - 4, WpPad - 14, axisUnit, "var(--sk-text-muted)", AxisFontSize, anchor: "end");
 
         // Mean line.
         double meanY = WpPad + WpPlotH * (1 - (yMean - yMin) / yRange);
@@ -1084,8 +1178,34 @@
           .Append("\" x2=\"").Append(WpWidth - 10).Append("\" y2=\"").Append(meanY.ToString("F1", ci))
           .Append("\" style=\"stroke: var(--sev-ok);\" stroke-width=\"1.5\" stroke-dasharray=\"6,4\" opacity=\"0.7\" />");
 
-        // Data polyline (already stride-subsampled in HistoryPolylinePoints).
+        // Data line: speed view paints a filled area under the curve
+        // for peripheral-vision differentiation; direction view stays
+        // as a polyline because a filled area under a wraparound
+        // compass scale would mean "azimuth area" which has no
+        // physical meaning.
         string polyline = HistoryPolylinePoints(samples, yMin, yMax, oldest, timeSpanSecs);
+        if (isSpeed)
+        {
+            // polygon points: line vertices + bottom-right corner +
+            // bottom-left corner, closing back to the first vertex.
+            double bottomY = WpPad + WpPlotH;
+            // The polyline string starts with the leftmost (oldest)
+            // sample's x value. Reconstruct the leftmost x from the
+            // first comma-separated token.
+            int firstComma = polyline.IndexOf(',');
+            double firstX = firstComma > 0
+                ? double.Parse(polyline.AsSpan(0, firstComma), ci)
+                : WpPad;
+            // Reconstruct the rightmost (newest) sample's x. Easier:
+            // it's pinned to (WpPad + WpPlotW * (lastT/timeSpanSecs)).
+            double lastX = WpPad + WpPlotW;   // last sample is at t=timeSpanSecs
+            sb.Append("<polygon style=\"fill: var(--sk-accent); opacity: 0.15;\" points=\"")
+              .Append(polyline).Append(' ')
+              .Append(lastX.ToString("F1", ci)).Append(',').Append(bottomY.ToString("F1", ci))
+              .Append(' ')
+              .Append(firstX.ToString("F1", ci)).Append(',').Append(bottomY.ToString("F1", ci))
+              .Append("\" />");
+        }
         sb.Append("<polyline fill=\"none\" style=\"stroke: var(--sk-accent);\" stroke-width=\"1.5\" opacity=\"0.9\" points=\"")
           .Append(polyline).Append("\" />");
 
@@ -1094,17 +1214,24 @@
         {
             double x = WpPad + (WpPlotW * i / 3.0);
             double secsAgo = timeSpanSecs * (1 - i / 3.0);
-            AppendSvgText(sb, x, WpHeight - 4, FormatAgo(secsAgo), "var(--sk-text-muted)", 10);
+            AppendSvgText(sb, x, WpHeight - 4, FormatAgo(secsAgo), "var(--sk-text-muted)", AxisFontSize);
         }
 
         // Inline "mean" legend (top-right).
         sb.Append("<line x1=\"").Append(WpWidth - 80).Append("\" y1=\"14\" x2=\"").Append(WpWidth - 64)
           .Append("\" y2=\"14\" style=\"stroke: var(--sev-ok);\" stroke-width=\"1.5\" stroke-dasharray=\"4,3\" opacity=\"0.7\" />");
-        AppendSvgText(sb, WpWidth - 60, 14, "mean", "var(--sk-text-muted)", 10, anchor: "start");
+        AppendSvgText(sb, WpWidth - 60, 14, "mean", "var(--sk-text-muted)", AxisFontSize, anchor: "start");
 
         sb.Append("</svg>");
         return new MarkupString(sb.ToString());
     }
+
+    /// <summary>Chart axis-label font size. 10 px was too small to
+    /// read on a helm tablet in sunlight; 12 px adds enough weight
+    /// to glance-read tick values without forcing a chrome change.
+    /// Centralised so all three label sites (Y ticks, Y unit, time
+    /// axis, mean legend) stay in sync.</summary>
+    private const int AxisFontSize = 12;
 
     /// <summary>String-builder equivalent of <see cref="SvgText"/> for
     /// the chart helper. Same attribute shape so a stylesheet rule
