@@ -8,16 +8,19 @@
 // is why there's no `import L from 'leaflet'` here.
 //
 // Design:
-//   * One canvas per radar, sized maxSpokeLen square, attached
+//   * One canvas per radar, sized maxSpokeLen/2 square, attached
 //     directly to Leaflet's overlay pane via a custom L.Layer (see
 //     CanvasGeoLayer at the bottom of this file). The canvas IS the
 //     displayed pixels; no toDataURL / blob / imageOverlay dance,
 //     which would cost 10-50 ms per reposition on the main thread.
-//     Each pixel covers two range cells (pixelsPerCell = 0.5): the
+//     Each pixel covers four range cells (pixelsPerCell = 0.25): the
 //     overlay is CSS-scaled down to roughly screen pixels anyway,
 //     so finer polar resolution is invisible and the smaller buffer
-//     (4 MB at typical maxSpokeLen=1024 vs 16 MB for 1:1) lets
-//     multi-radar setups stay inside compositor memory.
+//     (1 MB at typical maxSpokeLen=1024 vs 16 MB for 1:1) lets
+//     multi-radar setups stay inside compositor memory and quarters
+//     the per-frame putImageData CPU->GPU upload traffic - meaningful
+//     on Pi-class helms where the same memory bus carries the
+//     compositor's texture sampling for tile redraw.
 //   * Spoke painting uses a precomputed polar -> pixel LUT (once per
 //     radar) indexed by (spokeIndex, rangeCell). Avoids per-pixel
 //     trig on every spoke.
@@ -335,12 +338,23 @@ class RadarOverlay {
         this.totalAlignmentSpokes = 0;
         this._updateTotalAlignment();
 
-        // Canvas side = maxSpokeLen, two range cells per pixel. For
-        // a typical maxSpokeLen=1024 that's a 1024x1024 buffer = 4 MB
-        // of ImageData. A 1:1 cell-to-pixel layout would cost 4x the
+        // Canvas side = maxSpokeLen / 2, four range cells per pixel.
+        // For a typical maxSpokeLen=1024 that's a 512x512 buffer = 1 MB
+        // of ImageData. A 1:1 cell-to-pixel layout would cost 16x the
         // memory (16 MB) and buys no visible detail: the overlay is
-        // CSS-scaled down to ~600 px on screen at typical helm zoom.
-        this.canvasSize = this.maxSpokeLen;
+        // CSS-scaled down to ~600 px on screen at typical helm zoom,
+        // so 512 px of source already runs at or above 1:1 display
+        // pixels in most viewport configurations. The 4-cells-per-pixel
+        // packing also quarters the per-frame putImageData CPU->GPU
+        // upload size vs. the previous 2-cells layout, which was the
+        // dominant compositor cost on Pi-class helms; the spoke
+        // painter overwrites cells that hash to the same pixel
+        // (last-write-wins is correct here - adjacent range cells
+        // along a single spoke are physically adjacent samples), so
+        // the inner loop does the same work either way. Math.max
+        // guards against an unusual provider reporting maxSpokeLen
+        // below 2 (would zero out the canvas dim).
+        this.canvasSize = Math.max(1, this.maxSpokeLen >> 1);
         this.canvas = document.createElement('canvas');
         this.canvas.width = this.canvasSize;
         this.canvas.height = this.canvasSize;
@@ -415,6 +429,23 @@ class RadarOverlay {
             minX: Infinity, minY: Infinity,
             maxX: -Infinity, maxY: -Infinity,
         };
+
+        // Drop spoke frames while the helm is mid-zoom. The WS keeps
+        // pulling frames off the socket (so the kernel buffer doesn't
+        // back up) but _onFrame short-circuits, freeing the JS main
+        // thread for Leaflet's zoom animation. On a Pi 5 the per-frame
+        // protobuf decode + paint can eat 5-10 ms of one core; with
+        // frames arriving at ~50 Hz that's enough to starve the rAF
+        // driving the zoom transform and visibly stutter the gesture.
+        // A missed sweep is invisible to the helm - the next post-zoom
+        // frame catches up, and any stale targets refresh as the
+        // antenna sweeps over them again (one revolution = ~3 s at
+        // typical 12 RPM).
+        this._zoomActive = false;
+        this._onZoomStart = () => { this._zoomActive = true; };
+        this._onZoomEnd = () => { this._zoomActive = false; };
+        map.on('zoomstart', this._onZoomStart);
+        map.on('zoomend', this._onZoomEnd);
     }
 
     _computeLuts() {
@@ -427,7 +458,8 @@ class RadarOverlay {
         const cy = (this.canvasSize - 1) / 2;
         // canvas diameter spans 2*maxSpokeLen radial cells, so each
         // cell maps to canvasSize / (2*maxSpokeLen) pixels. For the
-        // 1:2 layout we chose (canvasSize = maxSpokeLen) that's 0.5.
+        // 1:4 layout we chose (canvasSize = maxSpokeLen / 2) that's
+        // 0.25 - four range cells per pixel.
         const pixelsPerCell = this.canvasSize / (2 * this.maxSpokeLen);
         // Angle 0 = directly North (up on canvas). Spoke `angle` is
         // measured clockwise from bow; bearing is clockwise from
@@ -551,6 +583,11 @@ class RadarOverlay {
 
     _onFrame(buffer) {
         if (this.destroyed) return;
+        // Mid-zoom: pull the frame off the socket via the WS dispatch
+        // (which already happened to deliver `buffer`) but skip every
+        // downstream cost. See _zoomActive comment in the constructor
+        // for why this matters on slow ARM helms.
+        if (this._zoomActive) return;
         let msg;
         try {
             msg = decodeRadarMessage(new Uint8Array(buffer));
@@ -886,6 +923,12 @@ class RadarOverlay {
             this._rangeRings = null;
             this._rangeRingCircles = null;
             this._rangeRingLabels = null;
+        }
+        if (this.map && this._onZoomStart) {
+            this.map.off('zoomstart', this._onZoomStart);
+            this.map.off('zoomend', this._onZoomEnd);
+            this._onZoomStart = null;
+            this._onZoomEnd = null;
         }
         // Release the LUT memory aggressively - these can be
         // 4-8 MB per radar.

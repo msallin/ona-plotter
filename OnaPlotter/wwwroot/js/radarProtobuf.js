@@ -97,6 +97,23 @@ export function decodeRadarMessage(bytes) {
     // negligible vs. the saved per-spoke literal alloc.
     _spokeResultArr.length = count;
     for (let i = 0; i < count; i++) _spokeResultArr[i] = _spokePool[i];
+
+    // Release WS-buffer pins held by pool slots above the current
+    // frame's count. The pool is high-water-mark sized across the
+    // lifetime of the module; a single 500-spoke burst grows it to
+    // 500 forever. Slots above the current count retain their
+    // `data` Uint8Array from the LAST frame that touched them - that
+    // view keeps the underlying WS ArrayBuffer alive in V8's heap,
+    // because the buffer is freed only when the last view onto it
+    // drops. Resetting `data` to EMPTY_BYTES here releases that pin
+    // so the GC can reclaim the old WS frame. Guarded on the slot
+    // already being non-empty: avoids redundant writes in the steady
+    // state where slot counts vary only at the edges.
+    for (let i = count; i < _spokePool.length; i++) {
+        if (_spokePool[i].data !== EMPTY_BYTES) {
+            _spokePool[i].data = EMPTY_BYTES;
+        }
+    }
     return { spokes: _spokeResultArr };
 }
 

@@ -268,3 +268,52 @@ test('Spoke pool reuses the same object instance across calls', () => {
     const secondRef = mb.spokes[0];
     assert.equal(firstRef === secondRef, true);
 });
+
+test('pool slots above current count release their WS-buffer pins', () => {
+    // The pool is module-level + high-water-mark sized. Without an
+    // explicit release, a 4-spoke frame followed by a 1-spoke frame
+    // leaves slots [1..3] still pointing at the 4-spoke frame's
+    // data Uint8Arrays - and each view pins the entire WS ArrayBuffer
+    // alive until the next time that slot is refilled. Over a
+    // long-running session with variable spoke counts that's a
+    // steady-state leak the GC can't drain. Pin the fix: after a
+    // lower-count decode the higher slots' `data` MUST be the empty
+    // sentinel.
+    //
+    // We can't reach the pool directly (it's module-private), but
+    // the test "reuses the same object instance" already showed that
+    // pool slot N is the same object reference as spokes[N] in the
+    // most recent decode of size >= N+1. So: capture refs from a
+    // 4-spoke decode, run a 1-spoke decode, and assert the captured
+    // refs for indices 1..3 now hold EMPTY_BYTES.
+    const big = encodeMessage([
+        { angle: 0, range: 100, data: [10, 11, 12] },
+        { angle: 1, range: 100, data: [20, 21, 22] },
+        { angle: 2, range: 100, data: [30, 31, 32] },
+        { angle: 3, range: 100, data: [40, 41, 42] },
+    ]);
+    const mBig = decodeRadarMessage(big);
+    const tailRefs = [mBig.spokes[1], mBig.spokes[2], mBig.spokes[3]];
+    // Sanity: before the second decode the tail still holds the
+    // 4-spoke frame's data. (If this is ever false the pool
+    // wasn't actually populated and the rest of the test proves
+    // nothing.)
+    for (const s of tailRefs) assert.ok(s.data.length > 0);
+
+    const small = encodeMessage([{ angle: 99, range: 100, data: [99] }]);
+    decodeRadarMessage(small);
+
+    // After the lower-count decode, pool slots 1..3 must have
+    // released their data references back to the empty sentinel
+    // (length 0). Same length AND same identity are both checked -
+    // identity is the stronger guarantee that the release used the
+    // shared EMPTY_BYTES rather than allocating a fresh empty array
+    // per slot.
+    for (const s of tailRefs) {
+        assert.equal(s.data.length, 0, 'data not released to empty');
+    }
+    // All three released slots should share one EMPTY_BYTES instance,
+    // which they should also share with each other.
+    assert.strictEqual(tailRefs[0].data, tailRefs[1].data);
+    assert.strictEqual(tailRefs[1].data, tailRefs[2].data);
+});
