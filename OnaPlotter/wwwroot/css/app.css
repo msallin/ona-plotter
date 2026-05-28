@@ -8037,6 +8037,38 @@ html[data-slow-client="1"] #mapDiv {
     font-weight: 600;
 }
 
+/* Chain / rode length entry. inline-flex so the "Chain" label, the
+   number field and the "m" unit sit on one line; flex:0 0 auto matches
+   the surrounding bar's no-shrink convention so it doesn't get
+   squeezed when the bar wraps. */
+.anchor-edit-chain {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex: 0 0 auto;
+    font-size: 0.78rem;
+    color: var(--sk-text-muted);
+    user-select: none;
+}
+.anchor-edit-chain-label {
+    font-weight: 600;
+}
+.anchor-edit-chain-input {
+    width: 3.2rem;
+    padding: 4px 6px;
+    font-size: 0.78rem;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    color: var(--sk-text);
+    background: rgba(148, 163, 184, 0.12);
+    border: 1px solid rgba(148, 163, 184, 0.4);
+    border-radius: 6px;
+}
+.anchor-edit-chain-input:focus-visible {
+    outline: 2px solid var(--sk-accent);
+    outline-offset: 1px;
+}
+
 /* Theme-aware overrides for the panel chrome. The shared
    `.route-edit-bar` rule hard-codes a dark `rgba(15,17,22,0.92)`
    background, which leaves the panel as a dark blob in light +

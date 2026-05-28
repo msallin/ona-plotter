@@ -94,6 +94,15 @@ public interface IAlarmThresholds
     /// anchor from the Map page.</summary>
     double ManualAnchorRadiusMeters { get; }
 
+    /// <summary>Helm-entered deployed anchor rode / chain length
+    /// (metres). Feeds the Auto radius: the chain's horizontal
+    /// projection at the current depth floors the swing component, so
+    /// the alarm accounts for how far the boat CAN swing on the rode
+    /// that's out, not just how far it has swung so far. 0 (default)
+    /// means "not entered" - the chain term drops out and Auto falls
+    /// back to observed swing + tide + margin.</summary>
+    double AnchorChainLengthMeters { get; }
+
     /// <summary>When true (default), OnaPlotter mutes its client-side
     /// APPROACH alarm and instead surfaces the SK course-provider
     /// plugin's <c>notifications.navigation.arrivalCircleEntered</c>
@@ -140,6 +149,7 @@ public interface IAlarmThresholds
     Task SetAnchorTideSafetyMarginAsync(double value);
     Task SetAnchorAutoRadiusSafetyMarginAsync(double value);
     Task SetManualAnchorRadiusMetersAsync(double value);
+    Task SetAnchorChainLengthMetersAsync(double value);
     Task SetServerSideApproachAlarmsAsync(bool value);
     Task SetDeadmanTimeoutMinutesAsync(double value);
     Task SetDeadmanNightMinutesAsync(double value);

@@ -429,6 +429,27 @@ public class AppSettingsServiceTests
     }
 
     [Test]
+    public async Task AnchorChainLength_RoundTrip_AndClampsNegativeToZero()
+    {
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        // Default is 0 ("not entered").
+        await Assert.That(svc.AnchorChainLengthMeters).IsEqualTo(0.0);
+
+        await svc.SetAnchorChainLengthMetersAsync(45);
+        var svc2 = new AppSettingsService(kv);
+        await svc2.InitializeAsync();
+        await Assert.That(svc2.AnchorChainLengthMeters).IsEqualTo(45.0);
+
+        // Negative input clamps to 0 (a length can't be negative, and
+        // it must not feed a NaN into the chain-projection sqrt).
+        await svc2.SetAnchorChainLengthMetersAsync(-10);
+        await Assert.That(svc2.AnchorChainLengthMeters).IsEqualTo(0.0);
+    }
+
+    [Test]
     public async Task EnabledRoutes_Overwrite()
     {
         var kv = new InMemoryKv();

@@ -58,6 +58,7 @@ internal sealed class FakeSettings : IAppSettings
     public double AnchorTideSafetyMargin { get; set; } = 1.0;
     public double AnchorAutoRadiusSafetyMargin { get; set; } = 5.0;
     public double ManualAnchorRadiusMeters { get; set; } = 30.0;
+    public double AnchorChainLengthMeters { get; set; } = 0.0;
     public double DeadmanTimeoutMinutes { get; set; } = 0.0;
     public double DeadmanNightMinutes { get; set; } = 15.0;
     public int SnoozeDurationMinutes { get; set; } = 10;
@@ -189,6 +190,7 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetAnchorTideSafetyMarginAsync(double v) => Task.CompletedTask;
     public Task SetAnchorAutoRadiusSafetyMarginAsync(double v) { AnchorAutoRadiusSafetyMargin = v; return Task.CompletedTask; }
     public Task SetManualAnchorRadiusMetersAsync(double v) => Task.CompletedTask;
+    public Task SetAnchorChainLengthMetersAsync(double v) { AnchorChainLengthMeters = Math.Max(0, v); return Task.CompletedTask; }
     public Task SetDeadmanTimeoutMinutesAsync(double v) { DeadmanTimeoutMinutes = v; return Task.CompletedTask; }
     public Task SetDeadmanNightMinutesAsync(double v) { DeadmanNightMinutes = v; return Task.CompletedTask; }
     public Task SetSnoozeDurationMinutesAsync(int v) { SnoozeDurationMinutes = v; return Task.CompletedTask; }

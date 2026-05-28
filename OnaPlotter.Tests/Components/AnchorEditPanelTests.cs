@@ -62,7 +62,9 @@ public class AnchorEditPanelTests
         bool initialPickIsAuto = false,
         bool canMove = false,
         bool moveActive = false,
-        Action<bool>? onToggleMove = null)
+        Action<bool>? onToggleMove = null,
+        int chainLengthMeters = 0,
+        Action<int>? onChainLengthChanged = null)
     {
         return ctx.RenderComponent<AnchorEditPanel>(p => p
             .Add(x => x.Mode, AnchorEditPanel.AnchorPanelMode.SetRadius)
@@ -74,8 +76,11 @@ public class AnchorEditPanelTests
             .Add(x => x.AutoBreakdown, autoBreakdown)
             .Add(x => x.CanMove, canMove)
             .Add(x => x.MoveActive, moveActive)
+            .Add(x => x.ChainLengthMeters, chainLengthMeters)
             .Add(x => x.OnToggleMove, Microsoft.AspNetCore.Components.EventCallback.Factory
                 .Create<bool>(p, v => onToggleMove?.Invoke(v)))
+            .Add(x => x.OnChainLengthChanged, Microsoft.AspNetCore.Components.EventCallback.Factory
+                .Create<int>(p, v => onChainLengthChanged?.Invoke(v)))
             .Add(x => x.OnPreviewRadius, Microsoft.AspNetCore.Components.EventCallback.Factory
                 .Create<int>(p, r => onPreviewRadius?.Invoke(r)))
             // Most existing tests only care about the radius value; surface
@@ -852,6 +857,77 @@ public class AnchorEditPanelTests
         cut.Find(".anchor-edit-move").Click();
 
         await Assert.That(toggles).IsEmpty();
+    }
+
+    // ---- Chain / rode length input ----
+
+    [Test]
+    public async Task SetRadiusMode_ChainInput_Renders()
+    {
+        using var ctx = new Bunit.TestContext();
+        var cut = RenderSetRadius(ctx, initial: 30);
+
+        await Assert.That(cut.FindAll(".anchor-edit-chain-input").Count).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task SetRadiusMode_ChainInput_ShowsValueWhenSet_BlankWhenZero()
+    {
+        using var ctx = new Bunit.TestContext();
+
+        var withChain = RenderSetRadius(ctx, initial: 30, chainLengthMeters: 40);
+        await Assert.That(withChain.Find(".anchor-edit-chain-input").GetAttribute("value"))
+            .IsEqualTo("40");
+
+        var noChain = RenderSetRadius(ctx, initial: 30, chainLengthMeters: 0);
+        await Assert.That(noChain.Find(".anchor-edit-chain-input").GetAttribute("value"))
+            .IsEqualTo("");
+    }
+
+    [Test]
+    public async Task SetRadiusMode_ChainInput_Change_FiresParsedValue()
+    {
+        using var ctx = new Bunit.TestContext();
+        var changes = new List<int>();
+        var cut = RenderSetRadius(ctx, initial: 30, onChainLengthChanged: v => changes.Add(v));
+
+        cut.Find(".anchor-edit-chain-input").Change("45");
+
+        await Assert.That(changes).IsEquivalentTo([45]);
+    }
+
+    [Test]
+    public async Task SetRadiusMode_ChainInput_EmptyOrInvalid_FiresZero()
+    {
+        // Cleared field / non-numeric collapses to 0 ("not entered")
+        // rather than throwing or leaving a stale value.
+        using var ctx = new Bunit.TestContext();
+        var changes = new List<int>();
+        var cut = RenderSetRadius(ctx, initial: 30, chainLengthMeters: 40,
+            onChainLengthChanged: v => changes.Add(v));
+
+        cut.Find(".anchor-edit-chain-input").Change("");
+        await Assert.That(changes).IsEquivalentTo([0]);
+    }
+
+    [Test]
+    public async Task SetRadiusMode_ChainInput_Busy_Disabled()
+    {
+        using var ctx = new Bunit.TestContext();
+        var cut = RenderSetRadius(ctx, initial: 30, busy: true);
+
+        await Assert.That(cut.Find(".anchor-edit-chain-input").HasAttribute("disabled")).IsTrue();
+    }
+
+    [Test]
+    public async Task DropMode_NoChainInput()
+    {
+        // Chain entry only makes sense once the radius decision is in
+        // play; Drop mode stays minimal.
+        using var ctx = new Bunit.TestContext();
+        var cut = RenderDrop(ctx);
+
+        await Assert.That(cut.FindAll(".anchor-edit-chain-input").Count).IsEqualTo(0);
     }
 
     // ---- External InitialRadiusMeters changes (server delta echo) ----

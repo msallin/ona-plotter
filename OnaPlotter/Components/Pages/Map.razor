@@ -223,6 +223,8 @@
                          CanMove="@(_anchorSync?.ServerAnchorDrawn == true)"
                          MoveActive="@_anchorMoveActive"
                          OnToggleMove="OnAnchorPanelToggleMove"
+                         ChainLengthMeters="@((int)Math.Round(Settings.AnchorChainLengthMeters))"
+                         OnChainLengthChanged="OnAnchorPanelChainChanged"
                          OnDrop="OnAnchorPanelDrop"
                          OnPreviewRadius="OnAnchorPanelPreviewRadius"
                          OnSetRadius="OnAnchorPanelSet"
@@ -4705,7 +4707,15 @@
         if (p is null) return null;
         int swing = (int)Math.Round(p.Value.SwingMeters);
         int tide = (int)Math.Round(p.Value.TideDropMeters);
-        string swingLabel = p.Value.SwingFromPeak ? "swing" : "current";
+        // "rode" when the helm-entered chain projection is the
+        // dominant term, otherwise the observed-swing label so the
+        // helm can tell which input drove the number.
+        string swingLabel = p.Value.Source switch
+        {
+            SwingSource.Peak    => "swing",
+            SwingSource.Chain   => "rode",
+            _                   => "current",
+        };
         double margin = Settings.AnchorAutoRadiusSafetyMargin;
         return tide > 0
             ? $"{swingLabel} {swing} m + tide drop {tide} m + {margin:F0} m margin"
@@ -4719,21 +4729,22 @@
     /// so the chip's number always matches its tooltip's breakdown.</summary>
     private AutoRadiusComponents? AutoRadiusParts()
     {
-        // Pick the swing component from the most reliable source
-        // available. Peak first (monotonic worst-case during the
-        // anchor session); current radius next (live snapshot from
-        // the plugin); finally a haversine fallback against the
-        // anchor pin when the plugin isn't publishing currentRadius.
-        double? swing = null;
-        bool fromPeak = false;
+        // Observed swing from the most reliable source available.
+        // Peak first (monotonic worst-case during the anchor session);
+        // current radius next (live snapshot from the plugin); finally
+        // a haversine fallback against the anchor pin when the plugin
+        // isn't publishing currentRadius.
+        double? observed = null;
+        SwingSource source = SwingSource.Distance;
         if (Data.AnchorPeakRadius is double pk && double.IsFinite(pk) && pk >= 0)
         {
-            swing = pk;
-            fromPeak = true;
+            observed = pk;
+            source = SwingSource.Peak;
         }
         else if (Data.AnchorCurrentRadius is double cur && double.IsFinite(cur) && cur >= 0)
         {
-            swing = cur;
+            observed = cur;
+            source = SwingSource.Current;
         }
         else if (Data.AnchorLatitude is double aLat
                  && Data.AnchorLongitude is double aLon
@@ -4741,9 +4752,40 @@
                  && Data.Longitude is double lon)
         {
             double distM = OnaPlotter.Utilities.RouteProgress.HaversineMeters(aLat, aLon, lat, lon);
-            if (double.IsFinite(distM) && distM >= 0) swing = distM;
+            if (double.IsFinite(distM) && distM >= 0)
+            {
+                observed = distM;
+                source = SwingSource.Distance;
+            }
         }
-        if (swing is null) return null;
+
+        // Chain floor: how far the boat CAN swing on the rode that's
+        // out, even before it has blown back that far. The helm-
+        // entered chain length is projected onto the horizontal at the
+        // current depth; 0 when no chain is entered. Taking the max
+        // with observed swing keeps Auto safe on a calm set where the
+        // boat is sitting over its anchor with lots of scope out.
+        double chainProjection = OnaPlotter.Utilities.AnchorRadiusHeuristic
+            .ChainHorizontalProjection(Settings.AnchorChainLengthMeters, Data.Depth);
+
+        double swing;
+        if (observed is double os)
+        {
+            if (chainProjection > os) { swing = chainProjection; source = SwingSource.Chain; }
+            else swing = os;
+        }
+        else if (chainProjection > 0)
+        {
+            // No GPS / pin signal yet, but the helm gave us chain - a
+            // chain-only Auto is still better than no suggestion right
+            // after the drop.
+            swing = chainProjection;
+            source = SwingSource.Chain;
+        }
+        else
+        {
+            return null;
+        }
 
         // Tide-drop component. Both fields are populated by
         // signalk-tides-api / similar plugins as
@@ -4759,8 +4801,15 @@
         {
             tideDrop = hn - hl;
         }
-        return new AutoRadiusComponents(swing.Value, tideDrop, fromPeak);
+        return new AutoRadiusComponents(swing, tideDrop, source);
     }
+
+    /// <summary>Which input drove the swing component of the Auto
+    /// radius. Drives the breakdown label so the helm can tell whether
+    /// the number came from observed motion or the entered rode.
+    /// When adding a source, extend the label switch in
+    /// <see cref="AutoRadiusBreakdown"/>.</summary>
+    private enum SwingSource { Peak, Current, Distance, Chain }
 
     /// <summary>Per-component values feeding the Auto radius. Record
     /// struct so the two helpers can return the same shape without
@@ -4768,7 +4817,7 @@
     private readonly record struct AutoRadiusComponents(
         double SwingMeters,
         double TideDropMeters,
-        bool SwingFromPeak);
+        SwingSource Source);
 
     /// <summary>Smallest radius the Auto picker will ever ship.
     /// Stops a stale GPS that puts the boat right on top of the pin
@@ -4920,6 +4969,18 @@
         {
             await CancelAnchorMoveAsync();
         }
+    }
+
+    /// <summary>Helm edited the chain field. Persist it (so the next
+    /// drop's Auto starts from the same rode assumption) and re-render
+    /// so AutoRadiusPreview / AutoRadiusBreakdown recompute. When Auto
+    /// is the panel's active pick, the panel re-emits OnPreviewRadius
+    /// off the new AutoPreviewRadius, so the on-map ring follows the
+    /// chain entry without a PUT.</summary>
+    private async Task OnAnchorPanelChainChanged(int meters)
+    {
+        await Settings.SetAnchorChainLengthMetersAsync(meters);
+        StateHasChanged();
     }
 
     /// <summary>Commit a pending manual move as part of Set. Reads the

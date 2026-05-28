@@ -93,6 +93,24 @@
             }
         </div>
 
+        @* Chain / rode length. Feeds the Auto radius (the chain's
+           horizontal projection at the current depth floors the swing
+           term), so the helm entering "we let out 40 m" makes Auto
+           account for how far the boat CAN swing before it actually
+           has. Persisted parent-side; blank = not entered. Plain
+           on-change (blur / Enter) avoids a PUT-storm per keystroke. *@
+        <label class="anchor-edit-chain"
+               title="Deployed chain / rode length - feeds the Auto radius">
+            <span class="anchor-edit-chain-label">Chain</span>
+            <input type="number" inputmode="numeric" min="0" max="300" step="5"
+                   class="anchor-edit-chain-input"
+                   value="@(ChainLengthMeters > 0 ? ChainLengthMeters.ToString() : "")"
+                   placeholder="&ndash;"
+                   @onchange="OnChainInputChanged"
+                   disabled="@Busy" />
+            <span class="hud-unit">m</span>
+        </label>
+
         @* Move toggles the on-map drag handle so the helm can nudge
            the pin onto the actual lie of the chain (the plugin
            captures GPS at drop time, which can be a boat-length off).
@@ -284,6 +302,19 @@
     /// PUT itself rides along with the radius on Set.</summary>
     [Parameter] public EventCallback<bool> OnToggleMove { get; set; }
 
+    /// <summary>Helm-entered deployed chain / rode length (metres),
+    /// parent-owned (persisted in settings). 0 renders the input blank
+    /// ("not entered"). Feeds the parent's Auto radius computation -
+    /// the panel just surfaces the field + relays edits.</summary>
+    [Parameter] public int ChainLengthMeters { get; set; }
+
+    /// <summary>Helm edited the chain field. Carries the parsed whole-
+    /// metre value (0 when cleared / invalid). Parent persists it and
+    /// recomputes the Auto radius; the new <see cref="AutoPreviewRadius"/>
+    /// flows back and, when Auto is the active pick, re-previews the
+    /// on-map ring.</summary>
+    [Parameter] public EventCallback<int> OnChainLengthChanged { get; set; }
+
     /// <summary>Helm-tunable anchor-radius presets (metres). 150 m
     /// dropped from the v1 set on field-study feedback - 5:1 scope
     /// at 30 m of water is already 150 m and that's deeper than the
@@ -457,6 +488,24 @@
     {
         if (Busy) return;
         await OnToggleMove.InvokeAsync(!MoveActive);
+    }
+
+    /// <summary>Parse the chain field and relay the whole-metre value
+    /// to the parent. Empty / non-numeric / negative all collapse to
+    /// 0 ("not entered"), which the heuristic treats as "no chain
+    /// term". Invariant parse so a comma-decimal locale on the number
+    /// input doesn't mis-read the digits.</summary>
+    private async Task OnChainInputChanged(ChangeEventArgs e)
+    {
+        if (Busy) return;
+        var raw = e.Value?.ToString();
+        if (!int.TryParse(raw, System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture, out int meters)
+            || meters < 0)
+        {
+            meters = 0;
+        }
+        await OnChainLengthChanged.InvokeAsync(meters);
     }
 
     private async Task OnCancelClicked()

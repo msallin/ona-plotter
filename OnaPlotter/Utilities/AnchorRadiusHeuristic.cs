@@ -87,4 +87,38 @@ public static class AnchorRadiusHeuristic
     /// "depth missing" and routes to the fallback.</summary>
     public static bool IsUsableDepth(double d) =>
         !double.IsNaN(d) && !double.IsInfinity(d) && d > 0 && d < 1000;
+
+    /// <summary>
+    /// Horizontal distance the boat can reach from the anchor given a
+    /// length of deployed rode and the water depth - the taut rode
+    /// collapsed to a straight line: <c>sqrt(rode^2 - depth^2)</c>.
+    /// This is the worst case the chain alone permits, used as a floor
+    /// for the Auto radius so the alarm circle isn't drawn inside the
+    /// ring the boat could physically swing to before it has actually
+    /// blown back that far (observed swing lags the chain on a calm
+    /// set).
+    ///
+    /// <para>Input: rode=40 m, depth=8 m  -> sqrt(1600-64) = 39.2 m.
+    /// Input: rode=40 m, depth=null       -> 40 m (conservative).</para>
+    ///
+    /// <list type="bullet">
+    ///   <item>Rode &lt;= 0 / NaN / Infinity -> 0 (no usable rode, the
+    ///   chain term simply doesn't contribute).</item>
+    ///   <item>Depth unusable (null / non-positive / non-finite) ->
+    ///   the full rode length, the conservative upper bound (rode lying
+    ///   flat); over-estimating the radius errs on the safe side.</item>
+    ///   <item>Rode &lt;= depth (sub-1:1 scope, rode effectively
+    ///   vertical) -> 0; there's no meaningful horizontal reach.</item>
+    /// </list>
+    /// </summary>
+    public static double ChainHorizontalProjection(double chainLengthMeters, double? depthMeters)
+    {
+        if (double.IsNaN(chainLengthMeters) || double.IsInfinity(chainLengthMeters) || chainLengthMeters <= 0)
+            return 0;
+        if (depthMeters is not double d || double.IsNaN(d) || double.IsInfinity(d) || d <= 0)
+            return chainLengthMeters;       // depth unknown -> conservative upper bound
+        if (chainLengthMeters <= d)
+            return 0;                       // rode shorter than depth -> ~vertical, no horizontal reach
+        return Math.Sqrt(chainLengthMeters * chainLengthMeters - d * d);
+    }
 }

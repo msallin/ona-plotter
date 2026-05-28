@@ -291,4 +291,73 @@ public class AnchorRadiusHeuristicTests
             await Assert.That(got).IsLessThanOrEqualTo(AnchorRadiusHeuristic.MaxSuggestedMeters);
         }
     }
+
+    // --- ChainHorizontalProjection -----------------------------------
+    // Taut-rode horizontal reach: sqrt(rode^2 - depth^2), with
+    // conservative fallbacks. Feeds the Auto-radius chain floor.
+
+    [Test]
+    public async Task ChainProjection_RodeAndDepth_ReturnsPythagoreanLeg()
+    {
+        // 3-4-5: 5 m rode, 3 m depth -> 4 m horizontal. Exact integer
+        // triangle so the assert needs no tolerance.
+        await Assert.That(AnchorRadiusHeuristic.ChainHorizontalProjection(5, 3)).IsEqualTo(4.0);
+        // Realistic anchorage: 40 m rode, 8 m depth.
+        await Assert.That(AnchorRadiusHeuristic.ChainHorizontalProjection(40, 8))
+            .IsEqualTo(Math.Sqrt(40 * 40 - 8 * 8));
+    }
+
+    [Test]
+    public async Task ChainProjection_NullDepth_ReturnsFullRode_Conservative()
+    {
+        // No depth -> assume rode lying flat (max horizontal reach).
+        // Over-estimating the radius is the safe direction.
+        await Assert.That(AnchorRadiusHeuristic.ChainHorizontalProjection(40, null)).IsEqualTo(40.0);
+    }
+
+    [Test]
+    public async Task ChainProjection_UnusableDepth_ReturnsFullRode()
+    {
+        // Non-positive / non-finite depth routes to the same
+        // conservative full-rode fallback as null.
+        await Assert.That(AnchorRadiusHeuristic.ChainHorizontalProjection(40, 0)).IsEqualTo(40.0);
+        await Assert.That(AnchorRadiusHeuristic.ChainHorizontalProjection(40, -5)).IsEqualTo(40.0);
+        await Assert.That(AnchorRadiusHeuristic.ChainHorizontalProjection(40, double.NaN)).IsEqualTo(40.0);
+        await Assert.That(AnchorRadiusHeuristic.ChainHorizontalProjection(40, double.PositiveInfinity)).IsEqualTo(40.0);
+    }
+
+    [Test]
+    public async Task ChainProjection_RodeShorterThanDepth_ReturnsZero()
+    {
+        // Sub-1:1 scope: the rode is effectively vertical, no
+        // meaningful horizontal reach. Boundary rode == depth also
+        // collapses to 0.
+        await Assert.That(AnchorRadiusHeuristic.ChainHorizontalProjection(5, 8)).IsEqualTo(0.0);
+        await Assert.That(AnchorRadiusHeuristic.ChainHorizontalProjection(8, 8)).IsEqualTo(0.0);
+    }
+
+    [Test]
+    public async Task ChainProjection_NoRode_ReturnsZero()
+    {
+        // Rode <= 0 / NaN / Infinity -> the chain term simply doesn't
+        // contribute (and never feeds NaN into the caller's max()).
+        await Assert.That(AnchorRadiusHeuristic.ChainHorizontalProjection(0, 8)).IsEqualTo(0.0);
+        await Assert.That(AnchorRadiusHeuristic.ChainHorizontalProjection(-10, 8)).IsEqualTo(0.0);
+        await Assert.That(AnchorRadiusHeuristic.ChainHorizontalProjection(double.NaN, 8)).IsEqualTo(0.0);
+        await Assert.That(AnchorRadiusHeuristic.ChainHorizontalProjection(double.PositiveInfinity, 8)).IsEqualTo(0.0);
+    }
+
+    [Test]
+    public async Task ChainProjection_AlwaysLessThanOrEqualRode()
+    {
+        // Invariant: the horizontal leg never exceeds the hypotenuse
+        // (the rode). Sweep depths for a fixed rode.
+        const double rode = 50;
+        for (double d = 0.5; d < rode + 10; d += 0.5)
+        {
+            double proj = AnchorRadiusHeuristic.ChainHorizontalProjection(rode, d);
+            await Assert.That(proj).IsGreaterThanOrEqualTo(0.0);
+            await Assert.That(proj).IsLessThanOrEqualTo(rode);
+        }
+    }
 }

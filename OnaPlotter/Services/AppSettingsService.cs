@@ -151,6 +151,9 @@ public sealed class AppSettingsService : IAppSettings
     /// raise for soft-mud anchorages.</summary>
     public double AnchorAutoRadiusSafetyMargin { get; private set; } = 5.0;
     public double ManualAnchorRadiusMeters { get; private set; } = 30.0;
+    /// <summary>Helm-entered deployed rode length (metres). 0 = not
+    /// entered; the Auto radius then ignores the chain term.</summary>
+    public double AnchorChainLengthMeters { get; private set; } = 0.0;
     public double DeadmanTimeoutMinutes { get; private set; } = 0.0;
     public double DeadmanNightMinutes { get; private set; } = 15.0;
     public int SnoozeDurationMinutes { get; private set; } = 10;
@@ -469,6 +472,7 @@ public sealed class AppSettingsService : IAppSettings
             AnchorTideSafetyMargin = await LoadDouble("anchorTideSafetyMargin", 0.5);
             AnchorAutoRadiusSafetyMargin = await LoadDouble("anchorAutoRadiusSafetyMargin.v1", 5.0);
             ManualAnchorRadiusMeters = await LoadDouble("manualAnchorRadiusMeters.v1", 30.0);
+            AnchorChainLengthMeters = await LoadDouble("anchorChainLengthMeters.v1", 0.0);
             DeadmanTimeoutMinutes = await LoadDouble("deadmanTimeoutMinutes.v1", 0.0);
             DeadmanNightMinutes = await LoadDouble("deadmanNightMinutes.v1", 15.0);
             SnoozeDurationMinutes = (int)await LoadDouble("snoozeDurationMinutes.v1", 10.0);
@@ -1323,6 +1327,17 @@ public sealed class AppSettingsService : IAppSettings
     {
         ManualAnchorRadiusMeters = value;
         await Save("manualAnchorRadiusMeters.v1", value.ToString("F1", CultureInfo.InvariantCulture));
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetAnchorChainLengthMetersAsync(double value)
+    {
+        // Clamp at 0: a negative rode length is meaningless and would
+        // feed a NaN into the chain projection's sqrt. The helm input
+        // is a length, so 0 ("none entered") is the floor.
+        AnchorChainLengthMeters = Math.Max(0, value);
+        await Save("anchorChainLengthMeters.v1",
+            AnchorChainLengthMeters.ToString("F1", CultureInfo.InvariantCulture));
         OnSettingsChanged?.Invoke();
     }
 
