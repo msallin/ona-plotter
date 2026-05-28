@@ -40,4 +40,14 @@ public sealed class AnchorAlarmApi : IAnchorAlarmApi
         ResourceHttp.PutAsync(_http,
             _baseUrl.Combine(SignalKUrls.AnchorPositionPath),
             new { value = (object?)null }, ct);
+
+    public Task<ApiResult> SetPositionAsync(double latitude, double longitude, CancellationToken ct = default) =>
+        // PUT {value: {latitude, longitude}} on anchor.position -
+        // same path as the raise, but with a position object instead
+        // of null. The plugin re-centres the watch on this point and
+        // keeps the existing maxRadius. SK position objects are
+        // {latitude, longitude} (degrees); tests pin the wire shape.
+        ResourceHttp.PutAsync(_http,
+            _baseUrl.Combine(SignalKUrls.AnchorPositionPath),
+            new { value = new { latitude, longitude } }, ct);
 }

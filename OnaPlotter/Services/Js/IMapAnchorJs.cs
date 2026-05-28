@@ -48,4 +48,30 @@ public interface IMapAnchorJs
     /// SetRadius dialog is the helm-facing instruction surface
     /// during this state.</summary>
     Task SetAnchorIncompleteAsync(bool incomplete);
+
+    /// <summary>Toggle manual-move mode. When enabled, a draggable
+    /// handle is overlaid on the pin; dragging it repositions the
+    /// pin + watch circle + radius line live (visual preview only -
+    /// the PUT happens via <c>IAnchorAlarmApi.SetPositionAsync</c>
+    /// when the helm commits). When disabled, the handle is removed;
+    /// callers that disable without committing should first call
+    /// <see cref="SetAnchorPositionAsync"/> to snap the visuals back
+    /// to the server position.</summary>
+    Task SetAnchorMoveModeAsync(bool enable);
+
+    /// <summary>Reposition the pin, watch circle and radius line to a
+    /// new anchor position without tearing the overlay down (used by
+    /// the move-cancel revert path so the swing trail survives).</summary>
+    Task SetAnchorPositionAsync(double lat, double lon);
+
+    /// <summary>Read the latest dragged position while move mode is
+    /// active, or null when move mode is off / nothing was dragged.
+    /// The page reads this on Set to decide whether the position
+    /// actually moved before committing a PUT.</summary>
+    Task<AnchorLatLng?> GetAnchorMovedLatLngAsync();
 }
+
+/// <summary>Lat/lon pair returned from the anchor move-handle JS.
+/// Property names match the JS object's <c>{ lat, lon }</c> shape
+/// (Blazor's interop JSON is case-insensitive).</summary>
+public readonly record struct AnchorLatLng(double Lat, double Lon);

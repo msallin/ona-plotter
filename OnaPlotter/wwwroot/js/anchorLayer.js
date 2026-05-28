@@ -53,6 +53,17 @@ let _lastInside = null;
 // tripping the no-use-before-define lint rule.
 let _lastRadiusLineKey = null;
 
+// Manual-move state. The helm taps "Move" in the anchor panel, which
+// drops a draggable handle on top of the pin; dragging it repositions
+// the pin + watch circle + radius line live (visual preview only - the
+// PUT to navigation.anchor.position happens C#-side when the helm taps
+// Set). `anchorMoveHandle` is the L.marker carrying the drag (a plain
+// L.circleMarker has no built-in dragging, so we overlay a real marker
+// rather than swap the pin out). `anchorMovedLatLng` holds the latest
+// dragged position for C# to read on commit; null when move mode is off.
+let anchorMoveHandle = null;
+let anchorMovedLatLng = null;
+
 // Min boat-tail movement (m) within the sample window before we
 // repaint the trail polyline. GPS noise at rest is bounded ~0.5 m;
 // updating the trail head and re-emitting setLatLngs on sub-half-
@@ -123,11 +134,13 @@ export function clearAnchor() {
     anchorIncomplete = false;
     _lastInside = null;
     _lastRadiusLineKey = null;
+    anchorMovedLatLng = null;
     if (!mapRef) {
         anchorMarker = null; anchorCircle = null; anchorTrailLayer = null;
-        anchorTrail.length = 0; anchorRadiusLine = null;
+        anchorTrail.length = 0; anchorRadiusLine = null; anchorMoveHandle = null;
         return;
     }
+    if (anchorMoveHandle) { mapRef.removeLayer(anchorMoveHandle); anchorMoveHandle = null; }
     if (anchorMarker) { mapRef.removeLayer(anchorMarker); anchorMarker = null; }
     if (anchorCircle) { mapRef.removeLayer(anchorCircle); anchorCircle = null; }
     if (anchorTrailLayer) { mapRef.removeLayer(anchorTrailLayer); anchorTrailLayer = null; }
@@ -206,6 +219,65 @@ export function updateAnchorRadius(radiusM) {
         const ll = anchorMarker.getLatLng();
         redrawAnchorRadiusOverlay(ll.lat, ll.lng, radiusM);
     }
+}
+
+// Reposition the pin, watch circle and radius line to a new anchor
+// position without tearing the overlay down (clearAnchor + setAnchor
+// would drop the swing trail and flash the layer). Used for the
+// manual-move revert path (helm cancels) and is the natural seam for
+// a future server-position re-sync. No-op when no anchor is drawn.
+export function setAnchorPosition(lat, lon) {
+    if (!mapRef || !anchorMarker) return;
+    anchorMarker.setLatLng([lat, lon]);
+    if (anchorCircle) anchorCircle.setLatLng([lat, lon]);
+    const r = anchorCircle ? anchorCircle.getRadius() : 0;
+    redrawAnchorRadiusOverlay(lat, lon, r);
+    if (anchorMoveHandle) anchorMoveHandle.setLatLng([lat, lon]);
+}
+
+// Toggle manual-move mode. When enabled, overlay a draggable handle
+// on the pin; dragging it moves the pin + circle + radius line live so
+// the helm sees where the anchor will land before committing. The
+// dragged position is stashed in `anchorMovedLatLng` for C# to read on
+// Set. When disabled, the handle is removed and the stash cleared;
+// callers that disable WITHOUT committing should call setAnchorPosition
+// first to snap the visuals back to the server position.
+//
+// Idempotent: re-enabling while already on is a no-op; disabling when
+// off falls through cleanly.
+export function setAnchorMoveMode(enable) {
+    if (!mapRef) return;
+    if (enable) {
+        if (anchorMoveHandle || !anchorMarker) return;
+        const ll = anchorMarker.getLatLng();
+        anchorMovedLatLng = { lat: ll.lat, lon: ll.lng };
+        anchorMoveHandle = L.marker(ll, {
+            draggable: true,
+            keyboard: false,
+            zIndexOffset: 1000,
+            icon: L.divIcon({
+                className: 'anchor-move-handle',
+                html: '<div class="anchor-move-handle-dot"></div>',
+                iconSize: [30, 30],
+                iconAnchor: [15, 15],
+            }),
+        }).addTo(mapRef);
+        anchorMoveHandle.on('drag', (e) => {
+            const p = e.target.getLatLng();
+            anchorMovedLatLng = { lat: p.lat, lon: p.lng };
+            setAnchorPosition(p.lat, p.lng);
+        });
+    } else {
+        if (anchorMoveHandle) { mapRef.removeLayer(anchorMoveHandle); anchorMoveHandle = null; }
+        anchorMovedLatLng = null;
+    }
+}
+
+// Latest dragged position during move mode as {lat, lon}, or null when
+// move mode is off / nothing has been dragged. C# reads this on Set to
+// decide whether to PUT a new navigation.anchor.position.
+export function getAnchorMovedLatLng() {
+    return anchorMovedLatLng;
 }
 
 // Boat<->anchor dashed line. Mutate-in-place via setLatLngs so the 1 Hz
@@ -317,6 +389,8 @@ export function dispose() {
     anchorCircle = null;
     anchorTrailLayer = null;
     anchorRadiusLine = null;
+    anchorMoveHandle = null;
+    anchorMovedLatLng = null;
     anchorTrail.length = 0;
     selfLat = 0; selfLon = 0;
     _lastInside = null;

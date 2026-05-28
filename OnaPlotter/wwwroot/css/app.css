@@ -7906,6 +7906,36 @@ html[data-slow-client="1"] #mapDiv {
     border-color: rgba(245, 158, 11, 0.55);
 }
 
+/* Manual-move drag handle: a grabbable amber ring overlaid on the
+   anchor pin while the helm is repositioning it. Amber here is the
+   right tone - moving a set anchor IS a safety-relevant action, and
+   the handle only exists transiently during an explicit Move. The
+   ring + center dot read as "grab me"; the move cursor reinforces it. */
+.anchor-move-handle {
+    cursor: move;
+}
+.anchor-move-handle-dot {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: 2px solid #f59e0b;
+    background: rgba(245, 158, 11, 0.25);
+    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35);
+    box-sizing: border-box;
+    position: relative;
+}
+.anchor-move-handle-dot::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 8px;
+    height: 8px;
+    margin: -4px 0 0 -4px;
+    border-radius: 50%;
+    background: #f59e0b;
+}
+
 .anchor-edit-stats {
     /* Stack title + subtitle vertically. flex parent gives us per-
        column control without an extra wrapper element. */
@@ -7985,6 +8015,26 @@ html[data-slow-client="1"] #mapDiv {
 }
 .anchor-edit-drop.map-btn.active:hover {
     background: rgba(245, 158, 11, 0.35);
+}
+
+/* Move toggle: amber when armed so it reads as the same safety-tone
+   "this is about to change the anchor" family as the active chip and
+   the drag handle. Compound selector beats the base .map-btn.active
+   sky-blue in light / high-contrast themes (same rationale as the
+   Drop button above). */
+.anchor-edit-move.map-btn.active {
+    background: rgba(245, 158, 11, 0.25);
+    border-color: rgba(245, 158, 11, 0.7);
+    color: var(--sk-text);
+}
+.anchor-edit-move.map-btn.active:hover {
+    background: rgba(245, 158, 11, 0.35);
+}
+/* Drag instruction sub-line: amber, slightly stronger than the muted
+   suggestion text so the helm's eye catches the mode change. */
+.anchor-edit-sub.anchor-edit-moving {
+    color: #f59e0b;
+    font-weight: 600;
 }
 
 /* Theme-aware overrides for the panel chrome. The shared

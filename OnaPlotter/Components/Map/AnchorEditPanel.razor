@@ -46,7 +46,14 @@
 <div class="route-edit-bar anchor-edit-bar" role="dialog" aria-label="@AriaLabel">
     <span class="route-edit-stats anchor-edit-stats">
         <span class="anchor-edit-title">@TitleLabel</span>
-        @if (!string.IsNullOrEmpty(SuggestionLabel))
+        @* While moving, the sub-line becomes the drag instruction so
+           the helm knows the pin is now grabbable; otherwise it shows
+           the parent's suggestion / Auto-formula breakdown. *@
+        @if (MoveActive)
+        {
+            <span class="anchor-edit-sub anchor-edit-moving">Drag the pin on the chart, then Set</span>
+        }
+        else if (!string.IsNullOrEmpty(SuggestionLabel))
         {
             <span class="anchor-edit-sub">@SuggestionLabel</span>
         }
@@ -86,7 +93,27 @@
             }
         </div>
 
-        @* Set commits the picked value via PUT maxRadius. Disabled
+        @* Move toggles the on-map drag handle so the helm can nudge
+           the pin onto the actual lie of the chain (the plugin
+           captures GPS at drop time, which can be a boat-length off).
+           Panel-internal signal only - the parent owns the JS drag
+           mode and the position PUT, which fires together with the
+           radius on Set. Rendered only when the parent says the
+           on-map anchor is actually draggable (CanMove). *@
+        @if (CanMove)
+        {
+            <button class="map-btn anchor-edit-move @(MoveActive ? "active" : "")"
+                    type="button"
+                    aria-pressed="@(MoveActive ? "true" : "false")"
+                    @onclick="OnMoveClicked"
+                    disabled="@Busy"
+                    title="@(MoveActive ? "Stop moving the anchor (drag the pin, then Set)" : "Move the anchor pin by dragging it on the chart")">
+                @(MoveActive ? "Moving" : "Move")
+            </button>
+        }
+
+        @* Set commits the picked value via PUT maxRadius (and the
+           dragged position when move mode is active). Disabled
            when nothing effective has been picked (Auto picked but
            AutoPreviewRadius hasn't landed yet) or while a previous
            PUT is still in flight. *@
@@ -239,6 +266,23 @@
     /// passes <c>false</c> during the Drop -> SetRadius continuation
     /// where the helm has already committed to setting a radius.</summary>
     [Parameter] public bool ShowCloseButton { get; set; }
+
+    /// <summary>Whether the Move button is offered. Parent passes
+    /// <c>true</c> only when the on-map anchor is actually drawn and
+    /// draggable; a Move button with nothing to grab would be a dead
+    /// affordance. False (default) hides the button entirely.</summary>
+    [Parameter] public bool CanMove { get; set; }
+
+    /// <summary>Whether move mode is currently active. Parent-owned
+    /// truth (the parent drives the JS drag handle), reflected here as
+    /// the button's pressed state and the drag-instruction sub-line.</summary>
+    [Parameter] public bool MoveActive { get; set; }
+
+    /// <summary>Helm tapped Move. Carries the requested new state
+    /// (<c>!MoveActive</c>) so the parent enables / disables the JS
+    /// drag handle and flips <see cref="MoveActive"/>. The position
+    /// PUT itself rides along with the radius on Set.</summary>
+    [Parameter] public EventCallback<bool> OnToggleMove { get; set; }
 
     /// <summary>Helm-tunable anchor-radius presets (metres). 150 m
     /// dropped from the v1 set on field-study feedback - 5:1 scope
@@ -404,6 +448,15 @@
     {
         if (Busy) return;
         await OnDrop.InvokeAsync();
+    }
+
+    /// <summary>Toggle move mode. Emits the requested next state so
+    /// the parent enables / disables the JS drag handle. Guarded on
+    /// Busy so a move toggle can't race an in-flight Set PUT.</summary>
+    private async Task OnMoveClicked()
+    {
+        if (Busy) return;
+        await OnToggleMove.InvokeAsync(!MoveActive);
     }
 
     private async Task OnCancelClicked()

@@ -106,6 +106,63 @@ public class MapAnchorJsTests
     }
 
     [Test]
+    public async Task SetAnchorMoveModeAsync_PassesBool()
+    {
+        var fake = new RecordingJsRef();
+        var sut = new MapAnchorJs(fake);
+
+        await sut.SetAnchorMoveModeAsync(true);
+
+        await Assert.That(fake.Calls[0].id).IsEqualTo("setAnchorMoveMode");
+        await Assert.That((bool)fake.Calls[0].args[0]!).IsTrue();
+    }
+
+    [Test]
+    public async Task SetAnchorPositionAsync_PassesLatLon()
+    {
+        var fake = new RecordingJsRef();
+        var sut = new MapAnchorJs(fake);
+
+        await sut.SetAnchorPositionAsync(54.5, 11.2);
+
+        await Assert.That(fake.Calls[0].id).IsEqualTo("setAnchorPosition");
+        await Assert.That(fake.Calls[0].args[0]).IsEqualTo(54.5);
+        await Assert.That(fake.Calls[0].args[1]).IsEqualTo(11.2);
+    }
+
+    [Test]
+    public async Task GetAnchorMovedLatLngAsync_CallsGetter()
+    {
+        // The recording fake returns default(TValue) = null for the
+        // nullable struct, so this pins the JS identifier + that a
+        // null result (move mode off / nothing dragged) round-trips
+        // without throwing.
+        var fake = new RecordingJsRef();
+        var sut = new MapAnchorJs(fake);
+
+        var result = await sut.GetAnchorMovedLatLngAsync();
+
+        await Assert.That(fake.Calls[0].id).IsEqualTo("getAnchorMovedLatLng");
+        await Assert.That(result).IsNull();
+    }
+
+    [Test]
+    public async Task GetAnchorMovedLatLngAsync_WhenDisposed_ReturnsNull()
+    {
+        // Value-returning calls during teardown must yield the
+        // whenDisposed fallback (null) instead of reaching the
+        // disposed module reference.
+        var fake = new RecordingJsRef();
+        var sut = new MapAnchorJs(fake);
+
+        sut.MarkDisposed();
+        var result = await sut.GetAnchorMovedLatLngAsync();
+
+        await Assert.That(result).IsNull();
+        await Assert.That(fake.Calls.Count).IsEqualTo(0);
+    }
+
+    [Test]
     public async Task MarkDisposed_SubsequentCallsAreNoOps()
     {
         var fake = new RecordingJsRef();
@@ -116,9 +173,11 @@ public class MapAnchorJsTests
         await sut.ClearAnchorAsync();
         await sut.SetAnchorRaisingAsync(true);
         await sut.UpdateAnchorRadiusAsync(10);
+        await sut.SetAnchorMoveModeAsync(true);
+        await sut.SetAnchorPositionAsync(1, 2);
 
         // Without the MarkDisposed gate every method would have hit
-        // the JS module reference; with it, all four become silent.
+        // the JS module reference; with it, all become silent.
         await Assert.That(fake.Calls.Count).IsEqualTo(0);
     }
 

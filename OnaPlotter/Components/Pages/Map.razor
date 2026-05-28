@@ -220,6 +220,9 @@
                          AutoPreviewRadius="@AutoRadiusPreview()"
                          AutoBreakdown="@AutoRadiusBreakdown()"
                          ShowCloseButton="@_anchorPanelStandalone"
+                         CanMove="@(_anchorSync?.ServerAnchorDrawn == true)"
+                         MoveActive="@_anchorMoveActive"
+                         OnToggleMove="OnAnchorPanelToggleMove"
                          OnDrop="OnAnchorPanelDrop"
                          OnPreviewRadius="OnAnchorPanelPreviewRadius"
                          OnSetRadius="OnAnchorPanelSet"
@@ -2597,10 +2600,12 @@
             anchorEditMode = false;
             anchorEditBusy = false;
             // Anchor is gone - ServerAnchorSync will tear the on-
-            // map ring down; just drop the preview flag so a
-            // subsequent panel re-open doesn't think there's still
-            // an outstanding revert to do.
+            // map ring down (clearAnchor also drops the JS move
+            // handle + dragged-position stash), so just clear the
+            // C#-side flags so a subsequent re-open starts clean and
+            // no stale revert is attempted.
             _anchorPreviewActive = false;
+            _anchorMoveActive = false;
             Toasts.Warning("Anchor was raised by another plotter or the server - panel closed");
         }
 
@@ -4567,6 +4572,13 @@
     /// is the right behaviour when no prior intent is known).</summary>
     private bool _anchorLastSetViaAuto;
     private bool _anchorEditInitialPickIsAuto;
+
+    /// <summary>True while the helm has the on-map move handle armed
+    /// (tapped Move). Drives the panel's Move-button pressed state and
+    /// the JS drag handle. Reset on every panel open and on commit /
+    /// cancel. The position PUT only fires on Set; toggling this off
+    /// without a Set reverts the on-map pin to the server position.</summary>
+    private bool _anchorMoveActive;
     /// <summary>True when the panel was opened standalone (helm tapped
     /// "Adjust" on the anchor-watch HUD card) rather than as the
     /// Drop -> SetRadius continuation. Drives whether the panel
@@ -4614,6 +4626,7 @@
         // helm's last intent).
         _anchorEditInitialPickIsAuto = _anchorLastSetViaAuto;
         anchorEditBusy = false;
+        _anchorMoveActive = false;
         _anchorPanelMode = OnaPlotter.Components.Map.AnchorEditPanel.AnchorPanelMode.Drop;
         // Drop-mode Close is always rendered; the SetRadius-mode
         // Close (which reads ShowCloseButton) is suppressed here so
@@ -4782,6 +4795,7 @@
         // reading as a different choice).
         _anchorEditInitialPickIsAuto = _anchorLastSetViaAuto;
         anchorEditBusy = false;
+        _anchorMoveActive = false;
         _anchorPanelMode = OnaPlotter.Components.Map.AnchorEditPanel.AnchorPanelMode.SetRadius;
         // Standalone open: helm tapped Adjust on the anchor-watch
         // HUD card. Show the Close button so they can back out
@@ -4888,6 +4902,99 @@
         catch (Exception ex) { Toasts.LogException(ex, "Preview anchor radius"); }
     }
 
+    /// <summary>Helm tapped Move on the panel. Enabling drops the JS
+    /// drag handle on the pin so the helm can reposition it (visual
+    /// only - the PUT rides along with the radius on Set). Disabling
+    /// (a second tap) reverts the pin to the server position via
+    /// <see cref="CancelAnchorMoveAsync"/>.</summary>
+    private async Task OnAnchorPanelToggleMove(bool enable)
+    {
+        if (anchorEditBusy || _anchorJs is null) return;
+        if (enable)
+        {
+            _anchorMoveActive = true;
+            try { await _anchorJs.SetAnchorMoveModeAsync(true); }
+            catch (Exception ex) { Toasts.LogException(ex, "Enable anchor move"); }
+        }
+        else
+        {
+            await CancelAnchorMoveAsync();
+        }
+    }
+
+    /// <summary>Commit a pending manual move as part of Set. Reads the
+    /// dragged position from JS and PUTs
+    /// <c>navigation.anchor.position</c> when the pin actually moved.
+    /// Returns false (and keeps move mode + the panel open) on a PUT
+    /// failure so the helm sees one clear error and can retry without
+    /// losing the dragged spot; true when the move committed, was a
+    /// no-op (nothing dragged / dragged back inside the epsilon), or
+    /// there's no JS module. The radius PUT in
+    /// <see cref="OnAnchorPanelSet"/> only runs after this returns
+    /// true, so a failed move never silently re-centres the watch.</summary>
+    private async Task<bool> CommitAnchorMoveAsync()
+    {
+        if (_anchorJs is null) { _anchorMoveActive = false; return true; }
+
+        OnaPlotter.Services.Js.AnchorLatLng? moved;
+        try { moved = await _anchorJs.GetAnchorMovedLatLngAsync(); }
+        catch (Exception ex) { Toasts.LogException(ex, "Read moved anchor position"); return false; }
+
+        // Nothing dragged, or pin nudged back to within GPS-noise of
+        // the server position: treat as "no move", just drop the
+        // handle. 0.5 m epsilon is below a typical fix's scatter and
+        // far below any sane watch radius, so a skipped PUT here is
+        // invisible to the alarm.
+        bool moveIsRealistic =
+            moved is OnaPlotter.Services.Js.AnchorLatLng m
+            && Data.AnchorLatitude is double sLat
+            && Data.AnchorLongitude is double sLon
+            && OnaPlotter.Utilities.RouteProgress.HaversineMeters(sLat, sLon, m.Lat, m.Lon) >= 0.5;
+
+        if (!moveIsRealistic)
+        {
+            _anchorMoveActive = false;
+            try { await _anchorJs.SetAnchorMoveModeAsync(false); }
+            catch (Exception ex) { Toasts.LogException(ex, "Clear anchor move handle"); }
+            return true;
+        }
+
+        var moveTarget = (OnaPlotter.Services.Js.AnchorLatLng)moved!;
+        ApiResult r;
+        try { r = await AnchorAlarmApi.SetPositionAsync(moveTarget.Lat, moveTarget.Lon); }
+        catch (Exception ex) { r = ApiResult.Fail(ex.Message); }
+
+        if (!r.Success)
+        {
+            Toasts.Error(AnchorFailureMessage("Move anchor", r));
+            return false;
+        }
+
+        Toasts.Success("Anchor moved");
+        _anchorMoveActive = false;
+        try { await _anchorJs.SetAnchorMoveModeAsync(false); }
+        catch (Exception ex) { Toasts.LogException(ex, "Clear anchor move handle"); }
+        return true;
+    }
+
+    /// <summary>Disable move mode WITHOUT committing: drop the JS drag
+    /// handle and snap the on-map pin back to the server position so a
+    /// half-finished drag doesn't linger on the chart. No-op when move
+    /// mode is off.</summary>
+    private async Task CancelAnchorMoveAsync()
+    {
+        if (!_anchorMoveActive) return;
+        _anchorMoveActive = false;
+        if (_anchorJs is null) return;
+        try
+        {
+            await _anchorJs.SetAnchorMoveModeAsync(false);
+            if (Data.AnchorLatitude is double lat && Data.AnchorLongitude is double lon)
+                await _anchorJs.SetAnchorPositionAsync(lat, lon);
+        }
+        catch (Exception ex) { Toasts.LogException(ex, "Cancel anchor move"); }
+    }
+
     /// <summary>Step 2: PUT <c>navigation.anchor.maxRadius</c> with
     /// the helm-chosen value. Plugin arms the alarm circle + starts
     /// publishing currentRadius for drift monitoring. The radius
@@ -4901,6 +5008,17 @@
     {
         if (anchorEditBusy) return;     // double-tap guard, see OnAnchorPanelDrop
         anchorEditBusy = true;
+
+        // Commit a pending manual move first (a separate PUT from the
+        // radius). On failure CommitAnchorMoveAsync leaves move mode +
+        // the panel open and toasts; bail before the radius PUT so the
+        // helm gets one clear error and the watch isn't half-updated.
+        if (_anchorMoveActive && !await CommitAnchorMoveAsync())
+        {
+            anchorEditBusy = false;
+            return;
+        }
+
         ApiResult r;
         try { r = await AnchorAlarmApi.SetMaxRadiusAsync(commit.RadiusMeters); }
         catch (Exception ex) { r = ApiResult.Fail(ex.Message); }
@@ -4937,6 +5055,7 @@
     {
         anchorEditMode = false;
         anchorEditBusy = false;
+        await CancelAnchorMoveAsync();
         await RevertAnchorPreviewIfActiveAsync();
     }
 

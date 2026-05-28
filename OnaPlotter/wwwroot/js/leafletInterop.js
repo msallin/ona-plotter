@@ -1421,6 +1421,9 @@ export const clearAnchor = () => anchorLayerMod.clearAnchor();
 export const setAnchorRaising = (raising) => anchorLayerMod.setAnchorRaising(raising);
 export const updateAnchorRadius = (radiusM) => anchorLayerMod.updateAnchorRadius(radiusM);
 export const setAnchorIncomplete = (incomplete) => anchorLayerMod.setAnchorIncomplete(incomplete);
+export const setAnchorMoveMode = (enable) => anchorLayerMod.setAnchorMoveMode(enable);
+export const setAnchorPosition = (lat, lon) => anchorLayerMod.setAnchorPosition(lat, lon);
+export const getAnchorMovedLatLng = () => anchorLayerMod.getAnchorMovedLatLng();
 
 // --- Radar spoke overlay ---
 // Thin re-exports so Blazor's JSObjectReference can call the

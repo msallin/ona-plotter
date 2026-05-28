@@ -59,7 +59,10 @@ public class AnchorEditPanelTests
         string suggestion = "",
         int? autoPreview = null,
         string? autoBreakdown = null,
-        bool initialPickIsAuto = false)
+        bool initialPickIsAuto = false,
+        bool canMove = false,
+        bool moveActive = false,
+        Action<bool>? onToggleMove = null)
     {
         return ctx.RenderComponent<AnchorEditPanel>(p => p
             .Add(x => x.Mode, AnchorEditPanel.AnchorPanelMode.SetRadius)
@@ -69,6 +72,10 @@ public class AnchorEditPanelTests
             .Add(x => x.SuggestionLabel, suggestion)
             .Add(x => x.AutoPreviewRadius, autoPreview)
             .Add(x => x.AutoBreakdown, autoBreakdown)
+            .Add(x => x.CanMove, canMove)
+            .Add(x => x.MoveActive, moveActive)
+            .Add(x => x.OnToggleMove, Microsoft.AspNetCore.Components.EventCallback.Factory
+                .Create<bool>(p, v => onToggleMove?.Invoke(v)))
             .Add(x => x.OnPreviewRadius, Microsoft.AspNetCore.Components.EventCallback.Factory
                 .Create<int>(p, r => onPreviewRadius?.Invoke(r)))
             // Most existing tests only care about the radius value; surface
@@ -762,6 +769,89 @@ public class AnchorEditPanelTests
         await Assert.That(commits.Count).IsEqualTo(1);
         await Assert.That(commits[0].RadiusMeters).IsEqualTo(75);
         await Assert.That(commits[0].FromAuto).IsFalse();
+    }
+
+    // ---- Move (manual reposition) ----
+
+    [Test]
+    public async Task SetRadiusMode_MoveButton_HiddenWhenCannotMove()
+    {
+        // No on-map anchor to grab -> no Move affordance (a button
+        // that does nothing is worse than no button).
+        using var ctx = new Bunit.TestContext();
+        var cut = RenderSetRadius(ctx, initial: 30, canMove: false);
+
+        await Assert.That(cut.FindAll(".anchor-edit-move").Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task SetRadiusMode_MoveButton_RendersWhenCanMove()
+    {
+        using var ctx = new Bunit.TestContext();
+        var cut = RenderSetRadius(ctx, initial: 30, canMove: true);
+
+        var move = cut.FindAll(".anchor-edit-move");
+        await Assert.That(move.Count).IsEqualTo(1);
+        await Assert.That(move[0].TextContent.Trim()).IsEqualTo("Move");
+        await Assert.That(move[0].GetAttribute("aria-pressed")).IsEqualTo("false");
+    }
+
+    [Test]
+    public async Task SetRadiusMode_MoveButton_Tap_RequestsEnable()
+    {
+        // Move off -> tapping asks the parent to enable (true).
+        using var ctx = new Bunit.TestContext();
+        var toggles = new List<bool>();
+        var cut = RenderSetRadius(ctx, initial: 30, canMove: true,
+            moveActive: false, onToggleMove: v => toggles.Add(v));
+
+        cut.Find(".anchor-edit-move").Click();
+
+        await Assert.That(toggles).IsEquivalentTo([true]);
+    }
+
+    [Test]
+    public async Task SetRadiusMode_MoveActive_RendersPressedAndDragHint()
+    {
+        using var ctx = new Bunit.TestContext();
+        var cut = RenderSetRadius(ctx, initial: 30, canMove: true, moveActive: true);
+
+        var move = cut.Find(".anchor-edit-move");
+        await Assert.That(move.ClassList.Contains("active")).IsTrue();
+        await Assert.That(move.GetAttribute("aria-pressed")).IsEqualTo("true");
+        await Assert.That(move.TextContent.Trim()).IsEqualTo("Moving");
+
+        // Drag instruction replaces the suggestion sub-line while moving.
+        await Assert.That(cut.FindAll(".anchor-edit-moving").Count).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task SetRadiusMode_MoveActive_Tap_RequestsDisable()
+    {
+        // Move on -> tapping asks the parent to disable (false).
+        using var ctx = new Bunit.TestContext();
+        var toggles = new List<bool>();
+        var cut = RenderSetRadius(ctx, initial: 30, canMove: true,
+            moveActive: true, onToggleMove: v => toggles.Add(v));
+
+        cut.Find(".anchor-edit-move").Click();
+
+        await Assert.That(toggles).IsEquivalentTo([false]);
+    }
+
+    [Test]
+    public async Task SetRadiusMode_MoveButton_Busy_DoesNotToggle()
+    {
+        // In-flight PUT: the in-handler Busy guard blocks a move
+        // toggle so it can't race the commit.
+        using var ctx = new Bunit.TestContext();
+        var toggles = new List<bool>();
+        var cut = RenderSetRadius(ctx, initial: 30, canMove: true, busy: true,
+            onToggleMove: v => toggles.Add(v));
+
+        cut.Find(".anchor-edit-move").Click();
+
+        await Assert.That(toggles).IsEmpty();
     }
 
     // ---- External InitialRadiusMeters changes (server delta echo) ----

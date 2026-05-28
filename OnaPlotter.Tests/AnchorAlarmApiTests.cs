@@ -227,4 +227,58 @@ public class AnchorAlarmApiTests
         await Assert.That(r.Success).IsFalse();
         await Assert.That(r.StatusCode).IsEqualTo(405);
     }
+
+    // ---- SetPositionAsync (PUT navigation.anchor.position {lat,lon}) ----
+
+    [Test]
+    public async Task SetPosition_PUTs_AnchorPositionPath_With_PositionObject()
+    {
+        // Same path as raise but with a {latitude, longitude} value
+        // object instead of null. Pin the SK position shape so a
+        // refactor that swaps to {lat,lng} or a bare array breaks
+        // here, not the helm dragging the pin onto the chain.
+        var (client, log) = CapturingClient();
+        var api = NewApi(client);
+
+        var r = await api.SetPositionAsync(54.321, 11.234);
+
+        await Assert.That(r.Success).IsTrue();
+        await Assert.That(log.Count).IsEqualTo(1);
+        await Assert.That(log[0].Method).IsEqualTo("PUT");
+        await Assert.That(log[0].Url)
+            .IsEqualTo(ApiTestHelpers.TestBase + "/signalk/v1/api/vessels/self/navigation/anchor/position");
+
+        using var doc = JsonDocument.Parse(log[0].Body);
+        await Assert.That(doc.RootElement.TryGetProperty("value", out var value)).IsTrue();
+        await Assert.That(value.ValueKind).IsEqualTo(JsonValueKind.Object);
+        await Assert.That(value.GetProperty("latitude").GetDouble()).IsEqualTo(54.321);
+        await Assert.That(value.GetProperty("longitude").GetDouble()).IsEqualTo(11.234);
+    }
+
+    [Test]
+    public async Task SetPosition_403_Returns_Failure_With_StatusCode()
+    {
+        // Read-only helm role can't write position; caller routes the
+        // toast to "permission denied" via StatusCode.
+        var (client, _) = CapturingClient(status: HttpStatusCode.Forbidden);
+        var api = NewApi(client);
+
+        var r = await api.SetPositionAsync(54.0, 11.0);
+
+        await Assert.That(r.Success).IsFalse();
+        await Assert.That(r.StatusCode).IsEqualTo(403);
+    }
+
+    [Test]
+    public async Task SetPosition_NetworkException_Returns_Failure()
+    {
+        var client = ThrowingClient(new HttpRequestException("connection refused"));
+        var api = NewApi(client);
+
+        var r = await api.SetPositionAsync(54.0, 11.0);
+
+        await Assert.That(r.Success).IsFalse();
+        await Assert.That(r.Error).IsNotNull();
+        await Assert.That(r.Error!).Contains("connection refused");
+    }
 }

@@ -45,6 +45,15 @@ public sealed class MapAnchorJs : IMapAnchorJs
     public Task SetAnchorIncompleteAsync(bool incomplete)
         => InvokeSafe("setAnchorIncomplete", incomplete);
 
+    public Task SetAnchorMoveModeAsync(bool enable)
+        => InvokeSafe("setAnchorMoveMode", enable);
+
+    public Task SetAnchorPositionAsync(double lat, double lon)
+        => InvokeSafe("setAnchorPosition", lat, lon);
+
+    public Task<AnchorLatLng?> GetAnchorMovedLatLngAsync()
+        => InvokeSafeResult<AnchorLatLng?>(null, "getAnchorMovedLatLng");
+
     /// <summary>
     /// Single safe-call helper for every interop in this wrapper.
     /// Swallows the three "page is unmounting" exceptions that
@@ -62,5 +71,22 @@ public sealed class MapAnchorJs : IMapAnchorJs
         }
         catch (JSDisconnectedException) { /* page is unmounting */ }
         catch (ObjectDisposedException) { /* JS module disposed first */ }
+    }
+
+    /// <summary>
+    /// Value-returning sibling of <see cref="InvokeSafe"/>. Returns
+    /// <paramref name="whenDisposed"/> if the wrapper or the JS module
+    /// is gone, so callers reading interop state during teardown get a
+    /// defined fallback instead of an exception.
+    /// </summary>
+    private async Task<T> InvokeSafeResult<T>(T whenDisposed, string identifier, params object?[] args)
+    {
+        if (_disposed) return whenDisposed;
+        try
+        {
+            return await _module.InvokeAsync<T>(identifier, args);
+        }
+        catch (JSDisconnectedException) { return whenDisposed; }
+        catch (ObjectDisposedException) { return whenDisposed; }
     }
 }

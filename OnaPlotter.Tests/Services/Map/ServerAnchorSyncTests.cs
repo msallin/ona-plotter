@@ -50,6 +50,29 @@ public class ServerAnchorSyncTests
             Incompletes.Add(incomplete);
             return Task.CompletedTask;
         }
+
+        // Manual-move surface: ServerAnchorSync doesn't call these
+        // (move is driven from the page, not the per-tick sync), but
+        // the fake must satisfy the interface. Captured anyway so a
+        // future sync that DID touch them would be visible here.
+        public List<bool> MoveModes { get; } = [];
+        public List<(double lat, double lon)> PositionSets { get; } = [];
+        public AnchorLatLng? MovedLatLng { get; set; }
+
+        public Task SetAnchorMoveModeAsync(bool enable)
+        {
+            MoveModes.Add(enable);
+            return Task.CompletedTask;
+        }
+
+        public Task SetAnchorPositionAsync(double lat, double lon)
+        {
+            PositionSets.Add((lat, lon));
+            return Task.CompletedTask;
+        }
+
+        public Task<AnchorLatLng?> GetAnchorMovedLatLngAsync()
+            => Task.FromResult(MovedLatLng);
     }
 
     private sealed class TimeBox

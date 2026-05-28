@@ -55,4 +55,12 @@ public interface IAnchorAlarmApi
     /// <c>navigation.anchor.position</c>. Plugin clears position +
     /// maxRadius from the SK bus and stops drift monitoring.</summary>
     Task<ApiResult> RaiseAsync(CancellationToken ct = default);
+
+    /// <summary>Reposition an already-dropped anchor: PUT
+    /// <c>navigation.anchor.position</c> with
+    /// <c>{value: {latitude, longitude}}</c>. The helm uses this when
+    /// the captured GPS pin was off (antenna offset, late tap) or to
+    /// nudge the pin onto the actual lie of the chain. The watch
+    /// radius is unchanged; only the centre moves.</summary>
+    Task<ApiResult> SetPositionAsync(double latitude, double longitude, CancellationToken ct = default);
 }
