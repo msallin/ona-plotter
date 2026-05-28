@@ -54,22 +54,34 @@ public class AnchorEditPanelTests
         bool busy = false,
         Action<int>? onPreviewRadius = null,
         Action<int>? onSetRadius = null,
+        Action<AnchorEditPanel.AnchorSetCommit>? onSetCommit = null,
         Action? onCancel = null,
         string suggestion = "",
         int? autoPreview = null,
-        string? autoBreakdown = null)
+        string? autoBreakdown = null,
+        bool initialPickIsAuto = false)
     {
         return ctx.RenderComponent<AnchorEditPanel>(p => p
             .Add(x => x.Mode, AnchorEditPanel.AnchorPanelMode.SetRadius)
             .Add(x => x.InitialRadiusMeters, initial)
+            .Add(x => x.InitialPickIsAuto, initialPickIsAuto)
             .Add(x => x.Busy, busy)
             .Add(x => x.SuggestionLabel, suggestion)
             .Add(x => x.AutoPreviewRadius, autoPreview)
             .Add(x => x.AutoBreakdown, autoBreakdown)
             .Add(x => x.OnPreviewRadius, Microsoft.AspNetCore.Components.EventCallback.Factory
                 .Create<int>(p, r => onPreviewRadius?.Invoke(r)))
+            // Most existing tests only care about the radius value; surface
+            // it as `onSetRadius` to keep their call sites unchanged. The
+            // separate `onSetCommit` overload exposes the full payload
+            // (radius + FromAuto flag) for the tests that pin the new
+            // intent-tracking contract.
             .Add(x => x.OnSetRadius, Microsoft.AspNetCore.Components.EventCallback.Factory
-                .Create<int>(p, r => onSetRadius?.Invoke(r)))
+                .Create<AnchorEditPanel.AnchorSetCommit>(p, c =>
+                {
+                    onSetRadius?.Invoke(c.RadiusMeters);
+                    onSetCommit?.Invoke(c);
+                }))
             .Add(x => x.OnCancel, Microsoft.AspNetCore.Components.EventCallback.Factory
                 .Create(p, () => onCancel?.Invoke())));
     }
@@ -666,6 +678,90 @@ public class AnchorEditPanelTests
         using var ctx = new Bunit.TestContext();
         var cut = RenderSetRadius(ctx, initial: 30, suggestion: "");
         await Assert.That(cut.FindAll(".anchor-edit-sub").Count).IsEqualTo(0);
+    }
+
+    // ---- Auto-intent carry-forward (Adjust reopen) ----
+
+    [Test]
+    public async Task SetRadiusMode_InitialPickIsAuto_KeepsAutoActive_OverNumericSeed()
+    {
+        // Field-study: helm Sets via Auto = 47 m, then taps Adjust later.
+        // Without intent carry-forward the panel would snap 47 to the
+        // 50 m chip and the helm reads it as "the panel changed my
+        // choice". With InitialPickIsAuto=true the Auto chip stays
+        // active despite the numeric InitialRadiusMeters.
+        using var ctx = new Bunit.TestContext();
+        var cut = RenderSetRadius(ctx,
+            initial: 47,
+            autoPreview: 47,
+            initialPickIsAuto: true);
+
+        await Assert.That(cut.Find(".anchor-edit-auto").ClassList.Contains("active")).IsTrue();
+
+        var numericActives = cut.FindAll(".anchor-edit-chips .map-btn.active")
+            .Where(b => !b.ClassList.Contains("anchor-edit-auto"))
+            .ToList();
+        await Assert.That(numericActives.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task SetRadiusMode_InitialPickIsAutoFalse_SnapsToPreset()
+    {
+        // Inverse contract: when the prior commit was numeric the
+        // panel snaps the saved radius back to its closest preset
+        // chip so the helm sees their explicit choice.
+        using var ctx = new Bunit.TestContext();
+        var cut = RenderSetRadius(ctx,
+            initial: 50,
+            autoPreview: 47,
+            initialPickIsAuto: false);
+
+        await Assert.That(cut.Find(".anchor-edit-auto").ClassList.Contains("active")).IsFalse();
+        var actives = cut.FindAll(".anchor-edit-chips .map-btn.active");
+        await Assert.That(actives.Count).IsEqualTo(1);
+        await Assert.That(actives[0].TextContent).Contains("50");
+    }
+
+    [Test]
+    public async Task SetRadiusMode_Set_FromAuto_CommitPayloadCarriesFromAutoTrue()
+    {
+        // Set tap with Auto picked emits FromAuto=true so the parent
+        // can stash intent for the next Adjust open.
+        using var ctx = new Bunit.TestContext();
+        var commits = new List<AnchorEditPanel.AnchorSetCommit>();
+        var cut = RenderSetRadius(ctx,
+            initial: AnchorEditPanel.UnseededInitialRadius,
+            autoPreview: 47,
+            onSetCommit: c => commits.Add(c));
+
+        cut.Find(".anchor-edit-set").Click();
+
+        await Assert.That(commits.Count).IsEqualTo(1);
+        await Assert.That(commits[0].RadiusMeters).IsEqualTo(47);
+        await Assert.That(commits[0].FromAuto).IsTrue();
+    }
+
+    [Test]
+    public async Task SetRadiusMode_Set_FromNumericChip_CommitPayloadCarriesFromAutoFalse()
+    {
+        // Set tap with a numeric chip picked emits FromAuto=false.
+        // The matching contract to the Auto case so the parent's
+        // intent tracker can't drift.
+        using var ctx = new Bunit.TestContext();
+        var commits = new List<AnchorEditPanel.AnchorSetCommit>();
+        var cut = RenderSetRadius(ctx,
+            initial: AnchorEditPanel.UnseededInitialRadius,
+            autoPreview: 47,
+            onSetCommit: c => commits.Add(c));
+
+        cut.FindAll(".anchor-edit-chips .map-btn")
+            .First(b => b.TextContent.Contains("75") && !b.ClassList.Contains("anchor-edit-auto"))
+            .Click();
+        cut.Find(".anchor-edit-set").Click();
+
+        await Assert.That(commits.Count).IsEqualTo(1);
+        await Assert.That(commits[0].RadiusMeters).IsEqualTo(75);
+        await Assert.That(commits[0].FromAuto).IsFalse();
     }
 
     // ---- External InitialRadiusMeters changes (server delta echo) ----

@@ -7877,11 +7877,13 @@ html[data-slow-client="1"] #mapDiv {
    route-purple) and a stacked title+subtitle eyebrow on the left
    instead of a name input. */
 .anchor-edit-bar {
-    /* Amber border distinguishes the safety-critical anchor flow
-       from the navigation-flavour route edit. Same opacity (0.3) so
-       both bars read at equal weight in the corner of the helm's
-       eye. */
-    border-color: rgba(245, 158, 11, 0.45);
+    /* Neutral slate border so the dialog reads as system chrome.
+       Amber is reserved for the alarm-adjacent affordances inside
+       the panel (the active chip's amber tint, the dropped-but-not-
+       armed pulse on the chart) and the HUD card's hover hint - a
+       full amber frame on the dialog itself was reading as "alarm"
+       to helms in normal-flow radius adjustment. */
+    border-color: rgba(148, 163, 184, 0.35);
     /* Override the inherited flex-wrap: nowrap on .route-edit-bar.
        Anchor's SetRadius mode renders title + Auto chip + 5 numeric
        chips + Arm + Close which won't fit on one line at iPad-portrait
@@ -7999,10 +8001,10 @@ html[data-slow-client="1"] #mapDiv {
 :root.theme-effective-light .anchor-edit-bar {
     background: rgba(255, 255, 255, 0.96);
     color: var(--sk-text);
-    /* Amber-700 instead of amber-500 so the border reads at AA
-       contrast on a near-white surface; the dark-theme value is
-       too pale on white and the silhouette dissolves. */
-    border-color: rgba(180, 83, 9, 0.6);
+    /* Slate-700 on white: AA-clear silhouette without the alarm tone
+       a deep-amber would carry. The dark-theme rule sets the same
+       quiet neutral; both branches read as system chrome. */
+    border-color: rgba(15, 23, 42, 0.25);
     -webkit-backdrop-filter: blur(6px);
     backdrop-filter: blur(6px);
 }

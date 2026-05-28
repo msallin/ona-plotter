@@ -214,6 +214,7 @@
            install / upgrade and try again. *@
         <AnchorEditPanel Mode="@_anchorPanelMode"
                          InitialRadiusMeters="@anchorEditInitialRadius"
+                         InitialPickIsAuto="@_anchorEditInitialPickIsAuto"
                          SuggestionLabel="@AnchorEyebrowEffective()"
                          Busy="@anchorEditBusy"
                          AutoPreviewRadius="@AutoRadiusPreview()"
@@ -4555,6 +4556,17 @@
         OnaPlotter.Components.Map.AnchorEditPanel.AnchorPanelMode.Drop;
     private int anchorEditInitialRadius;
     private bool anchorEditBusy;
+
+    /// <summary>True when the last Set committed via the Auto chip
+    /// (vs a numeric preset). Drives <c>InitialPickIsAuto</c> on a
+    /// subsequent Adjust reopen so the panel pre-selects Auto again
+    /// instead of snapping the saved radius to its closest numeric
+    /// chip - which the helm reads as "the panel picked a different
+    /// value than I committed". Session-local; a page reload resets
+    /// to false (fresh-arm path falls back to snap-to-preset, which
+    /// is the right behaviour when no prior intent is known).</summary>
+    private bool _anchorLastSetViaAuto;
+    private bool _anchorEditInitialPickIsAuto;
     /// <summary>True when the panel was opened standalone (helm tapped
     /// "Adjust" on the anchor-watch HUD card) rather than as the
     /// Drop -> SetRadius continuation. Drives whether the panel
@@ -4595,6 +4607,12 @@
     private void OpenAnchorDropPanel()
     {
         anchorEditInitialRadius = OnaPlotter.Components.Map.AnchorEditPanel.UnseededInitialRadius;
+        // Fresh-drop continuation lands in SetRadius mode with no
+        // prior radius and Auto as the default chip. The reseed in
+        // OnAnchorPanelDrop below leaves _anchorLastSetViaAuto alone
+        // (a re-drop after a previous Auto-commit still honours the
+        // helm's last intent).
+        _anchorEditInitialPickIsAuto = _anchorLastSetViaAuto;
         anchorEditBusy = false;
         _anchorPanelMode = OnaPlotter.Components.Map.AnchorEditPanel.AnchorPanelMode.Drop;
         // Drop-mode Close is always rendered; the SetRadius-mode
@@ -4758,6 +4776,11 @@
         anchorEditInitialRadius = Data.AnchorMaxRadius is double r && r > 0
             ? (int)Math.Round(r)
             : OnaPlotter.Components.Map.AnchorEditPanel.UnseededInitialRadius;
+        // Carry forward the helm's last-known pick source so an
+        // Adjust reopen of an Auto-armed anchor keeps Auto selected
+        // (instead of snapping to the closest numeric chip and
+        // reading as a different choice).
+        _anchorEditInitialPickIsAuto = _anchorLastSetViaAuto;
         anchorEditBusy = false;
         _anchorPanelMode = OnaPlotter.Components.Map.AnchorEditPanel.AnchorPanelMode.SetRadius;
         // Standalone open: helm tapped Adjust on the anchor-watch
@@ -4833,8 +4856,12 @@
             Toasts.Success("Anchor dropped - back down, then tap Auto or pick a radius");
             // Flip the panel directly to SetRadius mode so the helm
             // doesn't have to tap Anchor twice. Auto chip is the
-            // default selection (UnseededInitialRadius sentinel).
+            // default selection (UnseededInitialRadius sentinel +
+            // an Auto-default seed, since the fresh-drop intent is
+            // "let the panel pick" - if the helm wants numeric they
+            // tap a chip).
             anchorEditInitialRadius = OnaPlotter.Components.Map.AnchorEditPanel.UnseededInitialRadius;
+            _anchorEditInitialPickIsAuto = true;
             _anchorPanelMode = OnaPlotter.Components.Map.AnchorEditPanel.AnchorPanelMode.SetRadius;
             anchorEditBusy = false;
             return;
@@ -4870,19 +4897,23 @@
     /// On success the panel auto-closes (helm picked, helm set,
     /// done); on failure it stays open so the helm can retry or
     /// pick a different chip.</summary>
-    private async Task OnAnchorPanelSet(int radiusMeters)
+    private async Task OnAnchorPanelSet(OnaPlotter.Components.Map.AnchorEditPanel.AnchorSetCommit commit)
     {
         if (anchorEditBusy) return;     // double-tap guard, see OnAnchorPanelDrop
         anchorEditBusy = true;
         ApiResult r;
-        try { r = await AnchorAlarmApi.SetMaxRadiusAsync(radiusMeters); }
+        try { r = await AnchorAlarmApi.SetMaxRadiusAsync(commit.RadiusMeters); }
         catch (Exception ex) { r = ApiResult.Fail(ex.Message); }
 
         if (r.Success)
         {
             // Persist the choice so the heuristic-default on a future
             // depth-less drop still has a sensible value to suggest.
-            await Settings.SetManualAnchorRadiusMetersAsync(radiusMeters);
+            await Settings.SetManualAnchorRadiusMetersAsync(commit.RadiusMeters);
+            // Stash the pick source so a future Adjust reopen re-
+            // selects Auto when that's what the helm committed (and
+            // a numeric chip when they committed numeric).
+            _anchorLastSetViaAuto = commit.FromAuto;
             // Preview reconciles with reality on the next server delta;
             // ServerAnchorSync diffs MaxRadius against _lastPushedRadius
             // and pushes the authoritative value. Clear the preview

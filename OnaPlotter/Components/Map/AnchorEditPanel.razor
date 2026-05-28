@@ -199,12 +199,31 @@
     [Parameter] public EventCallback<int> OnPreviewRadius { get; set; }
 
     /// <summary>Set button tapped - commit the picked value via
-    /// PUT maxRadius. Carries the effective radius (numeric chip
-    /// face if a numeric chip is picked, <see cref="AutoPreviewRadius"/>
-    /// if Auto is picked). Parent calls
-    /// <c>IAnchorAlarmApi.SetMaxRadiusAsync(radius)</c> and closes
-    /// the panel on success.</summary>
-    [Parameter] public EventCallback<int> OnSetRadius { get; set; }
+    /// PUT maxRadius. Carries the effective radius AND whether the
+    /// helm picked Auto vs a numeric chip, so the parent can
+    /// remember intent and pre-select Auto again on a future Adjust
+    /// reopen (otherwise an Auto-committed value snaps to the
+    /// closest numeric chip on reopen and the helm reads it as a
+    /// different choice from the one they made). Parent calls
+    /// <c>IAnchorAlarmApi.SetMaxRadiusAsync(commit.RadiusMeters)</c>,
+    /// stashes <c>commit.FromAuto</c>, and closes the panel on
+    /// success.</summary>
+    [Parameter] public EventCallback<AnchorSetCommit> OnSetRadius { get; set; }
+
+    /// <summary>Payload for the OnSetRadius callback. The boolean
+    /// carries the helm's intent (Auto vs numeric chip) so the
+    /// parent can pre-select Auto on a future Adjust reopen instead
+    /// of snapping the saved value to the closest preset chip.</summary>
+    public readonly record struct AnchorSetCommit(int RadiusMeters, bool FromAuto);
+
+    /// <summary>When true, seed the panel with Auto pre-selected
+    /// regardless of <see cref="InitialRadiusMeters"/>. Parent flips
+    /// this on whenever the last committed radius came from the
+    /// Auto chip; flipped off when the helm committed a numeric
+    /// chip. Default false preserves the v1 snap-to-preset behaviour
+    /// for callers that don't track Auto-intent (and for fresh
+    /// arming where no prior intent exists).</summary>
+    [Parameter] public bool InitialPickIsAuto { get; set; }
 
     /// <summary>Cancel: parent closes the panel. Wired for both the
     /// Drop-mode Close button and the SetRadius-mode Close button
@@ -310,7 +329,14 @@
         if (InitialRadiusMeters != _lastSeenInitial)
         {
             _lastSeenInitial = InitialRadiusMeters;
-            _pickedNumeric = InitialRadiusMeters == UnseededInitialRadius
+            // InitialPickIsAuto wins over the snap-to-preset path:
+            // an Adjust reopen of an Auto-committed anchor must keep
+            // Auto pre-selected, otherwise the panel's pick reads as
+            // a different choice from the one the helm actually
+            // made. Numeric-committed radius still snaps to its
+            // closest preset chip so the chip face matches the
+            // server value.
+            _pickedNumeric = (InitialPickIsAuto || InitialRadiusMeters == UnseededInitialRadius)
                 ? null
                 : SnapToPreset(InitialRadiusMeters);
         }
@@ -364,12 +390,14 @@
     /// <summary>Tap Set. Commits the effective radius via PUT. The
     /// parent closes the panel on success. Skipped when nothing
     /// effective is picked (e.g., Auto active but
-    /// AutoPreviewRadius is still null).</summary>
+    /// AutoPreviewRadius is still null). The commit payload carries
+    /// the Auto-vs-numeric source so the parent can stash intent for
+    /// a future Adjust reopen.</summary>
     private async Task OnSetClicked()
     {
         if (Busy) return;
         if (EffectiveRadius is not int e) return;
-        await OnSetRadius.InvokeAsync(e);
+        await OnSetRadius.InvokeAsync(new AnchorSetCommit(e, IsAutoActive));
     }
 
     private async Task OnDropClicked()
