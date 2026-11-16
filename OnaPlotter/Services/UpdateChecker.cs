@@ -1,4 +1,5 @@
 using System.Net.Http;
+using Microsoft.Extensions.Hosting;
 
 namespace OnaPlotter.Services;
 
@@ -18,8 +19,13 @@ namespace OnaPlotter.Services;
 /// blazor.boot.json carries hashes for every WASM file but a fetch
 /// + parse on each tick would dwarf the version.g.js fetch in cost.
 /// </para>
+/// <para>
+/// Runs as a hosted service so the timer starts with the app rather than
+/// as a side effect of construction; constructing the checker (tests,
+/// the layout's injection) starts nothing.
+/// </para>
 /// </summary>
-public sealed class UpdateChecker : IDisposable
+public sealed class UpdateChecker : IHostedService, IDisposable
 {
     /// <summary>How often to re-fetch <c>version.g.js</c>. 5 minutes
     /// balances "helm gets a Reload prompt within an acceptable
@@ -33,7 +39,7 @@ public sealed class UpdateChecker : IDisposable
     public const int FirstCheckSeconds = 30;
 
     private readonly HttpClient _http;
-    private readonly System.Threading.Timer _timer;
+    private ITimer? _timer;
     private readonly string _embeddedHash = OnaPlotter.BuildInfo.CommitHash;
     private bool _disposed;
 
@@ -62,11 +68,27 @@ public sealed class UpdateChecker : IDisposable
     {
         _http = http;
         _time = time;
-        _timer = new System.Threading.Timer(
+    }
+
+    /// <summary>Starts the polling timer. Returns immediately; the
+    /// first check fires <see cref="FirstCheckSeconds"/> seconds later.
+    /// Calling it again is a no-op.</summary>
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        if (_disposed || _timer is not null) return Task.CompletedTask;
+        _timer = _time.CreateTimer(
             _ => _ = CheckAsync(),
             state: null,
             dueTime: TimeSpan.FromSeconds(FirstCheckSeconds),
             period: TimeSpan.FromMinutes(CheckIntervalMinutes));
+        return Task.CompletedTask;
+    }
+
+    public Task StopAsync(CancellationToken cancellationToken)
+    {
+        _timer?.Dispose();
+        _timer = null;
+        return Task.CompletedTask;
     }
 
     /// <summary>Manual trigger - used by tests + the "check now"
@@ -151,6 +173,6 @@ public sealed class UpdateChecker : IDisposable
     public void Dispose()
     {
         _disposed = true;
-        _timer.Dispose();
+        _timer?.Dispose();
     }
 }

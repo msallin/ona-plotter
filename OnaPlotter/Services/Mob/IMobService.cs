@@ -66,7 +66,7 @@ public interface IMobService
     /// runs exactly once per service instance), then pull the server's
     /// active notification list and apply MOB entries to the local
     /// store (reconcile, repeatable). Called once from
-    /// <c>Program.cs</c> at app startup; the service's internal
+    /// <c>SafetyBootstrap</c> at app startup; the service's internal
     /// <see cref="OnaPlotter.Services.SignalkClient.OnConnectionChanged"/>
     /// subscription re-runs only the reconcile portion on every WS
     /// reconnect edge. Safe to call repeatedly - the session-init

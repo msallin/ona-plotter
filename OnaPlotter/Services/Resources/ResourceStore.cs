@@ -41,7 +41,7 @@ namespace OnaPlotter.Services.Resources;
 /// dispatches WS deltas to the right cache, and orchestrates REST
 /// reconcile across all four in parallel.</para>
 /// </summary>
-public sealed class ResourceStore : IAsyncDisposable, IWaypointReader
+public sealed class ResourceStore : IAsyncDisposable, IWaypointReader, OnaPlotter.Services.Startup.IResourceRefresher
 {
     private readonly IRouteApi _routesApi;
     private readonly IWaypointApi _waypointsApi;

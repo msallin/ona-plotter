@@ -1266,7 +1266,9 @@
 // v118 -> v119: Map .map-viewport wrapper (oversized course-up container,
 //               upright controls); HudRouteCard / Dashboard TimeProvider;
 //               SearchBox expanded-state parameter; seamark overlay pane.
-const CACHE_NAME = 'ona-plotter-v119';
+// v119 -> v120: app startup runs as hosted services (WASM assembly shape
+//               change); UpdateChecker starts its timer from StartAsync.
+const CACHE_NAME = 'ona-plotter-v120';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

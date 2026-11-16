@@ -8,7 +8,7 @@ namespace OnaPlotter.Services.Auth;
 /// Orchestrates the standalone-mode login flow on top of
 /// <see cref="IAuthApi"/> + <see cref="ITokenStore"/> + the credential
 /// settings on <see cref="IServerSettings"/>. Single entry point so
-/// the Settings login dialog, the Program.cs startup hook, and the
+/// the Settings login dialog, the ConnectionBootstrap startup hook, and the
 /// (future) 401 retry path all funnel through the same persistence
 /// rules.
 ///
@@ -21,7 +21,7 @@ namespace OnaPlotter.Services.Auth;
 /// (PIN, certificate, etc.) lands here without touching the JWT
 /// store.</para>
 /// </summary>
-public sealed class AuthSession
+public sealed class AuthSession : OnaPlotter.Services.Startup.IAutoLogin
 {
     private readonly IAuthApi _api;
     private readonly ITokenStore _tokens;
@@ -39,8 +39,8 @@ public sealed class AuthSession
         _logger = logger;
     }
 
-    /// <summary>Prompted by Program.cs after the settings + token
-    /// store have been bootstrapped. Three branches:</summary>
+    /// <summary>Prompted by ConnectionBootstrap after the settings
+    /// have been loaded. Three branches:</summary>
     /// <list type="bullet">
     ///   <item>Token already valid: keep it, return true.</item>
     ///   <item>No valid token but we have stored creds AND

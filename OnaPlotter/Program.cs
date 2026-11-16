@@ -4,6 +4,7 @@ using OnaPlotter.Components;
 using OnaPlotter.Services;
 using OnaPlotter.Services.Api;
 using OnaPlotter.Services.Auth;
+using OnaPlotter.Services.Startup;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
@@ -149,18 +150,18 @@ builder.Services.AddSingleton<IAlarmRule>(sp =>
 builder.Services.AddSingleton<DeadmanTracker>();
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.DeadmanAlarmRule>();
 builder.Services.AddSingleton<IAlarmManager, AlarmManager>();
-// Cross-plotter publish. Tracker is the read-side that the
+// Phase B: cross-plotter publish. Tracker is the read-side that the
 // bridge rule queries to avoid echoing our own publications back into
 // the banner; AlarmPublisher is the writer that POSTs raises/clears
-// to the SK server when the local alarm stack changes. Resolved
-// post-build so subscription wiring happens once at startup.
+// to the SK server when the local alarm stack changes. SafetyBootstrap
+// resolves it so its subscription wiring happens once at startup.
 builder.Services.AddSingleton<OnaPlotter.Services.Alarms.PublishedAlarmTracker>();
 builder.Services.AddSingleton<OnaPlotter.Services.Alarms.IPublishedAlarmTracker>(
     sp => sp.GetRequiredService<OnaPlotter.Services.Alarms.PublishedAlarmTracker>());
 builder.Services.AddSingleton<OnaPlotter.Services.Alarms.AlarmPublisher>();
 // Alarm evaluation (data changes + 1 Hz timer) and waypoint auto-advance
-// run as services, independent of any mounted component. Resolved
-// post-build so their subscriptions exist from startup.
+// run as services, independent of any mounted component. SafetyBootstrap
+// resolves them so their subscriptions exist from startup.
 builder.Services.AddSingleton<OnaPlotter.Services.Alarms.AlarmEvaluationDriver>();
 builder.Services.AddSingleton<AutoAdvanceService>();
 
@@ -173,7 +174,7 @@ builder.Services.AddSingleton<INoteApi, NoteApi>();
 builder.Services.AddSingleton<IRegionApi, RegionApi>();
 builder.Services.AddSingleton<ICourseApi, CourseApi>();
 // SignalK v2 notifications client. Drives cross-plotter alarm sync
-// via Acknowledge / Silence and lets client-side rules
+// via Acknowledge / Silence and (Phase B) lets client-side rules
 // publish their alarms back to SK so other plotters can see them.
 builder.Services.AddSingleton<INotificationsApi, NotificationsApi>();
 
@@ -213,7 +214,7 @@ builder.Services.AddSingleton<IPathApi, PathApi>();
 builder.Services.AddSingleton<IAuthApi, AuthApi>();
 // Login orchestration on top of IAuthApi + ITokenStore + the
 // credential settings. Used by the standalone-mode login dialog and
-// the auto-login startup hook below.
+// ConnectionBootstrap's auto-login.
 builder.Services.AddSingleton<OnaPlotter.Services.Auth.AuthSession>();
 builder.Services.AddSingleton<ITrackApi, TrackApi>();
 // Signal K Radar API v3.1. Optional; empty list when no provider plugin.
@@ -331,87 +332,11 @@ builder.Services.AddSingleton<OnaPlotter.Services.Pois.IMarinePoiService>(
     sp => sp.GetRequiredService<OnaPlotter.Services.Pois.OverpassPoiService>());
 builder.Services.AddSingleton<OnaPlotter.Services.Pois.MarinePoiCache>();
 
-var host = builder.Build();
+// Startup work (settings load, WebSocket + auto-login, MOB recovery,
+// alarm subscribers, update polling) runs as hosted services. Hosted
+// services start sequentially in this order before first render;
+// StartAsync must not block on network or throw. See
+// Services/Startup/StartupServiceCollectionExtensions.cs.
+builder.Services.AddOnaStartup();
 
-// Resolve ResourceStore FIRST so its ctor wires the OnResourceDelta +
-// OnConnectionChanged subscriptions on SignalkClient before any WS
-// frames flow. Resolving RegionStore here too forces the subscription
-// to ResourceStore.OnRegion* events so HazardousRegionAlarmRule sees
-// regions whether or not Map.razor is mounted. Order matters here
-// (don't move below StartAsync without thinking through the race).
-var resourceStore = host.Services.GetRequiredService<OnaPlotter.Services.Resources.ResourceStore>();
-_ = host.Services.GetRequiredService<OnaPlotter.Services.RegionStore>();
-
-// Bootstrap settings + token store + try auto-login BEFORE the WS
-// connects so the very first connect carries the token in its URL.
-// Without this race protection, the WS connects anonymously, gets
-// rejected by an SK server with security on, and waits the full
-// backoff window before retrying with the freshly-issued token.
-//
-// Three steps:
-//   1. AppSettings.InitializeAsync - reads localStorage so
-//      Standalone-mode + creds are populated before TryAutoLoginAsync
-//      consults them.
-//   2. TokenStore.LoadAsync (called inside TryAutoLoginAsync) - reads
-//      any persisted JWT + expiry.
-//   3. TryAutoLoginAsync - returns the token if still valid; otherwise
-//      attempts a silent re-login if the helm has opted into
-//      "Remember password".
-//
-// Fire-and-forget on the auto-login itself: a slow / failed login on
-// startup MUST NOT block the rest of the host pipeline, otherwise an
-// offline boot sits at the loading screen. SignalkClient meanwhile
-// listens to ITokenStore.OnTokenChanged so when the auto-login
-// completes asynchronously it reconnects with the fresh token in
-// the URL.
-var startupSettings = host.Services.GetRequiredService<IAppSettings>();
-await startupSettings.InitializeAsync();
-_ = host.Services.GetRequiredService<OnaPlotter.Services.Auth.AuthSession>()
-    .TryAutoLoginAsync();
-
-// Kick off the WebSocket loop (no IHostedService in Blazor WASM).
-var signalkClient = host.Services.GetRequiredService<SignalkClient>();
-_ = signalkClient.StartAsync();
-
-// Initial REST reconcile fires in the background; pages poll
-// IsLoaded or subscribe to OnReloaded.
-_ = resourceStore.RefreshAllAsync(cause: "startup");
-
-// MOB pipeline: load any persisted pending raises from localStorage
-// (offline-emit recovery), spawn the retry-loop tasks, and pull the
-// server's active notification list so a MOB raised on another
-// plotter lands on this plotter's banner immediately. Owning the
-// kick here (rather than from Map.razor's OnAfterRenderAsync) means
-// MOB recovery runs even when the helm reloads on Wind / Settings /
-// History instead of the chart page. The internal OnConnectionChanged subscription
-// inside MobService re-runs the reconcile portion on every WS
-// reconnect edge. Fire-and-forget: an early-startup REST 401 (auth
-// token not yet loaded) just silently no-ops and the connect-edge
-// reconcile that fires once the WS connects with the real token
-// picks up the actual list.
-var mobService = host.Services.GetRequiredService<OnaPlotter.Services.Mob.IMobService>();
-_ = mobService.InitializeAsync();
-
-// Activate the cross-plotter alarm publisher. Resolving the singleton
-// runs the constructor which subscribes to IAlarmManager.OnAlarmsChanged;
-// without this line the type would never be instantiated (no other
-// component injects it - the bridge rule injects the tracker, not
-// the publisher) and locally-emitted alarms would never reach other
-// plotters. Stashed in a discard so the GC keeps the subscription alive.
-_ = host.Services.GetRequiredService<OnaPlotter.Services.Alarms.AlarmPublisher>();
-
-// Same for the alarm evaluation driver and auto-advance: their ctors
-// subscribe to SignalK data changes (and start the 1 Hz alarm tick), and
-// no component injects the driver.
-_ = host.Services.GetRequiredService<OnaPlotter.Services.Alarms.AlarmEvaluationDriver>();
-_ = host.Services.GetRequiredService<AutoAdvanceService>();
-
-// NavigationAverages must resolve at startup too - its ctor wires
-// the OnDataChanged subscription, and no component injects it until
-// the chart HUD is mounted. Without this kick the rolling buffers
-// stay empty until the helm navigates to /map, which means the
-// smoothed values would only start filling on first chart-page
-// visit instead of from the moment the WS connects.
-_ = host.Services.GetRequiredService<OnaPlotter.Services.INavigationAverages>();
-
-await host.RunAsync();
+await builder.Build().RunAsync();

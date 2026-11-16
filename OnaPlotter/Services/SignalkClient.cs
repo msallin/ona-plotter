@@ -21,7 +21,7 @@ namespace OnaPlotter.Services;
 /// <see cref="ServerNotificationStore"/>; REST seeding on connect is
 /// <see cref="SignalkConnectSeeding"/>.
 /// </summary>
-public sealed class SignalkClient : ISignalkClient, IAsyncDisposable
+public sealed class SignalkClient : ISignalkClient, OnaPlotter.Services.Startup.ISocketStarter, IAsyncDisposable
 {
     private const int InitialBackoffMs = 1_000;
     private const int MaxBackoffMs = 30_000;
@@ -523,7 +523,7 @@ public sealed class SignalkClient : ISignalkClient, IAsyncDisposable
     private void RaiseDataChanged() => OnDataChanged?.Invoke();
 
     /// <summary>
-    /// Starts the websocket receive loop. Called from Program.cs after host build.
+    /// Starts the websocket receive loop. Called from ConnectionBootstrap.
     /// </summary>
     public Task StartAsync(CancellationToken cancellationToken = default)
     {
