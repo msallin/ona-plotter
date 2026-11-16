@@ -10,7 +10,8 @@
 @inject IJSRuntime JS
 @inject NavigationManager Nav
 @inject OnaPlotter.Services.UpdateChecker Updates
-@inject OnaPlotter.Services.Api.IAuthApi AuthApi
+@inject OnaPlotter.Services.Signalk.StaleDataMonitor StaleMonitor
+@inject OnaPlotter.Services.Auth.LoginStatusPoller LoginPoller
 @inject OnaPlotter.Services.Api.ISignalKBaseUrl SkBaseUrl
 @inject ILogger<MainLayout> Logger
 @implements IAsyncDisposable
@@ -138,13 +139,14 @@
                 </button>
             }
 
-            @* Not-logged-in chip. Probed once at app start via
-               IAuthApi.GetLoginStatusAsync, refreshed every 5 min,
-               and re-probed immediately on tab visibility-change so
-               a helm who signs in via the SK admin tab and returns
-               sees the chip clear without waiting up to 5 min for
-               the next poll. Visible only when the server has
-               security ENABLED and status != "loggedIn"; a no-auth
+            @* Not-logged-in chip. LoginStatusPoller probes
+               IAuthApi.GetLoginStatusAsync at app start and on a
+               4 s / 2 min cadence; the layout re-probes immediately
+               on tab visibility-change so a helm who signs in via
+               the SK admin tab and returns sees the chip clear
+               without waiting for the next poll. Visible only when
+               the server has security ENABLED and status !=
+               "loggedIn"; a no-auth
                dev / homelab server hides the chip
                (authenticationRequired=false). Tap navigates to the
                SK admin login on the SERVER ORIGIN with the current
@@ -581,45 +583,15 @@
     // button. Defaults to false until JS answers; hiding is the safer
     // default (a missing button beats a broken one).
     private bool fullscreenSupported;
-    private System.Threading.Timer? staleCheckTimer;
     private System.Threading.Timer? snoozeCountdownTimer;
     private System.Threading.Timer? firstRunOfflineTimer;
     private volatile bool wasDisconnected;
-    private volatile bool wasStale;
     private bool alarmLogOpen;
     private bool firstRunOfflineToastShown;
-    /// <summary>Cached login-status snapshot. Probed once at app
-    /// start via IAuthApi.GetLoginStatusAsync and refreshed every
-    /// 5 minutes thereafter - short enough that the helm sees the
-    /// chip clear within a few minutes after they sign in via the
-    /// SK admin tab, long enough that the probe doesn't add
-    /// measurable network noise. Null means "haven't probed yet"
-    /// or "endpoint absent / failed"; the chip stays hidden in
-    /// either case.</summary>
-    private LoginStatus? _loginStatus;
-    private System.Threading.Timer? authPollTimer;
-    /// <summary>Coalesces overlapping probes. At the warning-shown
-    /// 4s cadence, a network stall can leave a previous probe in
-    /// flight when the next tick fires (AuthApi caps each probe at
-    /// 8s). Interlocked guard skips the duplicate - queuing them
-    /// up would build a backlog of stale 401 round-trips with no
-    /// UX benefit.</summary>
-    private int _authProbeInFlight;
-    /// <summary>Login-state polling cadence. Moderate 4s while the
-    /// not-logged-in chip is up so the helm signing in via the SK
-    /// admin tab sees the chip clear within a few seconds; slow
-    /// 2-min cadence once logged in (or on a no-security server)
-    /// just to catch a session expiry without a manual reload.
-    /// Cadence is re-evaluated after every probe. Doubled from
-    /// the original 2s / 1min after a helm-feedback round; the
-    /// faster cadence delivered no measurable UX benefit (the
-    /// tradeoff between "chip clears in 2s" vs "chip clears in
-    /// 4s" is invisible at helm pace) but doubled the auth-probe
-    /// HTTP traffic.</summary>
-    private static readonly TimeSpan AuthPollIntervalWarningShown =
-        TimeSpan.FromSeconds(4);
-    private static readonly TimeSpan AuthPollIntervalWarningHidden =
-        TimeSpan.FromMinutes(2);
+    /// <summary>Latest login-status probe, owned by
+    /// <see cref="OnaPlotter.Services.Auth.LoginStatusPoller"/>. Null
+    /// hides the not-logged-in chip.</summary>
+    private LoginStatus? _loginStatus => LoginPoller.Current;
 
     private string ConnectionClass => SignalkClient.IsConnected
         ? (SignalkClient.IsDataStale ? "stale" : "")
@@ -661,9 +633,10 @@
         SignalkClient.OnConnectionChanged += HandleConnectionChanged;
         // Alarm evaluation and waypoint auto-advance run in
         // AlarmEvaluationDriver / AutoAdvanceService; the layout only
-        // renders. The data subscription here just clears the stale
-        // badge as soon as data flows again.
-        SignalkClient.OnDataChanged += HandleDataChanged;
+        // renders. StaleDataMonitor and LoginStatusPoller own their
+        // timers; the layout re-renders on their change events.
+        StaleMonitor.OnChanged += HandleStaleChanged;
+        LoginPoller.OnChanged += HandleLoginStatusChanged;
         Toasts.OnChanged += HandleToastsChanged;
         Settings.OnSettingsChanged += HandleSettingsChanged;
         Alarms.OnAlarmChanged += HandleAlarmChanged;
@@ -679,26 +652,9 @@
         // LocationChanged event only fires on subsequent changes.
         RefreshIsMapRoute();
 
-        // Periodically check for stale data (every 2 seconds).
-        staleCheckTimer = new System.Threading.Timer(_ => _ = CheckStaleAsync(), null, 2000, 2000);
-
-        // Probe login status. One-shot at app start, then on a
-        // dynamic cadence that the probe itself re-tunes:
-        //   - 2 s while the not-logged-in chip is up (the helm is
-        //     most likely about to sign in via the SK admin tab; we
-        //     want the chip to clear within a couple of seconds);
-        //   - 1 min once logged in or on a no-security server (cheap
-        //     keep-alive so a session expiry surfaces quickly).
-        // The probe degrades to null (chip hidden) on 404 / transport
-        // failure - third-party SK servers without /skServer/loginStatus
-        // see no chip rather than a "broken auth" warning.
-        _ = RefreshLoginStatusAsync();
-        authPollTimer = new System.Threading.Timer(
-            _ => _ = RefreshLoginStatusAsync(), null,
-            AuthPollIntervalWarningHidden, AuthPollIntervalWarningHidden);
         // Snoozed-chip countdown refresh: updates the "7m" label each
-        // minute. Separate from the stale check to keep the two concerns
-        // independent.
+        // minute. Display only; expiry itself is swept by AlarmManager
+        // on each evaluation tick.
         snoozeCountdownTimer = new System.Threading.Timer(
             _ => _ = RefreshSnoozeCountdownAsync(), null, 60_000, 60_000);
     }
@@ -842,7 +798,7 @@
     [JSInvokable]
     public void OnTabVisible()
     {
-        _ = RefreshLoginStatusAsync();
+        _ = LoginPoller.RefreshAsync();
     }
 
     [JSInvokable]
@@ -1114,11 +1070,6 @@
                 await Settings.ApplyMobileFirstRunDefaultsAsync(isMobile);
             }
             catch (JSDisconnectedException) { }
-            // Rehydrate snoozed targets from the KV store so a reload
-            // doesn't forget that the ferry is silenced for another 4
-            // minutes. Safe to call before anything is rendered; the
-            // OnAlarmsChanged event fires if anything was loaded.
-            await Alarms.InitializeAsync();
             StateHasChanged();
             // One guard for the whole module wiring sequence: a
             // JSDisconnectedException here means the layout is being
@@ -1227,11 +1178,14 @@
         catch (ObjectDisposedException) { }
     }
 
-    private void HandleDataChanged()
+    private void HandleStaleChanged()
     {
-        // Clear the stale flag as soon as data flows again.
-        if (!wasStale) return;
-        wasStale = false;
+        try { _ = InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
+
+    private void HandleLoginStatusChanged()
+    {
         try { _ = InvokeAsync(StateHasChanged); }
         catch (ObjectDisposedException) { }
     }
@@ -1326,77 +1280,11 @@
         catch (Exception ex) { Toasts.LogException(ex, "Undo"); }
     }
 
-    private async Task CheckStaleAsync()
-    {
-        bool isStale = SignalkClient.IsDataStale;
-        if (isStale == wasStale) return;
-
-        wasStale = isStale;
-        try
-        {
-            await InvokeAsync(StateHasChanged);
-        }
-        catch (ObjectDisposedException) { }
-    }
-
     private async Task RefreshSnoozeCountdownAsync()
     {
         if (Alarms.SnoozedTargets.Count == 0) return;
         try { await InvokeAsync(StateHasChanged); }
         catch (ObjectDisposedException) { }
-    }
-
-    /// <summary>Probe the login-status endpoint and stash for the
-    /// not-logged-in chip. Called once on init, on tab visibility
-    /// changes, and on a dynamic timer cadence (4 s while the chip
-    /// is up; 2 min otherwise - see <see cref="AuthPollIntervalWarningShown"/>).
-    /// Failure / 404 (third-party SK server without
-    /// /skServer/loginStatus) leaves the cached value null and the
-    /// chip stays hidden - "we can't tell" is a more honest UX
-    /// than a chip that lies.</summary>
-    private async Task RefreshLoginStatusAsync()
-    {
-        // Skip if a previous probe is still running. Without this,
-        // an 8 s network stall under the 2 s warning-shown cadence
-        // would queue up to 4 concurrent probes against the same
-        // endpoint - noise without signal.
-        if (System.Threading.Interlocked.CompareExchange(
-                ref _authProbeInFlight, 1, 0) != 0) return;
-        try
-        {
-            var status = await AuthApi.GetLoginStatusAsync();
-            // Only re-render when the warning state changed - avoids
-            // a free StateHasChanged on every poll for the common
-            // "still logged in" path. Toggle vs the current
-            // _loginStatus's effective banner state.
-            bool wasShowing = _loginStatus is { ShouldShowLoginWarning: true };
-            bool nowShowing = status is { ShouldShowLoginWarning: true };
-            _loginStatus = status;
-            if (wasShowing != nowShowing)
-            {
-                await InvokeAsync(StateHasChanged);
-            }
-            // Re-tune the poll cadence to match the new state: fast
-            // while the chip is up so the next sign-in is detected
-            // promptly, slow otherwise. Safe to call on every probe
-            // - Timer.Change is idempotent for a same-period reset.
-            var nextInterval = nowShowing
-                ? AuthPollIntervalWarningShown
-                : AuthPollIntervalWarningHidden;
-            try { authPollTimer?.Change(nextInterval, nextInterval); }
-            catch (ObjectDisposedException) { }
-        }
-        catch (ObjectDisposedException) { }
-        catch (Exception)
-        {
-            // Auth probe is best-effort; never let it crash the
-            // page. Worst case is the chip stays at its previous
-            // state until the next poll.
-        }
-        finally
-        {
-            System.Threading.Interlocked.Exchange(ref _authProbeInFlight, 0);
-        }
     }
 
     private static string FormatRemaining(DateTime expiresAt)
@@ -1496,17 +1384,16 @@
     public async ValueTask DisposeAsync()
     {
         SignalkClient.OnConnectionChanged -= HandleConnectionChanged;
-        SignalkClient.OnDataChanged -= HandleDataChanged;
+        StaleMonitor.OnChanged -= HandleStaleChanged;
+        LoginPoller.OnChanged -= HandleLoginStatusChanged;
         Toasts.OnChanged -= HandleToastsChanged;
         Settings.OnSettingsChanged -= HandleSettingsChanged;
         Alarms.OnAlarmChanged -= HandleAlarmChanged;
         Alarms.OnAlarmsChanged -= HandleAlarmsChanged;
         Updates.OnChanged -= HandleUpdatesChanged;
         Nav.LocationChanged -= HandleLocationChanged;
-        if (staleCheckTimer is not null) await staleCheckTimer.DisposeAsync();
         if (snoozeCountdownTimer is not null) await snoozeCountdownTimer.DisposeAsync();
         if (firstRunOfflineTimer is not null) await firstRunOfflineTimer.DisposeAsync();
-        if (authPollTimer is not null) await authPollTimer.DisposeAsync();
         if (audioModule is not null)
         {
             try

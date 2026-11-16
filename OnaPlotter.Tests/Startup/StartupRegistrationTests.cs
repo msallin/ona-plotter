@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Time.Testing;
 using OnaPlotter.Services;
+using OnaPlotter.Services.Signalk;
 using OnaPlotter.Services.Startup;
 
 namespace OnaPlotter.Tests.Startup;
@@ -25,12 +26,33 @@ public class StartupRegistrationTests
     {
         var descriptors = HostedDescriptors();
 
-        await Assert.That(descriptors.Count).IsEqualTo(4);
+        await Assert.That(descriptors.Count).IsEqualTo(6);
         await Assert.That(descriptors[0].ImplementationType).IsEqualTo(typeof(SettingsBootstrap));
         await Assert.That(descriptors[1].ImplementationType).IsEqualTo(typeof(ConnectionBootstrap));
         await Assert.That(descriptors[2].ImplementationType).IsEqualTo(typeof(SafetyBootstrap));
         // UpdateChecker is a forwarder to the singleton, so it has a factory.
         await Assert.That(descriptors[3].ImplementationFactory).IsNotNull();
+        // The login poller runs after SettingsBootstrap.
+        await Assert.That(descriptors[4].ImplementationFactory).IsNotNull();
+        await Assert.That(descriptors[5].ImplementationFactory).IsNotNull();
+    }
+
+    [Test]
+    public async Task StaleDataMonitor_And_LoginStatusPoller_Hosted_Registrations_Forward_To_The_Singletons()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<TimeProvider>(new FakeTimeProvider());
+        services.AddSingleton<ISignalkClient>(new FakeSignalkClient());
+        services.AddSingleton<OnaPlotter.Services.Api.IAuthApi>(new LoginStatusPollerTests.FakeAuthApi());
+        services.AddOnaStartup();
+        using var provider = services.BuildServiceProvider();
+        var descriptors = HostedDescriptors();
+
+        await Assert.That(descriptors[4].ImplementationFactory!(provider))
+            .IsSameReferenceAs(provider.GetRequiredService<StaleDataMonitor>());
+        await Assert.That(descriptors[5].ImplementationFactory!(provider))
+            .IsSameReferenceAs(provider.GetRequiredService<OnaPlotter.Services.Auth.LoginStatusPoller>());
     }
 
     [Test]

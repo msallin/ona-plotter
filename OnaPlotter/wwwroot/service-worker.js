@@ -1268,7 +1268,9 @@
 //               SearchBox expanded-state parameter; seamark overlay pane.
 // v119 -> v120: app startup runs as hosted services (WASM assembly shape
 //               change); UpdateChecker starts its timer from StartAsync.
-const CACHE_NAME = 'ona-plotter-v120';
+// v120 -> v121: stale-data check, login-status poll and snooze rehydration
+//               move from MainLayout into hosted services.
+const CACHE_NAME = 'ona-plotter-v121';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

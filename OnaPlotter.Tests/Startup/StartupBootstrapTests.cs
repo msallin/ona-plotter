@@ -54,7 +54,7 @@ public class StartupBootstrapTests
     public async Task SafetyBootstrap_Returns_Promptly_When_Mob_Recovery_Never_Completes()
     {
         var activated = false;
-        var sut = new SafetyBootstrap(Pending, () => activated = true, new CapturingLogger());
+        var sut = new SafetyBootstrap(Pending, () => Task.CompletedTask, () => activated = true, new CapturingLogger());
 
         var start = sut.StartAsync(CancellationToken.None);
 
@@ -69,11 +69,51 @@ public class StartupBootstrapTests
         var activated = false;
         var sut = new SafetyBootstrap(
             () => Task.FromException(new HttpRequestException("offline")),
+            () => Task.CompletedTask,
             () => activated = true,
             logger);
 
         await sut.StartAsync(CancellationToken.None);
         await WaitForWarning(logger, 1);
+
+        await Assert.That(activated).IsTrue();
+        await Assert.That(logger.Entries.Count(e => e.Level == LogLevel.Warning)).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task SafetyBootstrap_Activates_Subscribers_Only_After_Alarm_Rehydration()
+    {
+        var order = new List<string>();
+        var rehydrate = new TaskCompletionSource();
+        var sut = new SafetyBootstrap(
+            Pending,
+            () => { order.Add("rehydrate-start"); return rehydrate.Task; },
+            () => order.Add("activate"),
+            new CapturingLogger());
+
+        var start = sut.StartAsync(CancellationToken.None);
+        await Task.Delay(50);
+        await Assert.That(start.IsCompleted).IsFalse();
+        await Assert.That(order.Contains("activate")).IsFalse();
+
+        rehydrate.SetResult();
+        await start;
+
+        await Assert.That(string.Join(",", order)).IsEqualTo("rehydrate-start,activate");
+    }
+
+    [Test]
+    public async Task SafetyBootstrap_Logs_Warning_And_Still_Activates_When_Alarm_Rehydration_Throws()
+    {
+        var logger = new CapturingLogger();
+        var activated = false;
+        var sut = new SafetyBootstrap(
+            Pending,
+            () => Task.FromException(new InvalidOperationException("storage")),
+            () => activated = true,
+            logger);
+
+        await sut.StartAsync(CancellationToken.None);
 
         await Assert.That(activated).IsTrue();
         await Assert.That(logger.Entries.Count(e => e.Level == LogLevel.Warning)).IsEqualTo(1);
@@ -101,7 +141,7 @@ public class StartupBootstrapTests
         IHostedService[] all =
         [
             new SettingsBootstrap(SettingsProxy.Create(() => Task.CompletedTask)),
-            new SafetyBootstrap(Pending, () => { }, new CapturingLogger()),
+            new SafetyBootstrap(Pending, () => Task.CompletedTask, () => { }, new CapturingLogger()),
         ];
 
         foreach (var s in all)

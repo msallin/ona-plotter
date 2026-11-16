@@ -1,11 +1,15 @@
+using OnaPlotter.Services.Signalk;
+
 namespace OnaPlotter.Services.Startup;
 
 public static class StartupServiceCollectionExtensions
 {
     /// <summary>
     /// Registers the app's startup as hosted services. Requires
-    /// <c>UpdateChecker</c>, <c>AuthSession</c>, <c>SignalkClient</c> and
-    /// <c>ResourceStore</c> to be registered as singletons.
+    /// <c>UpdateChecker</c>, <c>AuthSession</c>, <c>SignalkClient</c>,
+    /// <c>ISignalkClient</c>, <c>IAuthApi</c>, <c>TimeProvider</c> and
+    /// <c>ResourceStore</c> to be
+    /// registered as singletons.
     /// <para>
     /// Hosted services start sequentially in registration order, before
     /// first render; <c>StartAsync</c> must not block on network or
@@ -26,6 +30,13 @@ public static class StartupServiceCollectionExtensions
         services.AddHostedService<SafetyBootstrap>();
         // Forwarder: MainLayout injects the same singleton.
         services.AddHostedService(sp => sp.GetRequiredService<UpdateChecker>());
+        // The layout subscribes to these singletons' change events; the
+        // timers run whether or not it is mounted. The login poller must
+        // run after SettingsBootstrap.
+        services.AddSingleton<StaleDataMonitor>();
+        services.AddHostedService(sp => sp.GetRequiredService<StaleDataMonitor>());
+        services.AddSingleton<Auth.LoginStatusPoller>();
+        services.AddHostedService(sp => sp.GetRequiredService<Auth.LoginStatusPoller>());
         return services;
     }
 }

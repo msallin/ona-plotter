@@ -15,6 +15,12 @@ namespace OnaPlotter.Services.Startup;
 /// Wind or Settings. Kicked in the background: an early 401 simply
 /// no-ops and the reconcile on the first WebSocket connect picks up the
 /// real list.</item>
+/// <item><c>IAlarmManager.InitializeAsync</c> rehydrates snoozed targets
+/// from the key-value store (localStorage), so a reload does not
+/// forget that a target is silenced. Awaited before the alarm
+/// subscribers are activated so no alarm is evaluated against an empty
+/// snooze list; the read is local, like the settings load. A failure is
+/// logged and the manager starts with no snoozes.</item>
 /// <item><c>AlarmPublisher</c> (publishes local alarms to the server),
 /// <c>AlarmEvaluationDriver</c> (data-driven and 1 Hz alarm evaluation),
 /// <c>AutoAdvanceService</c> and <c>INavigationAverages</c> subscribe in
@@ -28,12 +34,14 @@ namespace OnaPlotter.Services.Startup;
 public sealed class SafetyBootstrap : IHostedService
 {
     private readonly Func<Task> _initializeMob;
+    private readonly Func<Task> _initializeAlarms;
     private readonly Action _activateSubscribers;
     private readonly ILogger _logger;
 
     public SafetyBootstrap(IServiceProvider services, ILogger<SafetyBootstrap> logger)
         : this(
             () => services.GetRequiredService<IMobService>().InitializeAsync(),
+            () => services.GetRequiredService<IAlarmManager>().InitializeAsync(),
             () =>
             {
                 services.GetRequiredService<AlarmPublisher>();
@@ -45,18 +53,27 @@ public sealed class SafetyBootstrap : IHostedService
     {
     }
 
-    internal SafetyBootstrap(Func<Task> initializeMob, Action activateSubscribers, ILogger logger)
+    internal SafetyBootstrap(Func<Task> initializeMob, Func<Task> initializeAlarms,
+        Action activateSubscribers, ILogger logger)
     {
         _initializeMob = initializeMob;
+        _initializeAlarms = initializeAlarms;
         _activateSubscribers = activateSubscribers;
         _logger = logger;
     }
 
-    public Task StartAsync(CancellationToken cancellationToken)
+    public async Task StartAsync(CancellationToken cancellationToken)
     {
         BackgroundKick.Run(_initializeMob, _logger, "MOB recovery");
+        try
+        {
+            await _initializeAlarms().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Snooze rehydration failed; starting with no snoozed targets");
+        }
         _activateSubscribers();
-        return Task.CompletedTask;
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

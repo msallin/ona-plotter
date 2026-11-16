@@ -43,6 +43,17 @@ public class StartupWiringTests
         }
     }
 
+    private class AlarmsProxy : DispatchProxy
+    {
+        private Events _events = null!;
+        public IAlarmManager Init(Events e) { _events = e; return (IAlarmManager)(object)this; }
+        protected override object? Invoke(MethodInfo? m, object?[]? a)
+        {
+            if (m?.Name == nameof(IAlarmManager.InitializeAsync)) { _events.Add("alarms"); return Task.CompletedTask; }
+            throw new NotSupportedException(m?.Name);
+        }
+    }
+
     private static T Uninit<T>(Events e, string name) where T : class
     {
         e.Add("ctor:" + name);
@@ -65,6 +76,9 @@ public class StartupWiringTests
         services.AddSingleton(sp => { e.Add("ctor:regions"); return new RegionStore(); });
         services.AddSingleton(StartupBootstrapTests.SettingsProxy.Create(() => { e.Add("settings"); return Task.CompletedTask; }));
         services.AddSingleton(MobProxyFor(e));
+        services.AddSingleton(((AlarmsProxy)(object)DispatchProxy.Create<IAlarmManager, AlarmsProxy>()).Init(e));
+        services.AddSingleton<ISignalkClient>(new FakeSignalkClient());
+        services.AddSingleton<OnaPlotter.Services.Api.IAuthApi>(new LoginStatusPollerTests.FakeAuthApi());
         services.AddSingleton(sp => Uninit<AlarmPublisher>(e, "publisher"));
         services.AddSingleton(sp => Uninit<AlarmEvaluationDriver>(e, "driver"));
         services.AddSingleton(sp => Uninit<AutoAdvanceService>(e, "autoadvance"));
@@ -103,8 +117,10 @@ public class StartupWiringTests
 
         var started = e.Log.Skip(e.Log.IndexOf("--start--") + 1).ToList();
         await Assert.That(started[0]).IsEqualTo("settings");
-        await Assert.That(string.Join(",", started.Skip(1).Take(4)))
-            .IsEqualTo("login,socket,refresh:startup,mob");
+        await Assert.That(string.Join(",", started.Skip(1).Take(5)))
+            .IsEqualTo("login,socket,refresh:startup,mob,alarms");
+        // Snoozes are rehydrated before any alarm subscriber is built.
+        await Assert.That(started.IndexOf("alarms")).IsLessThan(started.IndexOf("ctor:publisher"));
         foreach (var late in new[] { "ctor:publisher", "ctor:driver", "ctor:autoadvance", "ctor:averages" })
         {
             await Assert.That(started.Contains(late)).IsTrue();
