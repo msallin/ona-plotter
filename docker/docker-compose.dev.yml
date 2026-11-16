@@ -24,14 +24,23 @@ services:
     volumes:
       # Persist SK's per-install state (plugin activations, KV store)
       # across restarts so the dev config doesn't need to re-bootstrap
-      # every time. A named volume is fine; the host path is only used
-      # for the initial config seed.
+      # every time.
       - sk-data:/home/node/.signalk
-      - ./signalk-config/settings.json:/home/node/.signalk/settings.json:ro
-      # security.json with allow_readonly so anonymous GETs on
-      # /signalk/v1/api/* return data without a token. Writes still
-      # require auth, but we inject deltas via TCP (fake-data), not HTTP.
-      - ./signalk-config/security.json:/home/node/.signalk/security.json:ro
+      # Seed config is mounted read-only OUTSIDE the config dir and copied
+      # in at start (see entrypoint). SK rewrites security.json on boot
+      # (atomic temp-file + rename for its secret-key migration), which
+      # fails with EBUSY on a bind-mounted file. security.json has
+      # allow_readonly so anonymous GETs on /signalk/v1/api/* return data
+      # without a token. Writes still require auth, but we inject deltas
+      # via TCP (fake-data), not HTTP. The repo copy wins on every start.
+      - ./signalk-config:/seed:ro
+    entrypoint:
+      - tini
+      - -s
+      - --
+      - sh
+      - -c
+      - cp /seed/settings.json /seed/security.json /home/node/.signalk/ && exec /home/node/signalk/startup.sh
     environment:
       # Run as the node user; default uid/gid on the image is 1000.
       # Avoid root so volume-mounted files on Linux hosts stay owned
