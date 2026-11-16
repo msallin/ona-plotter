@@ -8,7 +8,7 @@ namespace OnaPlotter.Services.Alarms;
 /// ANCHOR drag+tide / DEADMAN) to the SignalK v2 notifications API
 /// so other plotters connected to the same server see them as
 /// <c>notifications.*</c> deltas. Companion to the consume-side
-/// pipeline shipped in Phase A: there a server-emitted notification
+/// pipeline: there a server-emitted notification
 /// reaches our banner via <see cref="ServerNotificationsAlarmRule"/>;
 /// here a local rule's emission reaches every other plotter the same
 /// way.
@@ -393,8 +393,7 @@ public sealed class AlarmPublisher : IAsyncDisposable
 
     private Task LogInfoAsync(string message)
     {
-        // Relay is optional for backward-compat with the test ctors
-        // that don't wire it. In production the relay is always
+        // Relay is optional so test ctors needn't wire it. In production the relay is always
         // injected from DI; logs land in the SK server log via the
         // /log endpoint and are reviewable via SSH at the helm.
         if (_relay is null) return Task.CompletedTask;

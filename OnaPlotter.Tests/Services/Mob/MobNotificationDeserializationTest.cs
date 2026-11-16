@@ -4,10 +4,10 @@ using OnaPlotter.Services.Api;
 namespace OnaPlotter.Tests.Services.Mob;
 
 /// <summary>Pin the deserialiser against the actual JSON shape signalk-server
-/// returns from GET /signalk/v2/api/notifications. Helm pasted live data
-/// twice in a row showing the MOB + position + createdAt arriving on the
-/// wire but the chart marker still missing - this test reproduces that
-/// exact response and asserts every field round-trips correctly.</summary>
+/// returns from GET /signalk/v2/api/notifications. Uses a live
+/// response where the MOB + position + createdAt arrive on the wire
+/// and asserts every field round-trips correctly, so the chart marker
+/// can't go missing on a deserialisation gap.</summary>
 public class MobNotificationDeserializationTest
 {
     private static readonly JsonSerializerOptions s_options = new()

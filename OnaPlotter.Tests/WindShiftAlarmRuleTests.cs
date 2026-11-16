@@ -130,7 +130,7 @@ public class WindShiftAlarmRuleTests
     {
         // WIND SHIFT is a transient "event" notification, not a
         // continuously-true condition. Latching keeps the banner up
-        // until the user dismisses; matches the pre-refactor behaviour.
+        // until the user dismisses.
         await Assert.That(new WindShiftAlarmRule().AutoClear).IsFalse();
     }
 
@@ -200,8 +200,8 @@ public class WindShiftAlarmRuleTests
         // Tick 1: TWS=8 kn live; rule anchors at 90 deg.
         rule.Check(Ctx(NavWithTwd(90, twsKn: 8.0), t0, minTws: 3));
         // Tick 2: TWS goes null (SK plugin can't derive); TWD jumps
-        // 60 deg from heading noise. Without the fix this would fire
-        // a "60 deg shift" alarm; with the fix it suppresses.
+        // 60 deg from heading noise. Without the null-TWS gate this
+        // would fire a "60 deg shift" alarm; the gate suppresses it.
         var alarm = rule.Check(Ctx(NavWithTwd(150), t0.AddMinutes(5), minTws: 3));
         await Assert.That(alarm).IsNull();
 

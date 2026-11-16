@@ -24,7 +24,7 @@
             <div class="chart-desc">COG vector + tidal current arrow</div>
         </div>
     </label>
-    @* Laylines: own toggle (used to ride on Show ship lines).
+    @* Laylines: own toggle, separate from Show ship lines.
        Helms who don't sail close-hauled (motoring / cruising) want
        to leave laylines off without losing the COG vector + current
        arrow; helms who race want them visible without the chart
@@ -37,10 +37,8 @@
             <div class="chart-desc">Port + stbd close-hauled tacks (sailing)</div>
         </div>
     </label>
-    @* Ship track = server-side history polyline. Was a separate
-       Layers-panel section ("Server history" / "History" before
-       that); helm-feedback consolidated all own-ship chart toggles
-       into Own ship so the helm has one section to scan. The
+    @* Ship track = server-side history polyline. All own-ship chart
+       toggles sit in Own ship so the helm has one section to scan. The
        duration / resolution / within-bounds sub-controls only
        render when the layer is on - "track on / track off, here's
        how" reads cleaner than three peer-level pickers. *@
@@ -132,8 +130,8 @@
     [Parameter] public EventCallback<bool> OnToggleServerTrackWithinBounds { get; set; }
 
     /// <summary>Default collapsed to match every other Layers section.
-    /// Helm-feedback: opening Layers and immediately seeing Own ship
-    /// expanded broke the visual rhythm - helms expect "all closed,
+    /// Opening Layers and immediately seeing Own ship expanded
+    /// breaks the visual rhythm - helms expect "all closed,
     /// tap what you want". Sticks at user-collapsed across renders;
     /// no separate persistence (consistent with sibling sections).</summary>
     private bool expanded = false;

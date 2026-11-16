@@ -121,8 +121,8 @@ public sealed class RadarOverlayManager
     public bool IsUserDisabled(string radarId) => _userDisabled.Contains(radarId);
 
     /// <summary>Map.razor calls this after handing a freshly-loaded JS
-    /// module to the host (page remount on nav back). The previous
-    /// module was disposed by the page, so any overlays the manager
+    /// module to the host (page remount on nav back). The page disposed
+    /// the old module, so any overlays the manager
     /// still believes are running are actually gone from the browser.
     /// Forget the JS-side memory (<c>_enabled</c>, <c>_lastRange</c>)
     /// so the next <see cref="OnRadarListUpdatedAsync"/> re-issues

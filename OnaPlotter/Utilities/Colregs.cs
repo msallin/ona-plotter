@@ -75,8 +75,8 @@ public static class Colregs
         if (string.IsNullOrEmpty(shipType)) return VesselType.Power;
         // OrdinalIgnoreCase comparisons avoid the per-call ToLowerInvariant
         // allocation. Per-vessel hot path on the AIS push (200+ vessels
-        // at ~3 Hz); the previous shape allocated one lowercased copy
-        // per vessel per push.
+        // at ~3 Hz), where lowercasing would allocate one copy per
+        // vessel per push.
         const StringComparison Cmp = StringComparison.OrdinalIgnoreCase;
         // SignalK / AIS type 36 ("Sailing"). Match also "sailing
         // vessel" + the substring "sail " only when it's a standalone
@@ -202,14 +202,13 @@ public static class Colregs
 
     /// <summary>Human-readable short label for the popup / vessel list.
     /// Uses single-letter (P) / (S) suffix for crossing categories
-    /// because the helm-feedback round on the AIS popup found "(port)"
-    /// / "(stbd)" eating popup width and pushing the role chip onto a
+    /// because "(port)" / "(stbd)" eat popup width and pushing the role chip onto a
     /// second line. (P) / (S) reads the same after one glance and
     /// shaves ~50 % off the row width.
     /// <para>Returns <c>null</c> for <see cref="Category.Indeterminate"/>:
-    /// helm-feedback round - the CPA banner used to read
-    /// <c>"vessel: CPA 0.42nm T -5' - , Give way"</c> when the geometry
-    /// hadn't resolved yet (empty short label, non-empty role). Null
+    /// an empty short label with a non-empty role would make the CPA
+    /// banner read <c>"vessel: CPA 0.42nm T -5' - , Give way"</c> while
+    /// the geometry is unresolved. Null
     /// makes the "no useful label" semantics type-explicit so callers
     /// can't paste an empty string into a comma-separated render.</para></summary>
     public static string? ShortLabel(Category c) => c switch

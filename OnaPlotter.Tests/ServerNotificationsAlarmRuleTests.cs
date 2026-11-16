@@ -15,6 +15,10 @@ public class ServerNotificationsAlarmRuleTests
     /// projection from a ServerNotification, not the actual ack call.
     /// Returns success on every verb so the bridge rule treats it as
     /// "yes, I have somewhere to dispatch acks".</summary>
+    private static ServerNotificationsAlarmRule NewRule(
+        ServerNotificationStore store, IPublishedAlarmTracker? tracker = null) =>
+        new(store, NoopApi(), tracker ?? NoopPublishedAlarmTracker.Instance);
+
     private static INotificationsApi NoopApi()
     {
         var http = new HttpClient(new NoopHandler());
@@ -42,10 +46,9 @@ public class ServerNotificationsAlarmRuleTests
         // Default message humanised: drops the "environment.depth."
         // prefix, splits camelCase into "below transducer". Used
         // as fallback when the upstream notification's `message`
-        // field is empty (focus-group field report 2026-04: a
-        // bridged notification rendered "DEPTH environment.depth.
-        // belowTransducer" because the originator didn't include
-        // a message; humanised default reads as "DEPTH below
+        // field is empty (a bridged notification without a message
+        // would otherwise render "DEPTH environment.depth.
+        // belowTransducer"; humanised default reads as "DEPTH below
         // transducer" instead).
         var (title, msg) = ServerNotificationsAlarmRule.DeriveTitleAndDefault(
             "notifications.environment.depth.belowTransducer");
@@ -65,9 +68,9 @@ public class ServerNotificationsAlarmRuleTests
     [Test]
     public async Task DeriveTitleAndDefault_WindShift()
     {
-        // The exact path the focus-group screenshot showed
-        // mis-rendered as "WIND environment.wind.shift". With the
-        // humanised default it reads "WIND shift" instead.
+        // Real-world path that renders as "WIND environment.wind.shift"
+        // without humanising. With the humanised default it reads
+        // "WIND shift" instead.
         var (title, msg) = ServerNotificationsAlarmRule.DeriveTitleAndDefault(
             "notifications.environment.wind.shift");
         await Assert.That(title).IsEqualTo("WIND");
@@ -238,7 +241,7 @@ public class ServerNotificationsAlarmRuleTests
             "alarm",
             "shallow",
             AlarmSeverity.Danger);
-        var info = ServerNotificationsAlarmRule.BuildAlarmInfo(n, api: null);
+        var info = ServerNotificationsAlarmRule.BuildAlarmInfo(n, NoopApi());
 
         await Assert.That(info.Title).IsEqualTo("DEPTH");
         await Assert.That(info.Message).IsEqualTo("shallow");
@@ -254,14 +257,13 @@ public class ServerNotificationsAlarmRuleTests
         // in the notification, BuildAlarmInfo uses the humanised
         // path-tail default so the banner reads as "DEPTH below
         // transducer" rather than "DEPTH environment.depth.belowTransducer"
-        // (focus-group field report 2026-04: the raw-path render was
-        // unhelpful; helms read words faster than dotted paths).
+        // (helms read words faster than dotted paths).
         var n = new ServerNotification(
             "notifications.environment.depth.belowTransducer",
             "alarm",
             null,
             AlarmSeverity.Danger);
-        var info = ServerNotificationsAlarmRule.BuildAlarmInfo(n, api: null);
+        var info = ServerNotificationsAlarmRule.BuildAlarmInfo(n, NoopApi());
 
         await Assert.That(info.Message).IsEqualTo("below transducer");
     }
@@ -270,7 +272,7 @@ public class ServerNotificationsAlarmRuleTests
     public async Task CheckMany_EmptyStore_YieldsNothing()
     {
         var store = new ServerNotificationStore();
-        var rule = new ServerNotificationsAlarmRule(store);
+        var rule = NewRule(store);
         var ctx = MakeContext();
 
         var hits = rule.CheckMany(ctx).ToArray();
@@ -283,7 +285,7 @@ public class ServerNotificationsAlarmRuleTests
     {
         var store = new ServerNotificationStore();
         store.Apply("notifications.navigation.anchor.position", "alarm", "Dragging anchor");
-        var rule = new ServerNotificationsAlarmRule(store);
+        var rule = NewRule(store);
 
         var hits = rule.CheckMany(MakeContext()).ToArray();
 
@@ -302,7 +304,7 @@ public class ServerNotificationsAlarmRuleTests
         store.Apply("notifications.environment.depth.belowTransducer", "alarm", "shallow");
         store.Apply("notifications.navigation.anchor.position", "alarm", "dragging");
         store.Apply("notifications.security.collision.proximity", "warn", "close");
-        var rule = new ServerNotificationsAlarmRule(store);
+        var rule = NewRule(store);
 
         var hits = rule.CheckMany(MakeContext()).ToArray();
 
@@ -321,7 +323,7 @@ public class ServerNotificationsAlarmRuleTests
         // bogus alarm with the placeholder title.
         var store = new ServerNotificationStore();
         store.Apply("notifications.foo", "alarm", "msg");
-        var rule = new ServerNotificationsAlarmRule(store);
+        var rule = NewRule(store);
 
         await Assert.That(rule.Check(MakeContext())).IsNull();
     }
@@ -334,7 +336,7 @@ public class ServerNotificationsAlarmRuleTests
         // active stack. Required for the "server cleared the
         // notification" case to remove the banner without user action.
         var store = new ServerNotificationStore();
-        var rule = new ServerNotificationsAlarmRule(store);
+        var rule = NewRule(store);
         await Assert.That(rule.AutoClear).IsTrue();
     }
 
@@ -405,30 +407,9 @@ public class ServerNotificationsAlarmRuleTests
     }
 
     [Test]
-    public async Task BuildAlarmInfo_NoApiWired_AcknowledgerStaysNull()
-    {
-        // Production wires the API via DI; legacy test ctors don't.
-        // When api is null the bridge rule cannot build the
-        // acknowledger (no endpoint to dispatch to) so the field
-        // stays null. Pin this so the dismiss path's null-guard
-        // remains the documented contract.
-        var status = new NotificationStatus(
-            Silenced: false, Acknowledged: false,
-            CanSilence: true, CanAcknowledge: true, CanClear: true);
-        var n = new ServerNotification(
-            "notifications.navigation.anchor.position",
-            "alarm", "Dragging anchor", AlarmSeverity.Danger,
-            Id: "anchor-uuid-1", Status: status);
-
-        var info = ServerNotificationsAlarmRule.BuildAlarmInfo(n, api: null);
-
-        await Assert.That(info.Acknowledger).IsNull();
-    }
-
-    [Test]
     public async Task CheckMany_OwnedPath_Skipped()
     {
-        // Phase B: when our own AlarmPublisher raised a notification,
+        // When our own AlarmPublisher raised a notification,
         // the bridge rule must skip the echo. Otherwise the same
         // alarm would render twice - once from the originating
         // client-side rule, once from the publish echo via the
@@ -440,9 +421,7 @@ public class ServerNotificationsAlarmRuleTests
             "warn", "30 deg");
         var owned = new HashSet<string> { "notifications.environment.depth.belowSurface" };
         var tracker = new StubPublishedAlarmTracker(owned);
-        // api=null -> bridge rule won't build acknowledgers but
-        // the tracker-based skip still runs.
-        var rule = new ServerNotificationsAlarmRule(store, api: null, publishedTracker: tracker);
+        var rule = NewRule(store, tracker);
 
         var hits = rule.CheckMany(MakeContext()).ToArray();
 
@@ -471,7 +450,7 @@ public class ServerNotificationsAlarmRuleTests
             "warn", "shallow");
         store.Apply("notifications.navigation.anchor.position",
             "alarm", "dragging");
-        var rule = new ServerNotificationsAlarmRule(store);
+        var rule = NewRule(store);
         var snoozed = new HashSet<string> { "notifications.environment.depth.belowSurface" };
         var ctx = new AlarmEvaluationContext(
             new NavigationData(), [], new FakeSettings(),

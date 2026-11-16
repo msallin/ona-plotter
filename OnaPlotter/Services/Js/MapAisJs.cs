@@ -5,8 +5,8 @@ namespace OnaPlotter.Services.Js;
 /// <summary>
 /// <see cref="IMapAisJs"/> backed by an <see cref="IJSObjectReference"/>
 /// handle to the leafletInterop.js module. Centralises the
-/// JSDisconnected / ObjectDisposed swallow that every call site
-/// previously re-implemented.
+/// JSDisconnected / ObjectDisposed swallow so call sites don't each
+/// re-implement it.
 ///
 /// <para>Lifetime mirrors <see cref="MapAnchorJs"/>: created with the
 /// module reference once Map.razor has loaded the JS module, and lives

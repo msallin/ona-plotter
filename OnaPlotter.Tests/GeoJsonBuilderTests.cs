@@ -87,11 +87,10 @@ public class GeoJsonBuilderTests
     [Test]
     public async Task RouteFeatureBody_EmitsTopLevelDistance_WhenSupplied()
     {
-        // Routes saved by OnaPlotter used to drop the top-level
-        // distance field, so SignalkRoute.Distance round-tripped as
-        // null and the Layers panel + Resources page rendered "-"
-        // for any OnaPlotter-saved route. Other SignalK clients
-        // always send distance; this test pins the parity.
+        // Without the top-level distance field, SignalkRoute.Distance
+        // round-trips as null and the Layers panel + Resources page
+        // render "-" for any OnaPlotter-saved route. Other SignalK
+        // clients always send distance; this test pins the parity.
         var body = GeoJsonBuilder.RouteFeatureBody(
             "With distance",
             GeoJsonBuilder.LineString(new[] { new[] { 0.0, 0.0 }, new[] { 0.5, 0.5 } }),
@@ -265,8 +264,7 @@ public class GeoJsonBuilderTests
         var json = Serialize(body);
 
         // Keys land inside the properties block, NOT at the top-level
-        // (the top-level dual-emit was speculative dead emission and
-        // got dropped during the refactor cleanup).
+        // (nothing reads a top-level copy).
         await Assert.That(json).Contains("\"properties\":");
         await Assert.That(json).Contains("\"isMob\":true");
         await Assert.That(json).Contains("\"isActive\":true");
@@ -295,9 +293,8 @@ public class GeoJsonBuilderTests
     [Test]
     public async Task FeatureBody_WithMobMetadata_DoesNotEmitMobKeysAtTopLevel()
     {
-        // Pin SKEP-001 fix: the top-level isMob/isActive/mobAlarmId
-        // emission was dead (no reader) and got removed. A regression
-        // re-adding it would inflate every MOB waypoint's wire payload.
+        // Nothing reads a top-level isMob/isActive/mobAlarmId copy.
+        // Emitting one would inflate every MOB waypoint's wire payload.
         var body = GeoJsonBuilder.FeatureBody(
             "MOB: 14:32:07",
             GeoJsonBuilder.Point(47.5, 8.5),

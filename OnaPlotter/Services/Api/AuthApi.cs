@@ -87,9 +87,9 @@ public sealed class AuthApi : IAuthApi
             try
             {
                 // Source-gen path. The context-level
-                // PropertyNameCaseInsensitive=true preserves the
-                // earlier per-call option, so a server that capitalises
-                // "Status" or "AuthenticationRequired" still parses.
+                // PropertyNameCaseInsensitive=true means a server that
+                // capitalises "Status" or "AuthenticationRequired" still
+                // parses.
                 return JsonSerializer.Deserialize(json, OnaJsonContext.Default.LoginStatus);
             }
             catch (JsonException ex)

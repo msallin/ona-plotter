@@ -14,8 +14,8 @@ public class PolygonEditPanelTests
     [Test]
     public async Task Save_Button_Disabled_Below_Three_Vertices()
     {
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<PolygonEditPanel>(p => p
+        using var ctx = new Bunit.BunitContext();
+        var cut = ctx.Render<PolygonEditPanel>(p => p
             .Add(x => x.Coords, new double[][]
             {
                 new[] { 47.4, 8.5 },
@@ -30,8 +30,8 @@ public class PolygonEditPanelTests
     [Test]
     public async Task Save_Button_Enabled_At_Three_Vertices()
     {
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<PolygonEditPanel>(p => p
+        using var ctx = new Bunit.BunitContext();
+        var cut = ctx.Render<PolygonEditPanel>(p => p
             .Add(x => x.Coords, new double[][]
             {
                 new[] { 47.4, 8.5 },
@@ -46,8 +46,8 @@ public class PolygonEditPanelTests
     [Test]
     public async Task Renders_Numbered_Vertex_List()
     {
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<PolygonEditPanel>(p => p
+        using var ctx = new Bunit.BunitContext();
+        var cut = ctx.Render<PolygonEditPanel>(p => p
             .Add(x => x.Coords, new double[][]
             {
                 new[] { 47.40, 8.50 },
@@ -63,9 +63,9 @@ public class PolygonEditPanelTests
     [Test]
     public async Task Remove_Button_Fires_With_Correct_Index()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         int? removed = null;
-        var cut = ctx.RenderComponent<PolygonEditPanel>(p => p
+        var cut = ctx.Render<PolygonEditPanel>(p => p
             .Add(x => x.Coords, new double[][]
             {
                 new[] { 47.40, 8.50 },
@@ -81,9 +81,9 @@ public class PolygonEditPanelTests
     [Test]
     public async Task NameInput_Raises_NameChanged()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         string? captured = null;
-        var cut = ctx.RenderComponent<PolygonEditPanel>(p => p
+        var cut = ctx.Render<PolygonEditPanel>(p => p
             .Add(x => x.Name, "")
             .Add(x => x.NameChanged, EventCallback.Factory.Create<string>(this, v => captured = v)));
 
@@ -94,9 +94,9 @@ public class PolygonEditPanelTests
     [Test]
     public async Task Undo_And_Cancel_Fire_Callbacks()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         int undo = 0, cancel = 0;
-        var cut = ctx.RenderComponent<PolygonEditPanel>(p => p
+        var cut = ctx.Render<PolygonEditPanel>(p => p
             .Add(x => x.OnUndo, EventCallback.Factory.Create(this, () => undo++))
             .Add(x => x.OnCancel, EventCallback.Factory.Create(this, () => cancel++)));
 
@@ -116,8 +116,8 @@ public class PolygonEditPanelTests
         // Existing decorative regions must NOT silently become hazards
         // when the panel is mounted with default parameters. Pin so a
         // future refactor that flips the [Parameter] default surfaces.
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<PolygonEditPanel>();
+        using var ctx = new Bunit.BunitContext();
+        var cut = ctx.Render<PolygonEditPanel>();
 
         var checkbox = cut.Find(".route-edit-hazard input[type=\"checkbox\"]");
         await Assert.That(checkbox.HasAttribute("checked")).IsFalse();
@@ -126,8 +126,8 @@ public class PolygonEditPanelTests
     [Test]
     public async Task IsHazard_Renders_As_Checked_When_Parameter_Is_True()
     {
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<PolygonEditPanel>(p => p
+        using var ctx = new Bunit.BunitContext();
+        var cut = ctx.Render<PolygonEditPanel>(p => p
             .Add(x => x.IsHazard, true));
 
         var checkbox = cut.Find(".route-edit-hazard input[type=\"checkbox\"]");
@@ -140,9 +140,9 @@ public class PolygonEditPanelTests
         // Bound via parent-owns-state pattern (see RouteEditPanel
         // NameChanged): the panel doesn't mutate the [Parameter]
         // directly, just bubbles the new bool. Pin both directions.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         bool? captured = null;
-        var cut = ctx.RenderComponent<PolygonEditPanel>(p => p
+        var cut = ctx.Render<PolygonEditPanel>(p => p
             .Add(x => x.IsHazard, false)
             .Add(x => x.IsHazardChanged, EventCallback.Factory.Create<bool>(this, v => captured = v)));
 
@@ -152,7 +152,7 @@ public class PolygonEditPanelTests
         await Assert.That(captured!.Value).IsTrue();
 
         // Re-render with the parent's new state, then tick off.
-        cut.SetParametersAndRender(p => p.Add(x => x.IsHazard, true));
+        cut.Render(p => p.Add(x => x.IsHazard, true));
         cut.Find(".route-edit-hazard input[type=\"checkbox\"]").Change(false);
         await Assert.That(captured!.Value).IsFalse();
     }

@@ -52,13 +52,17 @@
 <PageTitle>Map</PageTitle>
 
 <div class="map-container @(Settings.BigType ? "big-type" : "") @((routeEditMode || polygonEditMode) ? "editing" : "") mode-@Settings.SailingMode">
-    <div id="mapDiv"></div>
+    @* The viewport clips the map container, which is oversized and
+       rotated in course-up / head-up (mapRotation.js); Leaflet's
+       control corners live here so they stay upright. *@
+    <div class="map-viewport">
+        <div id="mapDiv"></div>
+    </div>
 
-    @* Zoom buttons moved into the app-level topbar (MainLayout.razor)
+    @* Zoom buttons live in the app-level topbar (MainLayout.razor)
        alongside Night + Fullscreen so the whole "viewport controls"
        cluster lives in one place. They're rendered there only when
-       IsMapRoute is true. ZoomIn / ZoomOut methods kept below in
-       case keyboard / pinch alternatives want to reuse them. *@
+       IsMapRoute is true. *@
 
     <MapHud @ref="_hud" Data="Data" Autopilot="AutopilotApi"
             LastHeadingRad="lastHeading" AnchorDragging="AnchorDragging"
@@ -192,10 +196,6 @@
             </button>
         </div>
     }
-
-    @* MOB clear confirm was a dedicated modal; replaced by the two-tap
-       confirm on the MOB button in MapControls (parallel to Stop-
-       Navigation). See OnMobClicked there. *@
 
     @if (anchorEditMode)
     {
@@ -382,11 +382,9 @@
                                 @onclick="() => PickRegionRadius(m)" type="button">@label</button>
                     }
                 </div>
-                @* Hazard toggle. Was previously polygon-only (lived
-                   inside PolygonEditPanel which only appears AFTER
-                   the dialog closes). Lifted into the dialog so the
-                   circle path can set it too - focus-group field
-                   report: "Cant add hazard flag for circle". *@
+                @* Hazard toggle. Lives in the dialog rather than in
+                   PolygonEditPanel (which only appears AFTER the
+                   dialog closes) so the circle path can set it too. *@
                 <label class="route-edit-hazard" style="margin-top:10px;"
                        title="Raise an alarm whenever own-ship is inside this region">
                     <input type="checkbox" @bind="newRegionIsHazard" />
@@ -432,14 +430,14 @@
        Sort alphabetically so the chip positions are stable when the
        user toggles one (the draw-stack order would shuffle visually
        on each tap because ApplyChartOrder reshuffles availableCharts). *@
-    @* Quick chart-switcher bar. Previously hidden whenever the
-       Layers panel was open; that felt like losing context every
-       time you wanted to check which chart was on. Now it stays
-       visible so the user can toggle rendering in the bar while
-       the Layers panel handles membership / reorder. Active chips
-       carry a strong filled-accent style so "which chart is on
-       the map" reads at a glance - the old semi-transparent
-       accent was ambiguous against a bright ocean tile. *@
+    @* Quick chart-switcher bar. Stays visible while the Layers
+       panel is open (hiding it feels like losing context every time
+       you want to check which chart is on), so the user can toggle
+       rendering in the bar while the Layers panel handles
+       membership / reorder. Active chips carry a strong
+       filled-accent style so "which chart is on the map" reads at
+       a glance - a semi-transparent accent is ambiguous against a
+       bright ocean tile. *@
     @if (_charts is not null && _charts.QuickBarCharts.Count > 0)
     {
         <div class="chart-quick-bar">
@@ -454,10 +452,9 @@
                    .chart-quick-chip rules in app.css) so desktop /
                    iPad still read the full name in the chip while
                    a 390-wide phone gets a tidy "Bahamas No…" form.
-                   Earlier helm round shortened in C# unconditionally,
-                   which clipped on desktop too -- that hid the
-                   disambiguating tail on a wide screen where there
-                   was plenty of room for the full name. *@
+                   Shortening in C# would clip on desktop too, hiding
+                   the disambiguating tail on a wide screen where
+                   there is plenty of room for the full name. *@
                 <button @key="chart.Identifier"
                         class="chart-quick-chip @(active ? "active" : "")"
                         @onclick="() => _charts.ToggleAsync(chart, !active)"
@@ -636,8 +633,8 @@
     // off the 3 s timer / AtonStore event; controllers own the
     // snapshot build + diff pre-computation.
     private OnaPlotter.Services.Js.MapAisJs? _aisJs;
-    private OnaPlotter.Services.Map.AisPushService? _aisPush;
-    private OnaPlotter.Services.Map.AtonPushService? _atonPush;
+    private OnaPlotter.Services.Map.AisLayerController? _aisController;
+    private OnaPlotter.Services.Map.AtonLayerController? _atonController;
 
     // Misc-section overlay controllers (weather radar tiles, server
     // track polyline). Each owns its slice of state + interop and the
@@ -662,15 +659,14 @@
     private OnaPlotter.Services.Map.MapResourceController? _resources;
 
     // Imperative-map-state + edit-mode wrappers. The page-lifecycle
-    // / UI-handler / [JSInvokable] callbacks that ARCH-001 left on
-    // Map.razor consume them directly; no controller in between.
+    // / UI-handler / [JSInvokable] callbacks on Map.razor consume
+    // them directly; no controller in between.
     private OnaPlotter.Services.Js.MapControlsJs? _controlsJs;
     private OnaPlotter.Services.Js.MapEditJs? _editJs;
     // Master gate for own-ship informational chart lines (COG vector,
-    // tidal current arrow, laylines). Driven by Settings.ShipLinesVisible
-    // and pushed to JS on init + on toggle. Replaces the standalone
-    // laylines flag the More-menu used to drive: the helm now toggles
-    // all three lines together via the Layers panel "Own ship" section.
+    // tidal current arrow). Driven by Settings.ShipLinesVisible and
+    // pushed to JS on init + on toggle from the Layers panel "Own ship"
+    // section. Laylines have their own toggle there.
     private bool measureActive;
     private bool fabMenuOpen;
     // Lifted here from MapControls so the three bottom-bar flyouts
@@ -864,8 +860,8 @@
     /// matching the chart-picker / route-picker contracts.</summary>
     private SignalkWaypoint[] FilteredWaypoints => cachedFilteredWaypoints;
     /// <summary>Notes inside the current viewport, with the same text
-    /// filter as the rest. Replaces the previous "Show" global toggle
-    /// on the panel: the helm only sees notes near where they're
+    /// filter as the rest, rather than a global "Show" toggle on the
+    /// panel: the helm only sees notes near where they're
     /// looking, and panning the chart updates the list automatically.</summary>
     private SignalkNote[] FilteredNotes => cachedFilteredNotes;
 
@@ -874,12 +870,12 @@
     /// <summary>Per-route parsed coordinate cache: keyed by route id,
     /// holds the [lat, lon] pairs already converted from the
     /// route.Feature.Geometry JsonElement coordinates. Two callers
-    /// (PrecomputeRouteBounds and AddRouteToMap) used to walk that
-    /// JsonElement enumerator independently for every route on every
-    /// invocation, allocating a fresh double[2] per point per call.
-    /// On a 50-route, 200-waypoint chart that's 10k allocations per
-    /// availableRoutes refresh; the cache collapses both readers to
-    /// one parse + a dictionary lookup. Cleared in PrecomputeRouteBounds
+    /// (PrecomputeRouteBounds and AddRouteToMap) need the points;
+    /// walking the JsonElement enumerator independently for every
+    /// route on every invocation allocates a fresh double[2] per point
+    /// per call, 10k allocations per availableRoutes refresh on a
+    /// 50-route, 200-waypoint chart. The cache collapses both readers
+    /// to one parse + a dictionary lookup. Cleared in PrecomputeRouteBounds
     /// when availableRoutes mutates so a route edit picks up new
     /// geometry.</summary>
     private readonly Dictionary<string, double[][]> routeCoordsCache = [];
@@ -899,9 +895,9 @@
     // Mutual-exclusion guard for the three bottom-bar flyouts:
     // Layers panel, Add (FAB) menu, More overflow menu. Callers pass
     // the flag they're about to set true; the helper closes the other
-    // two first so only one flyout can be open at a time - tapping a
-    // second one without explicitly dismissing the first was a common
-    // stacked-modal bug in earlier builds.
+    // two first so only one flyout can be open at a time; otherwise
+    // tapping a second one without dismissing the first stacks
+    // modals.
     private enum BottomBarFlyout { Layers, Fab, More }
     private void CloseOtherFlyouts(BottomBarFlyout keep)
     {
@@ -930,7 +926,7 @@
             // Resource lists (waypoints / routes / notes / regions)
             // stream live via ResourceStore's SK delta subscriptions
             // and reconnect-reconcile, so opening the panel doesn't
-            // need a REST refresh on those any more.
+            // need a REST refresh on those.
             //
             // Radar state DOES still need a poke on panel-open: the
             // Mayara SK plugin doesn't publish radar fields over the
@@ -971,11 +967,6 @@
         loadedWaypoints.RemoveAll(w => w.Id == wp.Id);
         Toasts.Info($"Waypoint '{label}' deleted");
     }
-
-    // RenameWaypointAsync used to live here. The layers-panel Edit
-    // button now opens the same name+description dialog as Create
-    // (see SaveWaypoint's Edit branch in Map.razor.cs); the single-
-    // field rename helper isn't needed any more.
 
     /// <summary>Center the map on a waypoint and dismiss the layers
     /// panel so the helm can see what they just picked. Mirrors
@@ -1018,11 +1009,6 @@
         }
         catch (Exception ex) { Toasts.LogException(ex, "Navigate"); }
     }
-
-    // RenameNoteFromLayers used to live here. The layers-panel Edit
-    // button now opens the same title+description dialog as Add Note
-    // (see SaveNote's Edit branch in Map.razor.cs); the single-field
-    // rename helper isn't needed any more.
 
     /// <summary>Layers-panel "Delete" button for notes. The
     /// confirmation prompt lives in <see cref="NotesSection"/>; this
@@ -1098,7 +1084,7 @@
     // SK WebSocket delta stream (probed against openplotter - 195
     // unique paths, zero radar-related), so REST polling is the only
     // way to learn about state changes; the rest of the resources tab
-    // (waypoints / routes / notes / regions) is delta-driven now and
+    // (waypoints / routes / notes / regions) is delta-driven and
     // doesn't need a parallel REST refresh on this hot path.
     private async Task RefreshRadarsAsync()
     {
@@ -1123,8 +1109,8 @@
     // linger as a ghost layer without a chip to toggle it off.
     // On tick we also ACTIVATE the chart: ticking in the Layers panel
     // is the user's way of saying "I want this chart"; leaving it
-    // inactive and requiring a second tap on the quick-bar chip was
-    // a dead step that confused people ("I added it but nothing
+    // inactive and requiring a second tap on the quick-bar chip would
+    // be a dead step that confuses people ("I added it but nothing
     // happened"). The chip on the bar can still toggle rendering off
     // without removing from the quick bar.
     private async Task OnToggleChartQuickBarCallback((SignalkChart chart, bool inQuickBar) t)
@@ -1213,9 +1199,9 @@
     private void RebuildFilteredLayers()
     {
         // Bucket the bounds at 4 decimals so a 1 m pan jitter doesn't
-        // invalidate the cache. Same shape as the previous string-
-        // interpolated key but compares via record-struct .Equals
-        // without the per-call string allocation.
+        // invalidate the cache. A record-struct key compares via
+        // .Equals without the per-call string allocation a
+        // string-interpolated key would need.
         static double R(double? v) => v is double x ? Math.Round(x, 4) : 0;
         var key = new FilterCacheKey(
             layerFilter ?? "",
@@ -1292,17 +1278,15 @@
     {
         // Connection-state UI only - the chip + the chart-bound
         // banner colour depend on this re-render. MOB cross-reload
-        // recovery used to live here too but now owns its own
-        // OnConnectionChanged subscription inside MobService, so
-        // the reconcile runs regardless of which page the helm is
+        // recovery has its own OnConnectionChanged subscription
+        // inside MobService, so the reconcile runs regardless of which page the helm is
         // on (Map.razor is not safety-critical infrastructure).
         try { await InvokeAsync(StateHasChanged); }
         catch (ObjectDisposedException) { }
     }
 
     // Anchor state: server-driven only (signalk-anchoralarm-plugin
-    // v2.0.0+ is required; the legacy JS-only manual fallback was
-    // removed because the helm explicitly required the plugin).
+    // v2.0.0+ is required; there is no JS-only manual fallback).
     private bool AnchorButtonActive => Data.AnchorActive;
 
     // Anchor alarm: red when current radius exceeds max radius.
@@ -1328,7 +1312,7 @@
     // reads CourseStopPending for HUD-card binding and calls
     // MarkCourseStopPending() from the StopNavigation flow.
 
-    // First-visit welcome + touch coachmark state moved to
+    // First-visit welcome + touch coachmark state lives in
     // Map.FirstRun.razor.cs so the onboarding overlays stay together.
     // Fields referenced from the markup (welcomeVisible, touchCoachmarkVisible)
     // are declared in that partial.
@@ -1352,10 +1336,10 @@
         module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/leafletInterop.js");
         dotNetRef = DotNetObjectReference.Create(this);
 
-        // Attach the document-level deadman listener (replaces the
-        // per-event @onpointerdown / @onkeydown Razor handlers that
-        // marshalled every input through blazor.webassembly.js's
-        // onGlobalEvent). The JS module coalesces to one upcall per
+        // Attach the document-level deadman listener rather than
+        // per-event @onpointerdown / @onkeydown Razor handlers, which
+        // would marshal every input through blazor.webassembly.js's
+        // onGlobalEvent. The JS module coalesces to one upcall per
         // ~5 s; the alarm rule runs on a 3 s tick and fires after
         // minutes, so the precision loss is invisible.
         deadmanModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/deadman.js");
@@ -1393,8 +1377,8 @@
         // Toast surface plugged in once - the manager calls back
         // through here on overlay-start failures.
         RadarOverlayHost.SetModule(module);
-        // Manager and host are singletons; on nav-away the previous
-        // module was disposed but _enabled / _lastRange still claim
+        // Manager and host are singletons; on nav-away the prior
+        // module is disposed but _enabled / _lastRange still claim
         // overlays are running. Tell the manager to forget the JS-
         // side memory so the bootstrap radar poll below re-issues
         // startRadarOverlay against the fresh module.
@@ -1402,8 +1386,8 @@
         RadarOverlay.OnError = msg => Toasts.Error(msg);
 
         // Per-tick / per-event sync controllers. Each owns a slice of
-        // Map.razor's old "diff state + interop pipeline" and the page
-        // becomes a thin wiring layer that forwards data + UI events.
+        // the "diff state + interop pipeline" so the page stays a thin
+        // wiring layer that forwards data + UI events.
         // Constructed once the JS module is available; disposed
         // implicitly on page unload via the JS wrappers' MarkDisposed
         // hooks that the page calls in DisposeAsync.
@@ -1411,7 +1395,8 @@
         _anchorSync = new OnaPlotter.Services.Map.ServerAnchorController(
             _anchorJs,
             isSignalKConnected: () => SignalkClient.IsConnected,
-            raiseTimeoutWarning: msg => Toasts.Warning(msg));
+            raiseTimeoutWarning: msg => Toasts.Warning(msg),
+            time: Time);
         _routeJs = new OnaPlotter.Services.Js.MapRouteJs(module);
         // _controlsJs hoisted above _activeRouteSync because the
         // route sync uses it (SetRangeScaleHiddenAsync) to hide the
@@ -1423,7 +1408,8 @@
             _controlsJs,
             RouteApi,
             isSignalKConnected: () => SignalkClient.IsConnected,
-            stopTimeoutWarning: msg => Toasts.Warning(msg))
+            stopTimeoutWarning: msg => Toasts.Warning(msg),
+            time: Time)
         {
             // When the active route changes, restore the previously-
             // suppressed regular polyline if it's still enabled. The
@@ -1441,9 +1427,9 @@
             OnActiveOverlayCleared = () => _frameBuilder.CourseLineDrawn = false,
         };
         _aisJs = new OnaPlotter.Services.Js.MapAisJs(module);
-        _aisPush = new OnaPlotter.Services.Map.AisPushService(
+        _aisController = new OnaPlotter.Services.Map.AisLayerController(
             _aisJs, AisStore, MooredVessels, Settings, Time);
-        _atonPush = new OnaPlotter.Services.Map.AtonPushService(_aisJs, Atons);
+        _atonController = new OnaPlotter.Services.Map.AtonLayerController(_aisJs, Atons);
         _marinePoiJs = new OnaPlotter.Services.Js.MapMarinePoiJs(module);
         _marinePoi = new OnaPlotter.Services.Map.MarinePoiController(
             MarinePois, MarinePoiCache, _marinePoiJs, Settings, MarinePoiLogger);
@@ -1572,8 +1558,8 @@
         // ResourceStore. The store is populated at app startup
         // (Program.cs kicks RefreshAllAsync) and kept fresh via SK
         // resources.* deltas + reconnect reconcile, so reading the
-        // snapshot here avoids the duplicate REST round-trip the
-        // Map used to issue on every mount. Cold-start cases where
+        // snapshot here avoids a duplicate REST round-trip on every
+        // mount. Cold-start cases where
         // the startup-load hasn't completed yet land an empty
         // snapshot; the per-id Changed events fired during the
         // store's bulk Replace then drop the markers in via
@@ -1595,8 +1581,8 @@
         // First-paint barrier. Everything above is the chart shell
         // + the resource snapshot the helm sees on reload. The
         // bootstrap below (marker pushes, charts/radars/buddies
-        // fetch, settings restore, layer pushes) used to stack 96+
-        // microtasks behind a single timer-fire and pin the main
+        // fetch, settings restore, layer pushes) would otherwise stack
+        // 96+ microtasks behind a single timer-fire and pin the main
         // thread for ~2.5 s on a throttled / slow client. Yielding
         // here gives the browser a chance to paint the shell
         // before the heavy fan-out runs; each subsequent Task.Yield
@@ -1647,9 +1633,9 @@
         // this call is essentially free after the first paint.
         await Settings.InitializeAsync();
 
-        // Wake lock is managed globally from MainLayout now (used to be
-        // per-Map-page, but that let the screen sleep when the helm
-        // switched to Wind / History mid-watch). No-op here.
+        // Wake lock is managed globally from MainLayout, not per-page,
+        // so the screen doesn't sleep when the helm switches to Wind /
+        // History mid-watch. No-op here.
 
         await Task.Yield();
 
@@ -1667,14 +1653,13 @@
                 await _charts!.ToggleAsync(chart, true);
 
         // First-run seeding: auto-enable the built-in OSM + OpenSeaMap
-        // charts (the basemap pair that used to be hardcoded as
-        // permanent Leaflet base layers in initMap) plus any
+        // charts (the basemap pair) plus any
         // SK-server chart whose name reads as "seamap" so the map
         // isn't blank on first visit. ChartsSeeded is persisted so
-        // this fires EXACTLY ONCE in a device's history - earlier
-        // revisions re-seeded whenever EnabledChartIds was empty,
-        // which "reset" the user's deliberate choice to disable every
-        // chart (common when plotter is paired with offline tiles).
+        // this fires EXACTLY ONCE in a device's history; re-seeding
+        // whenever EnabledChartIds is empty would "reset" the user's
+        // deliberate choice to disable every chart (common when
+        // plotter is paired with offline tiles).
         //
         // The OSM + OpenSeaMap entries come from
         // OnaPlotter/Utilities/BuiltInCharts.cs via ChartApi; matching
@@ -1781,10 +1766,9 @@
         // MOB cross-reload recovery is owned by MobService itself
         // (kicked once at Program.cs startup + re-runs on every WS
         // reconnect edge via the service's internal subscription).
-        // No manual kick needed here - the previous routing through
-        // this page's HandleConnectionChanged meant MOB recovery
-        // only ran if the helm happened to be on the chart page, a
-        // safety regression that the startup-kick path fixes.
+        // No manual kick needed here; routing it through this page
+        // would make MOB recovery run only while the helm happens to
+        // be on the chart page.
 
         KickInitialDataSyncAfterSubscribe();
 
@@ -1797,7 +1781,7 @@
         Atons.OnAtonsUpdated += HandleAtonsUpdated;
         await _aisJs.SetAtonsVisibleAsync(Settings.AtonsVisible);
         await _aisJs.SetAisLabelsVisibleAsync(Settings.AisLabelsVisible);
-        _ = _atonPush!.PushAsync();
+        _ = _atonController!.PushAsync();
 
         // Marine-POI overlay: push initial visibility (= "any category
         // enabled?") so the JS master gate matches the helm's
@@ -1807,18 +1791,18 @@
         {
             await _marinePoi.InitAsync();
         }
-        // No resource-poll timer here any more. ResourceStore subscribes
+        // No resource-poll timer here. ResourceStore subscribes
         // to resources.* SK deltas at startup and reconciles via REST
         // on every reconnect, so waypoints / routes / notes / regions
         // added from another plotter land on the chart within delta
-        // RTT (or one reconnect cycle for offline-edits). The previous
-        // 60 s REST poll is now redundant.
+        // RTT (or one reconnect cycle for offline-edits), so a REST
+        // poll would be redundant.
 
         await _controlsJs.EnableKeyboardShortcutsAsync(dotNetRef, MapKeyboardShortcuts.Keys);
 
         // Welcome card takes precedence over the touch coachmark on
         // first-ever visit since it covers long-press explicitly.
-        // The card is now surfaced from OnInitializedAsync so it can
+        // The card is surfaced from OnInitializedAsync so it can
         // paint BEFORE the REST-fetch toasts; here we only chain the
         // coachmark when the welcome wasn't shown.
         if (!welcomeVisible) await MaybeShowTouchCoachmarkAsync();
@@ -1912,10 +1896,10 @@
     // Map.FirstRun.razor.cs partial.
 
     // Per-push diff-caches. OnSettingsChanged fires for ANY setting
-    // (font size, night mode preset, harbor mode, ...); the previous
-    // handler unconditionally fired 6+ JS interop calls per fire,
-    // turning a single helm toggle into a fan-out of redundant pushes.
-    // Each push now gates on its own snapshot of the inputs it consumes.
+    // (font size, night mode preset, harbor mode, ...); firing 6+ JS
+    // interop calls unconditionally per fire would turn a single helm
+    // toggle into a fan-out of redundant pushes. Each push gates on its
+    // own snapshot of the inputs it consumes.
     private (double OwnCog, double AisCog) _cachedCogVector;
     private (bool Enabled, int Count) _cachedRadarRangeRings;
     private (bool Enabled, double BaseNm, int Count) _cachedDistanceRings;
@@ -1930,7 +1914,7 @@
     // when nothing relevant changed. CPA / TCPA threshold changes don't
     // need a JS push - the chip classifier runs C# side and the next
     // AIS tick picks up the new thresholds through Settings.* reads
-    // inside AisPushService.BuildSnapshot.
+    // inside AisLayerController.BuildSnapshot.
     private void HandleSettingsChanged()
     {
         if (_controlsJs is not null)
@@ -1975,7 +1959,7 @@
             }
         }
         // Wake-lock toggles are handled by MainLayout's OnSettingsChanged
-        // handler; the Map page no longer needs to relay them.
+        // handler; the Map page doesn't relay them.
 
         // Night-mode: if the user toggled it from Settings (not from
         // the Map page's own button) we hold a stale local `nightMode`
@@ -2434,7 +2418,7 @@
             if (_anchorSync is not null) await _anchorSync.SyncAsync(Data);
 
             // Anchor state transitions narrow the CPA classifier on
-            // the next AIS push tick (AisPushService reads
+            // the next AIS push tick (AisLayerController reads
             // SignalkClient.Data.AnchorActive each call). No explicit
             // push from here is needed; the chip classifier picks up
             // the new threshold on the next tick automatically.
@@ -2476,9 +2460,9 @@
         catch (JSException ex)
         {
             // A JS-side regression in any of updatePosition / setCourseLine
-            // / setLaylines etc. used to bubble into Blazor's error UI and
-            // freeze the render pass - that's what hid the own-boat marker
-            // in the chartLayers crash. Swallow + log so the UI stays live
+            // / setLaylines etc. would otherwise bubble into Blazor's error
+            // UI and freeze the render pass (hiding the own-boat marker,
+            // for example). Swallow + log so the UI stays live
             // and the browser console still surfaces the regression for
             // the dev. We fire at 1 Hz; a toast per tick would be spam.
             Console.Error.WriteLine($"[interop] HandleDataChanged: {ex.Message}");
@@ -2515,11 +2499,10 @@
     ///    window between refetches; the periodic refresh pulls the
     ///    server's authoritative version forward so the helm sees
     ///    the recent leg catch up without manual intervention. Runs
-    ///    irrespective of active-route state (the previous
-    ///    implementation gated this on a route+ship-track combo and
-    ///    additionally cleared the local trail on activation; the
-    ///    overlap is now intentional, mirrors the user mental model
-    ///    of "live + catch-up" sharing a polyline).
+    ///    irrespective of active-route state and leaves the local
+    ///    trail in place on activation; the overlap is intentional and
+    ///    mirrors the user mental model of "live + catch-up" sharing a
+    ///    polyline.
     /// </summary>
     private Task SyncRouteActiveServerTrackAsync()
     {
@@ -2579,10 +2562,9 @@
 
     // Shared moored-vessel classifier (singleton DI). Same instance the
     // CPA alarm rule uses, so the harbour filter and the alarm-suppress
-    // path can never disagree on whether a given vessel is moored. Was
-    // previously a local `new MooredVesselTracker()` here that ticked
-    // a parallel dwell ring; the duplication invited "alarm thinks X is
-    // moored, harbour filter doesn't" debugging.
+    // path can never disagree on whether a given vessel is moored; a
+    // page-local tracker would tick a parallel dwell ring and invite
+    // "alarm thinks X is moored, harbour filter doesn't" debugging.
     [Inject] private OnaPlotter.Services.IMooredVesselTracker MooredVessels { get; set; } = default!;
 
     // TimeProvider for hot-path UtcNow reads (harbor filter, ageSec
@@ -2596,24 +2578,24 @@
     [Inject] private TimeProvider Time { get; set; } = default!;
 
     /// <summary>
-    /// Forwards the AIS push to <see cref="AisPushService"/>. Stays as
+    /// Forwards the AIS push to <see cref="AisLayerController"/>. Stays as
     /// an instance method (not a direct call site) because the AIS
     /// timer + harbour-mode handler + buddy-toggle path all need a
     /// consistent gate: skip if the map isn't initialised yet.
     /// </summary>
     private Task PushAisTargets()
     {
-        if (!mapInitialized || _aisPush is null) return Task.CompletedTask;
-        return PushAisAndAtonsAsync(_aisPush, _atonPush);
+        if (!mapInitialized || _aisController is null) return Task.CompletedTask;
+        return PushAisAndAtonsAsync(_aisController, _atonController);
     }
 
     private async Task PushAisAndAtonsAsync(
-        OnaPlotter.Services.Map.AisPushService ais, OnaPlotter.Services.Map.AtonPushService? atons)
+        OnaPlotter.Services.Map.AisLayerController ais, OnaPlotter.Services.Map.AtonLayerController? atons)
     {
         await ais.PushAsync(Data);
         if (atons is not null) await atons.PushIfDirtyAsync();
         // The vessel list in the open Layers panel follows the AIS tick
-        // (the page no longer re-renders for every HUD change).
+        // (the page doesn't re-render for every HUD change).
         if (chartPanelOpen)
         {
             try { await InvokeAsync(StateHasChanged); }
@@ -2625,7 +2607,7 @@
     {
         // Fires per AtoN delta (a reconnect replays them all); the AIS
         // tick pushes once for the whole burst.
-        _atonPush?.MarkDirty();
+        _atonController?.MarkDirty();
     }
 
     private async Task ToggleFollow()
@@ -2670,7 +2652,7 @@
 
     /// <summary>Helm flipped the "Show ship lines" toggle in the
     /// Layers panel. Master gate for COG vector + tidal current
-    /// arrow on the chart. Laylines are no longer covered (separate
+    /// arrow on the chart. Laylines are not covered (separate
     /// toggle in OwnShipSection).</summary>
     private async Task OnToggleShipLines(bool enabled)
     {
@@ -3107,10 +3089,9 @@
         contextMenuVisible = false;
         // Use the direct-position endpoint: SignalK v2 course accepts
         //   PUT /navigation/course/destination { position: {lat, lon} }
-        // and skips the persistent waypoint resource that the old
-        // flow created as a side effect. The previous implementation
-        // also stopped at the first failure with no diagnostics, which
-        // looked like "Navigate Here does nothing" to the helm.
+        // and skips creating a persistent waypoint resource as a side
+        // effect. Failures surface as toasts so "Navigate Here" never
+        // silently does nothing.
         double lat = contextMenuLat, lon = contextMenuLon;
         try
         {
@@ -3129,8 +3110,7 @@
 
     // "Measure to here" drops a fresh two-point measurement: own-boat
     // as the moving anchor, the right-click / long-press position as
-    // the fixed endpoint. Mirrors the bearing-line overlay the user
-    // used to summon by double-clicking, but discoverable via the
+    // the fixed endpoint. A bearing-line overlay, discoverable via the
     // same context menu the helm already reaches for to navigate or
     // drop a waypoint. Activates Measure mode so additional taps
     // extend the ruler into a multi-leg route preview.
@@ -3331,11 +3311,6 @@
         return $"{(int)remaining.TotalMinutes}:{remaining.Seconds:D2}";
     }
 
-    // GPX Import / Export handlers moved to the Settings page (Backup
-    // section). Map.razor used to host them because the trigger UI
-    // lived in the Layers panel; with the UI gone the handlers belong
-    // wherever the helm reaches them, which is Settings.
-
     /// <summary>
     /// Page-side hook for ChartLayerController.OnChartOrderChanged.
     /// Re-sorts <see cref="availableCharts"/> via the controller's
@@ -3451,8 +3426,8 @@
                 _pendingRouteChanges.Clear();
                 // Pre-build an id->index map for this batch so each
                 // Apply does an O(1) lookup instead of an O(M) FindIndex
-                // against availableRoutes. Drained batches of 90+ ids
-                // on a reconnect storm used to be O(N*M); now O(N+M).
+                // against availableRoutes, so drained batches of 90+ ids
+                // on a reconnect storm stay O(N+M) rather than O(N*M).
                 // Rebuilt per batch because the loop can iterate multiple
                 // times if Changed events queue while a previous batch
                 // is in flight, and availableRoutes can grow between
@@ -3682,7 +3657,7 @@
                 _pendingWaypointChanges.Clear();
                 // Same per-batch index hint as the route drain. Drained
                 // batches of 200+ waypoints on a reconnect-edge reconcile
-                // used to be O(N*M); now O(N+M).
+                // stay O(N+M) rather than O(N*M).
                 var indexById = new Dictionary<string, int>(loadedWaypoints.Count, StringComparer.Ordinal);
                 for (int i = 0; i < loadedWaypoints.Count; i++)
                     indexById[loadedWaypoints[i].Id] = i;
@@ -4003,11 +3978,10 @@
     }
 
     // Coalesce region Removed events. This drain is the most valuable
-    // of the four because every region Removed used to call
-    // RegionStore.SetRegions(loadedRegions) inline - that fires
-    // HazardousRegionAlarmRule re-evaluation against every other
-    // region every time. With the drain SetRegions runs ONCE at the
-    // end of the batch.
+    // of the four because calling RegionStore.SetRegions(loadedRegions)
+    // inline per Removed fires HazardousRegionAlarmRule re-evaluation
+    // against every other region every time. With the drain SetRegions
+    // runs ONCE at the end of the batch.
     private readonly HashSet<string> _pendingRegionRemovals = new(StringComparer.Ordinal);
     private bool _regionRemoveFlushScheduled;
 
@@ -4063,9 +4037,9 @@
     // ServerTrackController owns the server-track state + interop;
     // wired in OnAfterRenderAsync.
 
-    /// <summary>Toggle night mode on/off. Helm-feedback: the previous
-    /// four-step cycle (dusk -> soft -> amber -> red) was confusing;
-    /// one tap on, one tap off is the binary mental model. Helms who
+    /// <summary>Toggle night mode on/off. A four-step cycle (dusk ->
+    /// soft -> amber -> red) confuses the helm; one tap on, one tap off
+    /// is the binary mental model. Helms who
     /// want a non-red-shifted dark intermediate use Theme = "dark"
     /// instead. The Night button in the More menu and the keyboard
     /// "n" shortcut both call this.
@@ -4086,10 +4060,10 @@
     // Deadman refresh. Invoked from wwwroot/js/deadman.js's document-
     // level pointerdown / keydown listener, coalesced to one upcall per
     // ~5 s so a noisy interaction burst doesn't marshal each event into
-    // WASM. The previous Razor @onpointerdown / @onkeydown wiring
-    // pushed every event through blazor.webassembly.js's onGlobalEvent;
-    // a 41 s 4x-throttled trace measured 1.67 s of WASM time spent in
-    // that path during steady click-around. Keeping the C# side as a
+    // WASM. Razor @onpointerdown / @onkeydown wiring would push every
+    // event through blazor.webassembly.js's onGlobalEvent; a 41 s
+    // 4x-throttled trace measured 1.67 s of WASM time spent in that
+    // path during steady click-around. Keeping the C# side as a
     // lock-free field write so the JSInvokable round-trip is the only
     // cost.
     [JSInvokable]
@@ -4161,9 +4135,8 @@
         _ => null,
     };
 
-    // MOB clear confirmation now lives on MapControls (OnMobClicked)
-    // as a two-tap pattern matching Stop-Navigation. The old
-    // TaskCompletionSource-backed modal is gone; ToggleMob is called
+    // MOB clear confirmation lives on MapControls (OnMobClicked) as a
+    // two-tap pattern matching Stop-Navigation; ToggleMob is called
     // only after the user has already armed + confirmed.
 
     /// <summary>Re-entry guard for the MOB drop / clear path. A slow
@@ -4227,7 +4200,7 @@
 
     /// <summary>Re-entry guard for the anchor raise / clear path. With
     /// the singleton HttpClient capped at 8 s, a flaky plugin response
-    /// is no longer minutes-long, but the helm can still complete the
+    /// can't take minutes, but the helm can still complete the
     /// arm+confirm sequence twice while one RaiseAsync is in flight.
     /// Without the guard, two POSTs land back-to-back; the helm sees
     /// the anchor flag bounce in the HUD as both responses come back.
@@ -4648,9 +4621,9 @@
 
         if (r.Success)
         {
-            // Course clear AFTER a successful drop - previously this
-            // ran first, which left the helm with a cleared course
-            // AND no anchor whenever the drop failed.
+            // Course clear AFTER a successful drop; clearing first
+            // would leave the helm with a cleared course AND no anchor
+            // whenever the drop fails.
             if (Data.HasActiveCourse)
             {
                 try { await CourseApi.ClearAsync(); }
@@ -4847,7 +4820,7 @@
     }
 
     /// <summary>Drop-mode Close: dismiss the panel without dropping.
-    /// SetRadius mode no longer has a Close button (helm exits by
+    /// SetRadius mode has no Close button (helm exits by
     /// raising via the Anchor button); but if the parent closes the
     /// panel for some other reason (mode flip, page navigation),
     /// any pending visual preview is reverted here so the on-map
@@ -4902,12 +4875,6 @@
             bbox.Value.MinLat, bbox.Value.MinLon,
             bbox.Value.MaxLat, bbox.Value.MaxLon);
     }
-
-    // Zoom +/- handlers used to live here for an in-map overlay
-    // button pair. They're now in MainLayout.razor's topbar (the JS
-    // exports zoomIn/zoomOut on leafletInterop are still the
-    // contract); kept the JS exports, dropped the C# wrappers since
-    // no other call site needed them.
 
     /// <summary>
     /// One-shot pan to own-boat at the current zoom level. Distinct from
@@ -5018,7 +4985,7 @@
                 await module.InvokeVoidAsync("clearCurrentArrow");
                 await module.InvokeVoidAsync("clearWeatherOverlay");
                 await module.InvokeVoidAsync("disableKeyboardShortcuts");
-                // Wake lock is owned by MainLayout now; do NOT release
+                // Wake lock is owned by MainLayout; do NOT release
                 // it here, otherwise switching Chart -> Wind would
                 // briefly drop the lock.
                 await module.InvokeVoidAsync("dispose");

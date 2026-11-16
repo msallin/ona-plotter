@@ -4,9 +4,8 @@ namespace OnaPlotter.Components.Pages;
 
 /// <summary>
 /// Shared scaffolding for the two Map-page edit flows (route +
-/// polygon-region). Previously this file held both flows end-to-end
-/// at ~540 lines; split into three partials so each concern can be
-/// read in isolation:
+/// polygon-region). The flows live in three partials so each concern
+/// can be read in isolation:
 ///
 /// <list type="bullet">
 ///   <item><see cref="Map"/> partial in <c>Map.RouteEditing.razor.cs</c></item>

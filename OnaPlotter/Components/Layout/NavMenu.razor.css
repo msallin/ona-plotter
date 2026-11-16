@@ -122,8 +122,8 @@
    icon-rail mode. The .sidebar width itself is in
    MainLayout.razor.css. Triggered solely by .page.sidebar-collapsed
    (mirrored off Settings.SidebarCollapsed). MainLayout auto-flips
-   that setting on fullscreen enter/exit so the historical
-   "fullscreen narrows the rail" behaviour stays, while the
+   that setting on fullscreen enter/exit so fullscreen narrows the
+   rail, while the
    chevron-toggle in the rail keeps working as an override. */
 .page.sidebar-collapsed .nav-label {
     display: none;

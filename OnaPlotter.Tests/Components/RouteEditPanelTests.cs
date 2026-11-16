@@ -14,8 +14,8 @@ public class RouteEditPanelTests
     [Test]
     public async Task Renders_Name_And_Stats()
     {
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<RouteEditPanel>(p => p
+        using var ctx = new Bunit.BunitContext();
+        var cut = ctx.Render<RouteEditPanel>(p => p
             .Add(x => x.Name, "Morning Sail")
             .Add(x => x.Stats, "4 WP / 2.3 nm"));
 
@@ -27,9 +27,9 @@ public class RouteEditPanelTests
     [Test]
     public async Task NameInput_Raises_NameChanged()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         string? captured = null;
-        var cut = ctx.RenderComponent<RouteEditPanel>(p => p
+        var cut = ctx.Render<RouteEditPanel>(p => p
             .Add(x => x.Name, "")
             .Add(x => x.NameChanged, EventCallback.Factory.Create<string>(this, v => captured = v)));
 
@@ -41,9 +41,9 @@ public class RouteEditPanelTests
     [Test]
     public async Task SaveButton_Fires_OnSave_AndIsPrimary()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         int fires = 0;
-        var cut = ctx.RenderComponent<RouteEditPanel>(p => p
+        var cut = ctx.Render<RouteEditPanel>(p => p
             .Add(x => x.OnSave, EventCallback.Factory.Create(this, () => fires++)));
 
         // Save is the primary action - carries the .active class
@@ -62,9 +62,9 @@ public class RouteEditPanelTests
     {
         // Save & Go activates the new route immediately after save. Pins
         // that the callback is wired and distinct from plain OnSave.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         int saveFires = 0, goFires = 0;
-        var cut = ctx.RenderComponent<RouteEditPanel>(p => p
+        var cut = ctx.Render<RouteEditPanel>(p => p
             .Add(x => x.OnSave,      EventCallback.Factory.Create(this, () => saveFires++))
             .Add(x => x.OnSaveAndGo, EventCallback.Factory.Create(this, () => goFires++)));
 
@@ -79,13 +79,12 @@ public class RouteEditPanelTests
     [Test]
     public async Task CancelButton_Fires_OnCancel()
     {
-        // The "Undo" button (and its OnUndo callback) was dropped on
-        // helm request - the per-waypoint × on the list rows plus
-        // marker-drag-to-reposition cover the same UX, and Undo was
-        // redundant chrome. Cancel remains; assert it still wires.
-        using var ctx = new Bunit.TestContext();
+        // No "Undo" button: the per-waypoint × on the list rows plus
+        // marker-drag-to-reposition cover the same UX, so Undo would
+        // be redundant chrome. Assert Cancel wires.
+        using var ctx = new Bunit.BunitContext();
         int cancel = 0;
-        var cut = ctx.RenderComponent<RouteEditPanel>(p => p
+        var cut = ctx.Render<RouteEditPanel>(p => p
             .Add(x => x.OnCancel, EventCallback.Factory.Create(this, () => cancel++)));
 
         var btn = cut.FindAll("button.map-btn")
@@ -102,8 +101,8 @@ public class RouteEditPanelTests
         // course: Save and Save & Go would perform identical operations
         // (the route is already active), so the "& Go" button is
         // hidden to remove the duplicated verb. Save remains primary.
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<RouteEditPanel>(p => p
+        using var ctx = new Bunit.BunitContext();
+        var cut = ctx.Render<RouteEditPanel>(p => p
             .Add(x => x.IsEditingExisting, true)
             .Add(x => x.IsEditingActiveRoute, true));
 
@@ -115,21 +114,21 @@ public class RouteEditPanelTests
     [Test]
     public async Task List_Hidden_When_Coords_Missing_Or_Empty()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
 
         // Null coords: no list element.
-        var noCoords = ctx.RenderComponent<RouteEditPanel>(p => p.Add(x => x.Coords, null));
+        var noCoords = ctx.Render<RouteEditPanel>(p => p.Add(x => x.Coords, null));
         await Assert.That(noCoords.FindAll(".route-edit-list").Count).IsEqualTo(0);
 
         // Empty coords array: still no list - "Waypoints (0)" would be noise.
-        var empty = ctx.RenderComponent<RouteEditPanel>(p => p.Add(x => x.Coords, System.Array.Empty<double[]>()));
+        var empty = ctx.Render<RouteEditPanel>(p => p.Add(x => x.Coords, System.Array.Empty<double[]>()));
         await Assert.That(empty.FindAll(".route-edit-list").Count).IsEqualTo(0);
     }
 
     [Test]
     public async Task Renders_Numbered_Rows_For_Each_Coord()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         // Accept any JS invocation: OnAfterRenderAsync calls
         // scrollElementToBottom on the items <ol> ref when Coords
         // arrives non-empty (helm-feedback auto-scroll behaviour).
@@ -142,7 +141,7 @@ public class RouteEditPanelTests
             new[] { 48.22, 11.58 },
             new[] { 48.23, 11.59 }
         };
-        var cut = ctx.RenderComponent<RouteEditPanel>(p => p.Add(x => x.Coords, coords));
+        var cut = ctx.Render<RouteEditPanel>(p => p.Add(x => x.Coords, coords));
 
         var rows = cut.FindAll(".route-edit-wp-row");
         await Assert.That(rows.Count).IsEqualTo(3);
@@ -164,7 +163,7 @@ public class RouteEditPanelTests
     [Test]
     public async Task Remove_Button_Fires_OnRemoveWaypoint_With_Index()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         ctx.JSInterop.Mode = Bunit.JSRuntimeMode.Loose;
         int? removed = null;
         var coords = new double[][]
@@ -173,7 +172,7 @@ public class RouteEditPanelTests
             new[] { 48.3, 11.6 },
             new[] { 48.4, 11.7 }
         };
-        var cut = ctx.RenderComponent<RouteEditPanel>(p => p
+        var cut = ctx.Render<RouteEditPanel>(p => p
             .Add(x => x.Coords, coords)
             .Add(x => x.OnRemoveWaypoint, EventCallback.Factory.Create<int>(this, i => removed = i)));
 
@@ -191,14 +190,14 @@ public class RouteEditPanelTests
         // right corner crowds the HUD stack; the header must collapse
         // to a small chip on tap so the chart underneath is usable
         // again. Re-tap expands.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         ctx.JSInterop.Mode = Bunit.JSRuntimeMode.Loose;
         var coords = new double[][]
         {
             new[] { 48.2, 11.5 },
             new[] { 48.3, 11.6 },
         };
-        var cut = ctx.RenderComponent<RouteEditPanel>(p => p.Add(x => x.Coords, coords));
+        var cut = ctx.Render<RouteEditPanel>(p => p.Add(x => x.Coords, coords));
 
         // Default state: expanded. Items list rendered.
         await Assert.That(cut.FindAll(".route-edit-wp-row").Count).IsEqualTo(2);
@@ -229,7 +228,7 @@ public class RouteEditPanelTests
         // waypoints" while collapsed. Pin that the count remains
         // visible in both states - otherwise the helm has to expand
         // to check the running total.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         ctx.JSInterop.Mode = Bunit.JSRuntimeMode.Loose;
         var coords = new double[][]
         {
@@ -238,7 +237,7 @@ public class RouteEditPanelTests
             new[] { 48.4, 11.7 },
             new[] { 48.5, 11.8 },
         };
-        var cut = ctx.RenderComponent<RouteEditPanel>(p => p.Add(x => x.Coords, coords));
+        var cut = ctx.Render<RouteEditPanel>(p => p.Add(x => x.Coords, coords));
         cut.Find(".route-edit-list-header").Click();
         await Assert.That(cut.Find(".route-edit-list-count").TextContent.Trim()).IsEqualTo("4");
     }
@@ -248,10 +247,10 @@ public class RouteEditPanelTests
     {
         // Covers the SW quadrant - negative lat/lon should render with S/W
         // suffixes, not minus signs, and use absolute-value degrees.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         ctx.JSInterop.Mode = Bunit.JSRuntimeMode.Loose;
         var coords = new double[][] { new[] { -33.8688, -151.2093 } };
-        var cut = ctx.RenderComponent<RouteEditPanel>(p => p.Add(x => x.Coords, coords));
+        var cut = ctx.Render<RouteEditPanel>(p => p.Add(x => x.Coords, coords));
 
         var coord = cut.Find(".route-edit-wp-coord").TextContent;
         await Assert.That(coord).Contains("33.8688");

@@ -10,13 +10,11 @@
 //     that draws on top of any basemap. The single most useful
 //     sailing layer.
 //
-// Earlier versions of leafletInterop.js removed these layers when a
-// chart was added - intended as an "OSM attribution leak" fix, but
-// the diagnosis was wrong. OSM data IS being used (as fallback) so
-// the attribution is correctly shown. Two regressions resulted:
-// helm using SignalK charts lost seamarks AND lost the fallback
-// for failed tiles. This test pins the corrected contract: OSM and
-// OpenSeaMap attributions are always present.
+// Adding a chart must not remove these layers. OSM data IS used (as
+// fallback) so its attribution is correctly shown; removing the
+// layers would cost a helm using SignalK charts both the seamarks
+// AND the fallback for failed tiles. This test pins the contract: OSM
+// and OpenSeaMap attributions are always present.
 //
 // Tests at the JS-interop layer (window.* exports from
 // leafletInterop.js) so we exercise the actual addChartLayer /

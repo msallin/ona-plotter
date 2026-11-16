@@ -4,7 +4,7 @@ namespace OnaPlotter.Utilities;
 
 /// <summary>
 /// Builds the per-tick frame payload for the JS <c>applyFrame</c>
-/// interop call. Extracted from Map.razor's <c>HandleDataChanged</c>
+/// interop call. Lives outside Map.razor's <c>HandleDataChanged</c>
 /// so the decision tree (position present, course cleared this tick,
 /// current-arrow cutoff, layline throttle) is unit-testable without
 /// a JS runtime.
@@ -35,18 +35,17 @@ public sealed class MapFrameBuilder
 
     // Throttle: only include laylines in every Nth frame. The JS
     // draw involves vector math + SVG mutations that are measurable
-    // on weak clients. 5 matches Map.razor's original cadence.
+    // on weak clients, so every 5th fix is enough.
     public int LaylinePushEveryNFixes { get; init; } = 5;
 
     // Track-segment emission cadence. Matches SignalkClient's 5 s
     // TrackBuffer sample interval so the JS-side trackLayer (capped
     // at 1000 polyline segments) gets the same ~83 min visible
     // history as the persisted C# buffer. Without this gate the JS
-    // side received a segment per applyFrame tick (multi-Hz under
-    // bursty SignalK feeds), so 1000 segments could be exhausted
-    // in 1-2 minutes and the helm saw only the last 10-20 s of
-    // trail. Helm-reported regression; root cause is cadence drift
-    // between the C# buffer (gated) and the JS frame emitter (not).
+    // side would receive a segment per applyFrame tick (multi-Hz under
+    // bursty SignalK feeds), exhausting 1000 segments in 1-2 minutes
+    // so the helm sees only the last 10-20 s of trail; the cadences of
+    // the C# buffer and the JS frame emitter have to match.
     public int TrackEmitIntervalMs { get; init; } = 5_000;
 
     // User-toggle: laylines overlay visible on the map. When false
@@ -167,14 +166,12 @@ public sealed class MapFrameBuilder
         // the tick that transitions from "active course" to "no course";
         // after that nothing until course reappears.
         //
-        // The XTE perpendicular tick visual was dropped per helm
-        // feedback - the line drew silently from the boat to the side
-        // of the active leg, was the same colour family as CPA + MOB
-        // overlays, and helms reading the chart asked "what's the fat
-        // red line?" because there was no AIS target / X / pin at the
-        // end. The XTE classifier (Xte.Classify), the alarm rule, and
-        // the HUD pill all stay - only the perpendicular bar on the
-        // chart is gone.
+        // No XTE perpendicular tick is drawn on the chart: a bar from
+        // the boat to the side of the active leg, in the same colour
+        // family as CPA + MOB overlays and with no AIS target / X / pin
+        // at the end, reads as an unexplained "fat red line". The XTE
+        // classifier (Xte.Classify), the alarm rule and the HUD pill
+        // carry XTE instead.
         FrameCourseLine? course = null;
         bool clearCourse = false;
         var wpLat = data.CourseNextPointLatitude;

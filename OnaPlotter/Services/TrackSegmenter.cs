@@ -82,9 +82,8 @@ public static class TrackSegmenter
 
         // Pass 3: absorb sub-MinSegmentDuration segments into the
         // adjacent run. The merge needs the points array (to read
-        // segment timestamps) - we previously called a pure
-        // index-only helper which only caught one-point segments and
-        // missed sub-2-minute multi-point ones (e.g. a 90 s moving
+        // segment timestamps); an index-only helper would catch only
+        // one-point segments and miss sub-2-minute multi-point ones (e.g. a 90 s moving
         // blip with 4 SOG-elevated samples - exactly the "14-second
         // moving trip the helm caused by stepping on the throttle
         // while berthing" case the constant comment warns about).

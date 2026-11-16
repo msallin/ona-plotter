@@ -7,7 +7,7 @@ namespace OnaPlotter.Services.Js;
 /// <see cref="IMapOverlaysJs"/> backed by an
 /// <see cref="IJSObjectReference"/> handle to the leafletInterop.js
 /// module. Centralises the JSDisconnected / ObjectDisposed swallow
-/// that every call site previously re-implemented. After
+/// so call sites don't each re-implement it. After
 /// <see cref="MarkDisposed"/> every method becomes a silent no-op.
 /// </summary>
 public sealed class MapOverlaysJs : IMapOverlaysJs
@@ -22,8 +22,8 @@ public sealed class MapOverlaysJs : IMapOverlaysJs
 
     public void MarkDisposed() => _disposed = true;
 
-    public Task AddChartLayerAsync(string id, string tileUrl, int minZoom, int maxZoom, double opacity, double[]? bounds, int upscaleLevels, string attribution)
-        => InvokeSafe("addChartLayer", id, tileUrl, minZoom, maxZoom, opacity, bounds, upscaleLevels, attribution);
+    public Task AddChartLayerAsync(string id, string tileUrl, int minZoom, int maxZoom, double opacity, double[]? bounds, int upscaleLevels, string attribution, bool overlay)
+        => InvokeSafe("addChartLayer", id, tileUrl, minZoom, maxZoom, opacity, bounds, upscaleLevels, attribution, overlay);
 
     public Task RemoveChartLayerAsync(string id)
         => InvokeSafe("removeChartLayer", id);

@@ -25,12 +25,12 @@ public class HudRadarCardTests
         new() { Id = id, Name = name, Brand = "AcmeRadar", Status = status, Range = range };
 
     private static IRenderedComponent<HudRadarCard> Render(
-        Bunit.TestContext ctx,
+        Bunit.BunitContext ctx,
         RadarInfo[] radars,
         IReadOnlyDictionary<string, RadarCapabilities?>? caps = null,
         Action<(string, RadarPower)>? onPower = null,
         Action<(string, int)>? onRange = null) =>
-        ctx.RenderComponent<HudRadarCard>(p => p
+        ctx.Render<HudRadarCard>(p => p
             .Add(x => x.Radars, radars)
             .Add(x => x.Capabilities, caps ?? new Dictionary<string, RadarCapabilities?>())
             .Add(x => x.OnSetPower, Microsoft.AspNetCore.Components.EventCallback.Factory
@@ -43,7 +43,7 @@ public class HudRadarCardTests
     {
         // Setting on but no radars detected -> the card hides itself
         // so the bottom-right HUD stack collapses cleanly.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = Render(ctx, []);
         await Assert.That(cut.FindAll(".radar-hud-panel").Count).IsEqualTo(0);
     }
@@ -51,7 +51,7 @@ public class HudRadarCardTests
     [Test]
     public async Task SingleRadar_HidesPicker_ShowsName()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = Render(ctx, [Radar("r1")]);
         await Assert.That(cut.FindAll(".radar-hud-picker").Count).IsEqualTo(0);
         await Assert.That(cut.FindAll(".radar-hud-name").Count).IsEqualTo(1);
@@ -64,7 +64,7 @@ public class HudRadarCardTests
         // With more than one radar the dropdown appears so the helm can
         // pick which device the controls act on. Picker omits the
         // single-name fallback row.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = Render(ctx, [Radar("r1", name: "R200 24"), Radar("r2", name: "R150 xHD")]);
         await Assert.That(cut.FindAll(".radar-hud-picker").Count).IsEqualTo(1);
         await Assert.That(cut.FindAll(".radar-hud-name").Count).IsEqualTo(0);
@@ -78,7 +78,7 @@ public class HudRadarCardTests
         // card prefers the live one over array order. Reason: the
         // transmitting radar is the one painting on the chart, so the
         // helm's range tweaks should land on that device by default.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = Render(ctx,
             [Radar("idle", status: "standby", name: "Idle"),
              Radar("live", status: "transmit", name: "Live")]);
@@ -89,7 +89,7 @@ public class HudRadarCardTests
     [Test]
     public async Task RangeStepper_Up_AdvancesToNextSupportedValue()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         (string Id, int M)? captured = null;
         var caps = new Dictionary<string, RadarCapabilities?>
         {
@@ -118,7 +118,7 @@ public class HudRadarCardTests
         // out of bounds. Top of range: the + button is disabled. Pin
         // both so a refactor of FindIndex that shifts the boundary by
         // one is caught.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var caps = new Dictionary<string, RadarCapabilities?>
         {
             ["r1"] = new RadarCapabilities
@@ -135,7 +135,7 @@ public class HudRadarCardTests
         await Assert.That(minSteps[0].HasAttribute("disabled")).IsTrue();
         await Assert.That(minSteps[1].HasAttribute("disabled")).IsFalse();
 
-        using var ctx2 = new Bunit.TestContext();
+        using var ctx2 = new Bunit.BunitContext();
         var atMax = Render(ctx2, [Radar("r1", range: 1852)], caps);
         var maxSteps = atMax.FindAll(".radar-hud-range-step");
         await Assert.That(maxSteps[0].HasAttribute("disabled")).IsFalse();
@@ -153,7 +153,7 @@ public class HudRadarCardTests
         // Pinning so a future "drop the splice" refactor surfaces
         // the regression: the off-list value would no longer be
         // selectable and StepRange would no-op.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         (string Id, int M)? captured = null;
         var caps = new Dictionary<string, RadarCapabilities?>
         {
@@ -181,7 +181,7 @@ public class HudRadarCardTests
     {
         // Mirror of the above for the down direction: spliced 999 in
         // [463, 926, 999, 1852] steps DOWN to 926.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         (string Id, int M)? captured = null;
         var caps = new Dictionary<string, RadarCapabilities?>
         {
@@ -209,7 +209,7 @@ public class HudRadarCardTests
         // is showing, not whatever was first in the list. The power
         // row collapsed to a single state-dependent toggle, so a
         // transmitting radar shows exactly one button - "Stby".
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         (string Id, RadarPower P)? captured = null;
         var cut = Render(ctx, [Radar("r1")], onPower: t => captured = t);
 
@@ -225,12 +225,11 @@ public class HudRadarCardTests
     [Test]
     public async Task TransmitButton_FiresTransmit_OnPlainClick()
     {
-        // Helm dropped the 600 ms hold-to-engage gate (the SK radar
-        // plugin owns the warmup state machine, so the gate was
-        // redundant safety theatre). Both Standby and Transmit are
-        // now plain clicks; a tap on the button fires the
-        // corresponding RadarPower value.
-        using var ctx = new Bunit.TestContext();
+        // No hold-to-engage gate: the SK radar plugin owns the warmup
+        // state machine, so a gate would be redundant safety theatre.
+        // Both Standby and Transmit are plain clicks; a tap on the
+        // button fires the corresponding RadarPower value.
+        using var ctx = new Bunit.BunitContext();
         (string Id, RadarPower P)? captured = null;
         var cut = Render(ctx, [Radar("r1", status: "standby")], onPower: t => captured = t);
         var btns = cut.FindAll(".radar-hud-power .ap-mode-btn");
@@ -247,16 +246,15 @@ public class HudRadarCardTests
         // Single-button toggle: one decision surface, label + click
         // behaviour switch by state. Transmitting -> "Standby"
         // (instant tap clicks straight back to standby); standby ->
-        // "Transmit" (also instant tap now - helm dropped the
-        // hold-to-engage gate). Helm also asked for the full word
-        // "Standby" instead of "Stby" so the button reads at a
-        // glance without abbreviation guesswork.
-        using var ctx = new Bunit.TestContext();
+        // "Transmit" (also instant tap, no hold-to-engage gate). The
+        // full word "Standby" rather than "Stby" so the button reads
+        // at a glance without abbreviation guesswork.
+        using var ctx = new Bunit.BunitContext();
         var transmitting = Render(ctx, [Radar("r1", status: "transmit")]);
         await Assert.That(transmitting.FindAll(".radar-hud-power .ap-mode-btn").Count).IsEqualTo(1);
         await Assert.That(transmitting.Find(".radar-hud-power .ap-mode-btn").TextContent.Trim()).IsEqualTo("Standby");
 
-        using var ctx2 = new Bunit.TestContext();
+        using var ctx2 = new Bunit.BunitContext();
         var standby = Render(ctx2, [Radar("r2", status: "standby")]);
         await Assert.That(standby.FindAll(".radar-hud-power .ap-mode-btn").Count).IsEqualTo(1);
         await Assert.That(standby.Find(".radar-hud-power .ap-mode-btn").TextContent.Trim()).IsEqualTo("Transmit");
@@ -270,7 +268,7 @@ public class HudRadarCardTests
         // that "transmit hidden" maps to radar-status-unknown, not
         // radar-status-transmit-hidden (which would let CSS class
         // injection visually neutralise the chip).
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = Render(ctx, [Radar("r1", status: "transmit hidden")]);
         var chip = cut.Find(".radar-status-chip");
         await Assert.That(chip.GetAttribute("class")!).Contains("radar-status-unknown");
@@ -283,11 +281,11 @@ public class HudRadarCardTests
         // Active-transmit visual cue: the panel borrows the autopilot's
         // .ap-engaged green border so the helm reads "this device is
         // hot" at a glance, matching the AP-engaged colour language.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = Render(ctx, [Radar("r1", status: "transmit")]);
         await Assert.That(cut.Find(".radar-hud-panel").ClassList.Contains("ap-engaged")).IsTrue();
 
-        using var ctx2 = new Bunit.TestContext();
+        using var ctx2 = new Bunit.BunitContext();
         var standby = Render(ctx2, [Radar("r2", status: "standby")]);
         await Assert.That(standby.Find(".radar-hud-panel").ClassList.Contains("ap-engaged")).IsFalse();
     }
@@ -298,7 +296,7 @@ public class HudRadarCardTests
         // The radar's per-value description ("1/4 nm") wins over our
         // metric/nm formatter ("0.2 nm") so the HUD matches the
         // brand-native MFD a helm is muscle-memoried on.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var caps = new Dictionary<string, RadarCapabilities?>
         {
             ["r1"] = new RadarCapabilities

@@ -5,7 +5,9 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
     normalizeDeltaDeg, unwrapRotation, rotateVector,
-    clientToContainerPoint, containerPointToLayoutPoint,
+    clientToContainerPoint, containerPointToLayoutPoint, overscanFor,
+    attachRotation, detachRotation, setRotation, setOverscanEnabled,
+    getOverscan, fitPadding, toLayoutPoint, viewportSize, unrotatedLayer,
 } from './mapRotation.js';
 
 const near = (actual, expected, eps = 1e-9) =>
@@ -84,7 +86,7 @@ describe('clientToContainerPoint', () => {
         }
     });
 
-    it('a tap above the centre in course-up 90 lands left of centre in the map frame', () => {
+    it('a tap above the centre in course-up 90 lands right of centre in the map frame', () => {
         // COG 090: map rotated -90 so east points up on screen. A tap
         // 100 px above the centre is 100 px east of the boat, i.e. to the
         // right in the unrotated container.
@@ -106,5 +108,180 @@ describe('clientToContainerPoint', () => {
     it('subtracts the container border like Leaflet does', () => {
         const rect = { left: 0, top: 0, width: w, height: h };
         nearPt(clientToContainerPoint(10, 10, rect, w, h, 0, 2, 3), 8, 7);
+    });
+});
+
+describe('overscanFor', () => {
+    it('grows each side to the half-diagonal (390 x 844 phone)', () => {
+        // diagonal 929.7 -> half 464.9; x: 464.9 - 195 -> 270, y: 464.9 - 422 -> 43
+        assert.deepEqual(overscanFor(390, 844), { x: 270, y: 43 });
+    });
+
+    it('square viewport grows equally on both axes', () => {
+        const o = overscanFor(1000, 1000);
+        assert.equal(o.x, o.y);
+        assert.equal(o.x, Math.ceil(Math.SQRT2 * 500 - 500));
+    });
+
+    it('degenerate sizes do not grow', () => {
+        assert.deepEqual(overscanFor(0, 0), { x: 0, y: 0 });
+        assert.deepEqual(overscanFor(0, 500), { x: 0, y: 0 });
+        assert.deepEqual(overscanFor(-1, 500), { x: 0, y: 0 });
+        assert.deepEqual(overscanFor(NaN, 500), { x: 0, y: 0 });
+    });
+
+    it('whole pixels per side, never shrinking', () => {
+        for (const [w, h] of [[1, 1], [375, 667], [768, 1024], [1920, 1080], [2732, 2048]]) {
+            const o = overscanFor(w, h);
+            assert.ok(Number.isInteger(o.x) && Number.isInteger(o.y));
+            assert.ok(o.x >= 0 && o.y >= 0);
+        }
+    });
+});
+
+describe('oversized rotated container', () => {
+    // Real-world case: a phone (portrait) and an iPad (landscape) in
+    // course-up. The container is the viewport plus overscanFor on each
+    // side, centred on the viewport, and rotated about its centre.
+    const viewports = [[390, 844], [1180, 820]];
+    const angles = [0, 1, 17, 45, 90, 135, 180, 233, 270, 315, -30];
+
+    for (const [vw, vh] of viewports) {
+        const o = overscanFor(vw, vh);
+        const cw = vw + 2 * o.x, ch = vh + 2 * o.y;
+        const cx = vw / 2, cy = vh / 2;   // viewport at client (0, 0)
+
+        it(`${vw}x${vh}: every screen corner lands inside the map at any angle`, () => {
+            for (const deg of angles) {
+                const rect = rotatedRect(cx, cy, cw, ch, deg);
+                for (const [x, y] of [[0, 0], [vw, 0], [0, vh], [vw, vh]]) {
+                    const p = clientToContainerPoint(x, y, rect, cw, ch, deg);
+                    assert.ok(p.x >= -1e-6 && p.x <= cw + 1e-6 && p.y >= -1e-6 && p.y <= ch + 1e-6,
+                        `corner (${x}, ${y}) at ${deg} deg -> (${p.x}, ${p.y}) outside ${cw}x${ch}`);
+                }
+            }
+        });
+
+        it(`${vw}x${vh}: the screen centre is the container centre (boat stays put)`, () => {
+            for (const deg of angles) {
+                const rect = rotatedRect(cx, cy, cw, ch, deg);
+                nearPt(clientToContainerPoint(cx, cy, rect, cw, ch, deg), cw / 2, ch / 2);
+            }
+        });
+
+        it(`${vw}x${vh}: a tap round-trips to the same viewport point`, () => {
+            // The context menu is placed in viewport coordinates: the
+            // layout point minus the overscan.
+            for (const deg of angles) {
+                const rect = rotatedRect(cx, cy, cw, ch, deg);
+                const p = clientToContainerPoint(37, vh - 12, rect, cw, ch, deg);
+                const back = containerPointToLayoutPoint(p.x, p.y, cw, ch, deg);
+                nearPt({ x: back.x - o.x, y: back.y - o.y }, 37, vh - 12, 1e-6);
+            }
+        });
+    }
+});
+
+// Minimal DOM stand-ins: a viewport element holding the map container,
+// and a Leaflet-map shaped object that records invalidateSize calls.
+function fakeMap(vw, vh) {
+    const props = new Map();
+    const style = {
+        transform: '', transformOrigin: '',
+        setProperty: (k, v) => props.set(k, v),
+        removeProperty: (k) => props.delete(k),
+    };
+    const appended = [];
+    const viewport = { clientWidth: vw, clientHeight: vh, appendChild: (el) => appended.push(el) };
+    const container = { style, parentElement: viewport, offsetWidth: vw, offsetHeight: vh };
+    const invalidations = [];
+    const controls = { id: 'controls' };
+    const map = {
+        _controlContainer: controls,
+        getContainer: () => container,
+        mouseEventToContainerPoint: () => null,
+        invalidateSize: (opts) => {
+            invalidations.push(opts);
+            const o = getOverscan();
+            container.offsetWidth = vw + 2 * o.x;
+            container.offsetHeight = vh + 2 * o.y;
+        },
+    };
+    return { map, props, style, viewport, appended, invalidations, controls };
+}
+
+describe('rotation state on a map', () => {
+    it('attach moves the control corners into the unrotated viewport', () => {
+        const f = fakeMap(390, 844);
+        attachRotation(f.map);
+        assert.deepEqual(f.appended, [f.controls]);
+        assert.equal(unrotatedLayer(), f.viewport);
+        assert.deepEqual(viewportSize(), { x: 390, y: 844 });
+        detachRotation();
+    });
+
+    it('north up never writes a transform', () => {
+        const f = fakeMap(390, 844);
+        attachRotation(f.map);
+        assert.equal(setRotation(0), false);
+        assert.equal(f.style.transform, '');
+        assert.equal(f.props.has('--map-rot'), false);
+        detachRotation();
+    });
+
+    it('enabling overscan grows the container once and keeps the centre', () => {
+        const f = fakeMap(390, 844);
+        attachRotation(f.map);
+        setOverscanEnabled(true);
+        assert.deepEqual(getOverscan(), { x: 270, y: 43 });
+        assert.equal(f.props.get('--map-overscan-x'), '270px');
+        assert.equal(f.props.get('--map-overscan-y'), '43px');
+        assert.deepEqual(f.invalidations, [{ pan: true, animate: false }]);
+        // Same viewport, same growth: no second resize.
+        setOverscanEnabled(true);
+        assert.equal(f.invalidations.length, 1);
+        detachRotation();
+    });
+
+    it('fitBounds padding and layout points account for the overscan', () => {
+        const f = fakeMap(390, 844);
+        attachRotation(f.map);
+        assert.deepEqual(fitPadding(40), [40, 40]);
+        setOverscanEnabled(true);
+        assert.deepEqual(fitPadding(40), [310, 83]);
+        // North-up angle with overscan: container centre is viewport centre.
+        nearPt(toLayoutPoint(270 + 195, 43 + 422), 195, 422);
+        detachRotation();
+    });
+
+    it('rotation writes the shared --map-rot and keeps it through north', () => {
+        const f = fakeMap(390, 844);
+        attachRotation(f.map);
+        setOverscanEnabled(true);
+        assert.equal(setRotation(90), true);
+        assert.equal(f.props.get('--map-rot'), '90deg');
+        assert.equal(f.style.transform, 'rotate(calc(-1 * var(--map-rot, 0deg)))');
+        // Back to north: the transform stays so the --map-rot transition
+        // can finish turning the chart and its labels together.
+        assert.equal(setRotation(0), true);
+        assert.equal(f.props.get('--map-rot'), '0deg');
+        assert.notEqual(f.style.transform, '');
+        // Sub-step jitter is ignored.
+        assert.equal(setRotation(0.5, 1), false);
+        detachRotation();
+        assert.equal(f.style.transform, '');
+        assert.equal(f.props.has('--map-rot'), false);
+        assert.equal(f.props.has('--map-overscan-x'), false);
+    });
+
+    it('disabling overscan shrinks back to the viewport', () => {
+        const f = fakeMap(1180, 820);
+        attachRotation(f.map);
+        setOverscanEnabled(true);
+        setOverscanEnabled(false);
+        assert.deepEqual(getOverscan(), { x: 0, y: 0 });
+        assert.equal(f.props.has('--map-overscan-x'), false);
+        assert.equal(f.invalidations.length, 2);
+        detachRotation();
     });
 });

@@ -92,11 +92,10 @@ public sealed record SignalKNotificationAcknowledger : IAlarmAcknowledger
     /// Both happen in normal multi-plotter operation where the helm
     /// taps Dismiss on plotter A, plotter A POSTs the ack, the SK
     /// server emits the acked delta, and plotter B sees the alarm
-    /// AND its own un-acked snapshot and tries to ack too. The cross-
-    /// plotter race used to surface as a red error line in the helm's
-    /// SK log every time; helms reported "I get an error when I ack
-    /// the anchor alarm" on otherwise-working hardware. Pattern match
-    /// the server messages from signalk-server's alarm.ts so a benign
+    /// AND its own un-acked snapshot and tries to ack too. Logged as
+    /// errors, that cross-plotter race would put a red line in the
+    /// helm's SK log on every ack on otherwise-working hardware. Pattern
+    /// match the server messages from signalk-server's alarm.ts so a benign
     /// race stays quiet.</summary>
     internal static bool IsBenignAckRejection(ApiResult r)
     {

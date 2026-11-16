@@ -403,9 +403,7 @@ public class NavigationDataTests
     public async Task Apply_CourseVmg_SetsProperty_FromVelocityMadeGood()
     {
         // course-provider-plugin publishes velocityMadeGood (null when
-        // VMG isn't meaningful on a motor leg). The earlier hypothetical
-        // velocityMadeGoodToCourse fallback was unsupported by the
-        // upstream plugin and has been dropped.
+        // VMG isn't meaningful on a motor leg).
         var nav = new NavigationData();
         var je = JsonSerializer.SerializeToElement(3.45);
         await Assert.That(nav.Apply("navigation.course.calcValues.velocityMadeGood", je)).IsTrue();
@@ -453,8 +451,8 @@ public class NavigationDataTests
     [Test]
     public async Task ApplyString_LegacyV1Paths_AreRejected()
     {
-        // Post-tech-debt sweep: the v1 courseGreatCircle /
-        // courseRhumbline names are no longer handled. ApplyString
+        // The v1 courseGreatCircle / courseRhumbline names are not
+        // handled. ApplyString
         // must return false so a server still emitting them doesn't
         // silently set ActiveRouteHref.
         var nav = new NavigationData();
@@ -467,7 +465,7 @@ public class NavigationDataTests
     public async Task Apply_LegacyV1Paths_AreRejected()
     {
         // Matching pin for Apply(): number-valued v1 course paths
-        // no longer match a case.
+        // match no case.
         var nav = new NavigationData();
         var je = JsonSerializer.SerializeToElement(1.0);
         await Assert.That(nav.Apply("navigation.courseGreatCircle.nextPoint.distance", je)).IsFalse();
@@ -726,8 +724,7 @@ public class NavigationDataTests
     {
         // Stale auto-advance flags surviving across route changes would
         // cause a one-tick spurious advance the moment a new route
-        // activates - the same bug that the original auto-advance fix
-        // had to fight. Pin the reset.
+        // activates. Pin the reset.
         var nav = new NavigationData();
         nav.ApplyBool("navigation.course.calcValues.perpendicularPassed", true);
         nav.ApplyBool("navigation.course.calcValues.arrivalCircleEntered", true);

@@ -44,9 +44,8 @@ function makeNoteIcon() {
     // skeuomorphic folded-corner), white text strokes for better
     // contrast against the amber fill, clean teardrop tail pointing
     // down to the map coord. Anchor is bottom-centre so the tip of
-    // the tail lands on the target lat/lon. Softer drop-shadow than
-    // the v1 icon so the pin lifts off the chart without adding
-    // visual noise.
+    // the tail lands on the target lat/lon. Soft drop-shadow so the
+    // pin lifts off the chart without adding visual noise.
     const svg = `
         <svg width="22" height="28" viewBox="0 0 22 28" xmlns="http://www.w3.org/2000/svg"
              style="filter: drop-shadow(0 1.5px 2px rgba(0,0,0,0.35));">
@@ -167,7 +166,7 @@ export function addNoteMarker(id, lat, lon, title, description, createdAtIso) {
             L.DomEvent.stopPropagation(ev);
             const ll = ev.latlng || marker.getLatLng();
             // A click ON a marker is unambiguous: the helm tapped a
-            // specific note. Edit-mode dispatch follows the historical
+            // specific note. Edit-mode dispatch follows the standard
             // priority (route -> polygon -> measure); the measure-first
             // override only applies to empty-map clicks (see
             // leafletInterop.js::map.on('click')) where intent is "I

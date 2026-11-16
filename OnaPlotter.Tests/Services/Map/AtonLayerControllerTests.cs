@@ -10,7 +10,7 @@ namespace OnaPlotter.Tests.Services.Map;
 /// AtonTypeCatalog have their own coverage; these tests verify the
 /// wiring between them and the JS-side push.
 /// </summary>
-public class AtonPushServiceTests
+public class AtonLayerControllerTests
 {
     private sealed class FakeAisJs : IMapAisJs
     {
@@ -49,7 +49,7 @@ public class AtonPushServiceTests
     {
         var store = new AtonStore();
         var js = new FakeAisJs();
-        var svc = new AtonPushService(js, store);
+        var svc = new AtonLayerController(js, store);
 
         await svc.PushAsync();
 
@@ -64,7 +64,7 @@ public class AtonPushServiceTests
         store.Apply("atons.urn:mrn:imo:mmsi:1", "name", Parse("\"NO_POS\""));
         SeedAton(store, "atons.urn:mrn:imo:mmsi:2", 47.0, 8.0);
         var js = new FakeAisJs();
-        var svc = new AtonPushService(js, store);
+        var svc = new AtonLayerController(js, store);
 
         await svc.PushAsync();
 
@@ -79,7 +79,7 @@ public class AtonPushServiceTests
         store.Apply("atons.urn:mrn:imo:mmsi:111", "atonType",
             Parse("{\"id\":1,\"name\":\"Reference\"}"));
         var js = new FakeAisJs();
-        var svc = new AtonPushService(js, store);
+        var svc = new AtonLayerController(js, store);
 
         await svc.PushAsync();
 
@@ -99,7 +99,7 @@ public class AtonPushServiceTests
     [Arguments("Wreck", null, true, "Wreck (virtual)")]
     public async Task Title_NameThenMmsiThenAtoN(string? name, string? mmsi, bool isVirtual, string expected)
     {
-        await Assert.That(AtonPushService.Title(name, mmsi, isVirtual)).IsEqualTo(expected);
+        await Assert.That(AtonLayerController.Title(name, mmsi, isVirtual)).IsEqualTo(expected);
     }
 
     [Test]
@@ -111,7 +111,7 @@ public class AtonPushServiceTests
         store.Apply("atons.urn:mrn:imo:mmsi:1", "mmsi", Parse("\"992000001\""));
         SeedAton(store, "atons.urn:mrn:imo:mmsi:2", 47.1, 8.1);
 
-        var snap = AtonPushService.BuildSnapshot(store.GetAtons());
+        var snap = AtonLayerController.BuildSnapshot(store.GetAtons());
         var named = snap.First(a => a.Context.EndsWith(":1"));
         var bare = snap.First(a => a.Context.EndsWith(":2"));
 
@@ -127,7 +127,7 @@ public class AtonPushServiceTests
         // the service dirty; the AIS tick then pushes once.
         var store = new AtonStore();
         var js = new FakeAisJs();
-        var svc = new AtonPushService(js, store);
+        var svc = new AtonLayerController(js, store);
         store.OnAtonsUpdated += svc.MarkDirty;
 
         for (int i = 0; i < 50; i++) SeedAton(store, $"atons.urn:mrn:imo:mmsi:{i}", 47 + i * 0.001, 8.0);
@@ -143,7 +143,7 @@ public class AtonPushServiceTests
     {
         var store = new AtonStore();
         var js = new FakeAisJs();
-        var svc = new AtonPushService(js, store);
+        var svc = new AtonLayerController(js, store);
 
         await svc.PushIfDirtyAsync();
 
@@ -156,7 +156,7 @@ public class AtonPushServiceTests
         var store = new AtonStore();
         SeedAton(store, "atons.urn:mrn:imo:mmsi:1", 47.0, 8.0);
         var js = new FakeAisJs();
-        var svc = new AtonPushService(js, store);
+        var svc = new AtonLayerController(js, store);
 
         await svc.PushAsync();
         svc.MarkDirty();
@@ -171,7 +171,7 @@ public class AtonPushServiceTests
         var store = new AtonStore();
         SeedAton(store, "atons.urn:mrn:imo:mmsi:1", 47.0, 8.0);
         var js = new FakeAisJs { ThrowNext = true };
-        var svc = new AtonPushService(js, store);
+        var svc = new AtonLayerController(js, store);
 
         await svc.PushAsync();
         await svc.PushIfDirtyAsync();

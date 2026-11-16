@@ -4,7 +4,7 @@ namespace OnaPlotter.Services.Settings;
 /// Narrow surface for nav-preference consumers (HUD heading
 /// resolver, course-advance logic, sailing-mode discriminator).
 ///
-/// <para>Carved from <see cref="IAppSettings"/> as part of ARCH-003.
+/// <para>Narrow slice of <see cref="IAppSettings"/>.
 /// </para>
 /// </summary>
 public interface INavPreferences

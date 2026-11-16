@@ -42,9 +42,9 @@
              title="@CogReadoutTooltip">
             @Format.Degrees(CogReadoutValue)<span class="hud-unit">&deg;</span>
         </div>
-        @* lat/lon stays on a single horizontal line. Stacking them was
-           used to keep the card narrow, but it cramped SOG/COG - the
-           wider single-line position lets the hero numbers above breathe.
+        @* lat/lon stays on a single horizontal line. Stacking them
+           would keep the card narrow but cramps SOG/COG - the wider
+           single-line position lets the hero numbers above breathe.
            Expanded view adds the DMS-formatted row underneath. *@
         <div class="hud-position">@NauticalFormat.FormatPosition(Data.Latitude, Data.Longitude)</div>
         @if (IsExpanded(CornerTopLeft))
@@ -103,9 +103,9 @@
              role="img" aria-label="Wind: apparent and true">
             @* Rim + cardinals route through CSS classes so the colour
                flips with the HUD card theme. Hard-coded
-               rgba(255,255,255,...) values used to vanish on the white
-               light-theme card - the helm saw the arrows but no rim
-               or tick marks. *@
+               rgba(255,255,255,...) values would vanish on the white
+               light-theme card, leaving arrows but no rim or tick
+               marks. *@
             <circle cx="0" cy="0" r="24" fill="none"
                     class="hud-dial-rim" stroke-width="1"/>
             <line x1="0" y1="-24" x2="0" y2="-20" class="hud-dial-tick-major" stroke-width="1"/>
@@ -1247,24 +1247,16 @@
 
     private OnaPlotter.Components.Map.Hud.HudAnchorCard.AnchorHudSnapshot BuildAnchorSnapshot() =>
         new(
-            // Card is only visible once the alarm is fully ARMED, not
-            // merely dropped. Helm-driven: with the v2 two-step flow,
-            // AnchorActive flips true on Drop (before Arm) and the
-            // card was appearing prematurely - helm read it as
-            // "anchor watch is active" before they'd actually set
-            // a radius. Hidden during the dropped-but-not-armed
-            // window; the chart marker's amber-pulse + "RADIUS NOT
-            // SET" tooltip + the still-open SetRadius panel are the
-            // visible signals that step 2 is pending.
-            // Manual flow always shows the card (it has its own
-            // chip-based radius set) so the manual fallback remains
-            // intact.
-            // Card visible only once the alarm is fully ARMED. The
-            // legacy JS-only manual fallback was removed (plugin
-            // v2.0.0+ is required), so AnchorActive + MaxRadius is
-            // the only path. Drop / pre-arm states show the chart
-            // marker's amber-pulse + the AnchorEditPanel SetRadius
-            // dialog instead.
+            // Card is only visible once the alarm is fully ARMED
+            // (AnchorActive + MaxRadius), not merely dropped. With the
+            // v2 two-step flow, AnchorActive flips true on Drop (before
+            // Arm); showing the card then reads as "anchor watch is
+            // active" before a radius is set. During the
+            // dropped-but-not-armed window the chart marker's
+            // amber-pulse + "RADIUS NOT SET" tooltip + the still-open
+            // AnchorEditPanel SetRadius dialog are the visible signals
+            // that step 2 is pending. Plugin v2.0.0+ is required; there
+            // is no JS-only manual fallback.
             Visible: Data.AnchorActive && Data.AnchorMaxRadius is not null,
             Dragging: AnchorDragging,
             CurrentRadius: Data.AnchorCurrentRadius,
@@ -1281,10 +1273,8 @@
 
     // NOAA / UKHO station names often run 40+ chars. The BL depth-
     // card width budget is tight; a long name pushes the row off the
-    // card. 18 chars + a 3-char ellipsis (21 visible) is the same cap
-    // the Dashboard used to apply before the trim moved here - the
-    // Dashboard now renders the full name, the HUD takes over the
-    // truncation. Title attribute on the row carries the full name
+    // card. 18 chars + a 3-char ellipsis (21 visible). Only the HUD
+    // truncates; the Dashboard renders the full name. Title attribute on the row carries the full name
     // for desktop hover.
     private const int HudStationNameMaxChars = 18;
     private static string TruncateStation(string s) =>

@@ -18,7 +18,7 @@ const FUZZ_CLICKS = parseInt(process.env.FUZZ_CLICKS ?? '40', 10);
 // engages a flow that requires user input to exit (route-edit,
 // polygon draw), and never triggers a safety-critical state change
 // (anchor drop, MOB, Stop Navigation). Add-menu items render with
-// .ctrl-more-item now (same shape as the More overflow), so a single
+// .ctrl-more-item (same shape as the More overflow), so a single
 // .ctrl-more-item entry covers both flyouts.
 const SAFE_CLICK_SELECTORS = [
     '.map-controls .ctrl-btn:has-text("Follow")',

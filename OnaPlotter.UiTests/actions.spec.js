@@ -99,7 +99,7 @@ test('Add Region dialog shows radius preset chips', async ({ page }) => {
     // Scope by the unique aria-label so a class refactor (or a second
     // dialog being open) can't match the wrong markup. The waypoint /
     // note / region dialogs all share .waypoint-dialog .note-dialog,
-    // which used to make this test pass against the wrong dialog.
+    // so a class-only locator could pass against the wrong dialog.
     const dialog = page.locator('.waypoint-dialog')
         .filter({ has: page.locator('input[aria-label="Region title"]') });
     await expect(dialog).toBeVisible();

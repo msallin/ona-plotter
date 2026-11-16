@@ -7,8 +7,7 @@
 export const RAD = Math.PI / 180;
 export const DEG = 180 / Math.PI;
 export const NM_PER_METER = 1 / 1852;
-// Default look-ahead window for COG vectors. Both own-vessel and AIS
-// targets used to share this constant. C# now exposes two helm-tunable
+// Default look-ahead window for COG vectors. C# exposes two helm-tunable
 // settings (OwnCogVectorMinutes / AisCogVectorMinutes); the JS layer
 // reads those from per-call parameters with this default as a fallback
 // when a caller doesn't pass an explicit minutes value.

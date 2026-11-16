@@ -117,9 +117,8 @@ Write-Host "Deploying to $SshTarget : $RemotePath ..." -ForegroundColor Cyan
 
 # Password-prompt floor without SSH keys is TWO: one ssh for setup
 # (probe + rm + mkdir consolidated into a single remote shell) and
-# one scp for the upload. The previous ControlMaster attempt was
-# supposed to collapse both into one prompt, but Microsoft's Windows
-# OpenSSH doesn't expand the %r@%h-%p tokens in ControlPath
+# one scp for the upload. ControlMaster would collapse both into one
+# prompt in theory, but Microsoft's Windows OpenSSH doesn't expand the %r@%h-%p tokens in ControlPath
 # reliably - the socket file fails to bind, ssh silently falls
 # back to BatchMode-ish behaviour, and the helm sees a script that
 # "doesn't ask for a password" before exiting with auth failure.

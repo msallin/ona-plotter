@@ -7,11 +7,9 @@ namespace OnaPlotter.Tests.Components;
 /// Component tests for HudAnchorCard. Pin the snapshot-equality
 /// contract (drives Blazor's render-skip optimisation), the render
 /// branches for distance / radius / peak / bearing, and the
-/// tap-to-adjust gesture wired through OnAdjust. Manual JS-only
-/// fallback was removed when v2.0.0+ of the anchor plugin became
-/// the only supported source - the card has no chip row any more
-/// and the snapshot record dropped its Manual + ManualRadiusMeters
-/// fields. Tests pin the post-cleanup contract.
+/// tap-to-adjust gesture wired through OnAdjust. The anchor plugin
+/// (v2.0.0+) is the only supported source, so the card has no
+/// manual-mode chip row.
 /// </summary>
 public class HudAnchorCardTests
 {
@@ -29,8 +27,8 @@ public class HudAnchorCardTests
     [Test]
     public async Task NotVisible_RendersNothing()
     {
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<HudAnchorCard>(p => p
+        using var ctx = new Bunit.BunitContext();
+        var cut = ctx.Render<HudAnchorCard>(p => p
             .Add(x => x.Snapshot, Snap(visible: false)));
         await Assert.That(cut.FindAll(".anchor-panel").Count).IsEqualTo(0);
     }
@@ -42,8 +40,8 @@ public class HudAnchorCardTests
         // Card visibility is parent-gated on AnchorActive AND
         // MaxRadius set, so we don't need to pin "no chips when
         // server owns the radius" - there are no chips at all.
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<HudAnchorCard>(p => p
+        using var ctx = new Bunit.BunitContext();
+        var cut = ctx.Render<HudAnchorCard>(p => p
             .Add(x => x.Snapshot, Snap()));
         await Assert.That(cut.Markup).Contains("Dist");
         await Assert.That(cut.Markup).Contains("Radius");
@@ -52,8 +50,8 @@ public class HudAnchorCardTests
     [Test]
     public async Task Dragging_AddsAnchorAlarmClass()
     {
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<HudAnchorCard>(p => p
+        using var ctx = new Bunit.BunitContext();
+        var cut = ctx.Render<HudAnchorCard>(p => p
             .Add(x => x.Snapshot, Snap(dragging: true)));
         await Assert.That(cut.Find(".anchor-panel").ClassList.Contains("anchor-alarm")).IsTrue();
     }
@@ -61,8 +59,8 @@ public class HudAnchorCardTests
     [Test]
     public async Task DormantReason_RendersHintWithWarningGlyph()
     {
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<HudAnchorCard>(p => p
+        using var ctx = new Bunit.BunitContext();
+        var cut = ctx.Render<HudAnchorCard>(p => p
             .Add(x => x.Snapshot, Snap(dormantReason: "No tide data (install a plugin)")));
         await Assert.That(cut.Markup).Contains("No tide data");
         await Assert.That(cut.FindAll(".rule-dormant-hint").Count).IsEqualTo(1);
@@ -90,8 +88,8 @@ public class HudAnchorCardTests
         // Helm sees the peak observed distance during this anchor
         // watch alongside the live "Dist" value - "we drifted to N m
         // at the worst" without watching the live value tick.
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<HudAnchorCard>(p => p
+        using var ctx = new Bunit.BunitContext();
+        var cut = ctx.Render<HudAnchorCard>(p => p
             .Add(x => x.Snapshot, Snap(peakRadius: 24.5)));
         await Assert.That(cut.Markup).Contains("Peak");
     }
@@ -102,8 +100,8 @@ public class HudAnchorCardTests
         // Plugin hasn't published a peak yet (just-armed, or older
         // plugin version). The card should omit the row entirely
         // rather than render an empty placeholder.
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<HudAnchorCard>(p => p
+        using var ctx = new Bunit.BunitContext();
+        var cut = ctx.Render<HudAnchorCard>(p => p
             .Add(x => x.Snapshot, Snap(peakRadius: null)));
         await Assert.That(cut.Markup).DoesNotContain("Peak");
     }
@@ -126,8 +124,8 @@ public class HudAnchorCardTests
         // No OnAdjust -> the card has no role=button, no clickable
         // class. Card stays read-only, which is fine: the helm can
         // still raise via the Anchor button on the bottom bar.
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<HudAnchorCard>(p => p
+        using var ctx = new Bunit.BunitContext();
+        var cut = ctx.Render<HudAnchorCard>(p => p
             .Add(x => x.Snapshot, Snap()));
         var card = cut.Find(".anchor-panel");
         await Assert.That(card.GetAttribute("role")).IsNull();
@@ -143,9 +141,9 @@ public class HudAnchorCardTests
         // the dedicated raise gesture, kept separate so the helm
         // doesn't risk a misclick raising the anchor when they
         // meant to nudge the radius).
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         bool fired = false;
-        var cut = ctx.RenderComponent<HudAnchorCard>(p => p
+        var cut = ctx.Render<HudAnchorCard>(p => p
             .Add(x => x.Snapshot, Snap())
             .Add(x => x.OnAdjust, Microsoft.AspNetCore.Components.EventCallback.Factory
                 .Create(this, () => fired = true)));
@@ -165,8 +163,8 @@ public class HudAnchorCardTests
         // No bearing data (older plugin, or first delta after drop
         // hasn't arrived). The needle row should NOT render so the
         // card height stays unchanged.
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<HudAnchorCard>(p => p
+        using var ctx = new Bunit.BunitContext();
+        var cut = ctx.Render<HudAnchorCard>(p => p
             .Add(x => x.Snapshot, Snap(bearingTrue: null)));
         await Assert.That(cut.FindAll(".anchor-bearing").Count).IsEqualTo(0);
     }
@@ -178,8 +176,8 @@ public class HudAnchorCardTests
         // 90deg = due east. Pin the conversion so a refactor that
         // changes the snapshot to degrees-already-converted (or back
         // to radians) is a deliberate move, not a silent drift.
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<HudAnchorCard>(p => p
+        using var ctx = new Bunit.BunitContext();
+        var cut = ctx.Render<HudAnchorCard>(p => p
             .Add(x => x.Snapshot, Snap(bearingTrue: Math.PI / 2)));
         await Assert.That(cut.FindAll(".anchor-bearing").Count).IsEqualTo(1);
         await Assert.That(cut.Find(".anchor-bearing-value").TextContent).Contains("90");
@@ -191,8 +189,8 @@ public class HudAnchorCardTests
         // Plugin spec says 0..2pi, but a careless impl could publish
         // -PI/2 for due-west; defend against that by normalising into
         // [0, 360). -PI/2 should render as 270deg, not "-90".
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<HudAnchorCard>(p => p
+        using var ctx = new Bunit.BunitContext();
+        var cut = ctx.Render<HudAnchorCard>(p => p
             .Add(x => x.Snapshot, Snap(bearingTrue: -Math.PI / 2)));
         var text = cut.Find(".anchor-bearing-value").TextContent;
         await Assert.That(text).Contains("270");
@@ -202,13 +200,10 @@ public class HudAnchorCardTests
     [Test]
     public async Task Bearing_NaN_HidesNeedle()
     {
-        // The previous impl used a `while (deg < 0) deg += 360;` loop;
-        // a NaN delta from a misbehaving plugin would fall through with
-        // deg = int.MinValue (NaN -> int = 0 in .NET, but the wider
-        // risk is the loop). Pin: NaN must hide the needle entirely
-        // rather than render an invalid angle.
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<HudAnchorCard>(p => p
+        // A NaN delta from a misbehaving plugin must hide the needle
+        // entirely rather than render an invalid angle.
+        using var ctx = new Bunit.BunitContext();
+        var cut = ctx.Render<HudAnchorCard>(p => p
             .Add(x => x.Snapshot, Snap(bearingTrue: double.NaN)));
         await Assert.That(cut.FindAll(".anchor-bearing").Count).IsEqualTo(0);
     }
@@ -216,13 +211,12 @@ public class HudAnchorCardTests
     [Test]
     public async Task Bearing_PositiveInfinity_HidesNeedle()
     {
-        // Critical regression target: with the old `while` loop
-        // implementation, +Infinity would cast to int.MaxValue and
-        // the loop would run ~6M iterations PER RENDER, freezing the
-        // HUD. With the modulo-based fix, the helper returns null and
-        // the needle is hidden.
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<HudAnchorCard>(p => p
+        // Guards against a HUD freeze: with a `while (deg < 0) deg +=
+        // 360` style normaliser, +Infinity casts to int.MaxValue and
+        // the loop runs ~6M iterations PER RENDER. The helper must
+        // return null and hide the needle.
+        using var ctx = new Bunit.BunitContext();
+        var cut = ctx.Render<HudAnchorCard>(p => p
             .Add(x => x.Snapshot, Snap(bearingTrue: double.PositiveInfinity)));
         await Assert.That(cut.FindAll(".anchor-bearing").Count).IsEqualTo(0);
     }
@@ -230,8 +224,8 @@ public class HudAnchorCardTests
     [Test]
     public async Task Bearing_NegativeInfinity_HidesNeedle()
     {
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<HudAnchorCard>(p => p
+        using var ctx = new Bunit.BunitContext();
+        var cut = ctx.Render<HudAnchorCard>(p => p
             .Add(x => x.Snapshot, Snap(bearingTrue: double.NegativeInfinity)));
         await Assert.That(cut.FindAll(".anchor-bearing").Count).IsEqualTo(0);
     }
@@ -240,10 +234,10 @@ public class HudAnchorCardTests
     public async Task Bearing_VeryLargeFiniteRadians_NormalisesQuickly()
     {
         // 100 * pi = 50 full rotations + 0. The modulo idiom must
-        // handle this in O(1), not O(n) like the previous while-loop.
+        // handle this in O(1), not O(n) like a while-loop would.
         // Same expected output as bearingTrue=0: 0 deg displayed.
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<HudAnchorCard>(p => p
+        using var ctx = new Bunit.BunitContext();
+        var cut = ctx.Render<HudAnchorCard>(p => p
             .Add(x => x.Snapshot, Snap(bearingTrue: 100.0 * Math.PI)));
         await Assert.That(cut.FindAll(".anchor-bearing").Count).IsEqualTo(1);
         await Assert.That(cut.Find(".anchor-bearing-value").TextContent).Contains("0");

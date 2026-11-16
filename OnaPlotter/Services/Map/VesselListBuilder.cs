@@ -9,7 +9,7 @@ namespace OnaPlotter.Services.Map;
 /// first) then distance.
 ///
 /// <para>CPA starts from the target dead-reckoned to now, exactly as
-/// <c>CpaAlarmRule</c> and <see cref="AisPushService"/> do, so the list,
+/// <c>CpaAlarmRule</c> and <see cref="AisLayerController"/> do, so the list,
 /// the chart chip and the alarm agree; a fix too old to extrapolate gets
 /// no CPA. COLREGS is classified (type-aware) only inside the threat
 /// band.</para>

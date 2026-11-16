@@ -5,6 +5,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
     unpackLatLonPairs, applyTrailUpdate, acceptsUpdate, toneColor, cpaChipCompact, tipDotParts,
+    isCollapsedDot,
 } from './aisLayer.js';
 
 // applyTrailUpdate replays AisTrailBuffer deltas onto the renderer's
@@ -124,21 +125,35 @@ describe('cpaChipCompact', () => {
 });
 
 describe('tipDotParts', () => {
-    it('collects one near-zero-length part per vessel of the colour', () => {
+    it('collects one two-point part on the tip per vessel of the colour', () => {
         const parts = tipDotParts([
             { color: '#a', end: [54, 11] },
             { color: '#b', end: [55, 12] },
             { color: '#a', end: [56, 13] },
         ], '#a');
-        assert.equal(parts.length, 2);
-        assert.deepEqual(parts[0][0], [54, 11]);
-        assert.equal(parts[0][1][0], 54);
-        assert.ok(parts[0][1][1] > 11 && parts[0][1][1] - 11 < 1e-6);
-        assert.deepEqual(parts[1][0], [56, 13]);
+        assert.deepEqual(parts, [[[54, 11], [54, 11]], [[56, 13], [56, 13]]]);
     });
 
     it('is empty when no vessel uses the colour', () => {
         assert.deepEqual(tipDotParts([{ color: '#a', end: [0, 0] }], '#z'), []);
         assert.deepEqual(tipDotParts([], '#a'), []);
+    });
+});
+
+describe('isCollapsedDot', () => {
+    it('flags a projected part whose points share a pixel', () => {
+        // Leaflet rounds projected points, so every tip part collapses.
+        assert.equal(isCollapsedDot([{ x: 150, y: 150 }, { x: 150, y: 150 }]), true);
+    });
+
+    it('leaves parts with length alone', () => {
+        assert.equal(isCollapsedDot([{ x: 150, y: 150 }, { x: 150.01, y: 150 }]), false);
+        assert.equal(isCollapsedDot([{ x: 0, y: 0 }, { x: 0, y: 1 }]), false);
+    });
+
+    it('only applies to two-point parts', () => {
+        assert.equal(isCollapsedDot([{ x: 1, y: 1 }]), false);
+        assert.equal(isCollapsedDot([{ x: 1, y: 1 }, { x: 1, y: 1 }, { x: 1, y: 1 }]), false);
+        assert.equal(isCollapsedDot([]), false);
     });
 });

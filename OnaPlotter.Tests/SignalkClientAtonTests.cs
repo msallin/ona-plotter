@@ -28,7 +28,7 @@ public class SignalkClientAtonTests
         var ais = new AisStore();
         var c = new SignalkClient(
             baseUrl: new FakeBaseUrl(),
-            logger: NullLogger<SignalkClient>.Instance,
+            loggerFactory: NullLoggerFactory.Instance,
             data: new OnaPlotter.Models.NavigationData(),
             track: new TrackBuffer(),
             ais: ais,
@@ -120,8 +120,8 @@ public class SignalkClientAtonTests
     {
         // Pin the wire shape: subscription tier is named "Atons", uses
         // the atons.* context glob, and rides the dedicated 60-second
-        // period constant. Asserting the constant's literal value is
-        // dropped because TUnit's constant-comparison analyzer flags
+        // period constant. The constant's literal value is not
+        // asserted because TUnit's constant-comparison analyzer flags
         // it (and a comment in the constant's declaration is the
         // canonical place for "why 60s").
         var tier = SignalkClient.Tiers.Single(t => t.Name == "Atons");

@@ -3,8 +3,8 @@ using OnaPlotter.Utilities;
 namespace OnaPlotter.Tests;
 
 /// <summary>
-/// Pins the shoelace-on-equirectangular polygon area formula. The JS
-/// renderer used to own this; the formula is a policy decision (we
+/// Pins the shoelace-on-equirectangular polygon area formula. The
+/// formula is a policy decision (we
 /// trade a small geodesic error for a 30x faster computation) so it
 /// belongs in C# alongside the other geometry helpers.
 /// </summary>
@@ -165,9 +165,8 @@ public class PolygonGeometryTests
     public async Task Area_DegenerateNullVertex_IsSkipped()
     {
         // Defensive: a null entry inside the coord array (or a too-short
-        // pair) used to be possible during a fast re-poll where the
-        // editor was mid-splice. The C# side filters them; pin the
-        // contract.
+        // pair) can show up during a fast re-poll while the editor is
+        // mid-splice. The C# side filters them; pin the contract.
         var arr = new double[][]
         {
             new[] { 0.0, 0.0 },

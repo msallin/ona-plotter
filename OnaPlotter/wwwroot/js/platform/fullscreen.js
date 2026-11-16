@@ -1,6 +1,6 @@
 // Document-level fullscreen toggle. The topbar button drives this; the
-// map used to own its own Leaflet control but that's been removed so a
-// single app-level toggle covers every page consistently.
+// map has no Leaflet control of its own, so a single app-level toggle
+// covers every page consistently.
 //
 // iPad Safari caveat: the Fullscreen API only works for <video> (and
 // sometimes <iframe>) elements on iOS. Calling requestFullscreen() on
@@ -78,7 +78,7 @@ export function unsubscribe() {
 
 // Core toggle logic. Called either from the native click listener
 // installed by attachTrigger() (synchronous, preserves user gesture)
-// or from the legacy C# ToggleFullscreen() for tests / non-button
+// or from the C# ToggleFullscreen() for tests / non-button
 // invocations. The Safari-specific requirement is the gesture chain,
 // not the function itself.
 export function toggle() {

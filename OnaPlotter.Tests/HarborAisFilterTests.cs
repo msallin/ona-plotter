@@ -9,8 +9,7 @@ namespace OnaPlotter.Tests;
 /// Map.razor.PushAisTargets delegates to. The filter's three
 /// guarantees are: position-required, harbor-on drops moored, and
 /// Cleanup runs once per call. All three are exercised here without
-/// touching JS interop or bUnit - which is what TEST-001 of the
-/// review flagged as missing coverage.
+/// touching JS interop or bUnit.
 /// </summary>
 public class HarborAisFilterTests
 {
@@ -44,7 +43,7 @@ public class HarborAisFilterTests
     public async Task NullPosition_DroppedRegardlessOfHarbor()
     {
         // A vessel with no position can't render on the chart even in
-        // legacy "show everything" mode. This is the bedrock filter
+        // "show everything" mode. This is the bedrock filter
         // step that runs before harbor classification.
         var noPos = V("ghost", sogMs: 5.0, lat: null, lon: null);
         var fine = V("real", sogMs: 5.0);

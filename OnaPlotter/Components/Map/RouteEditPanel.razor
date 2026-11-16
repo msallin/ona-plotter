@@ -9,7 +9,7 @@
    consistent.
 
    The list header is a clickable toggle that collapses the panel to
-   just the header chip. Helm-feedback: a long waypoint list at the
+   just the header chip. A long waypoint list at the
    top-right corner shares screen real estate with the HUD-tr stack
    (wind dial + speed + heading + ...). Collapsing reduces the route
    panel to the count chip so the HUDs underneath stay visible while
@@ -76,13 +76,12 @@
     <button class="map-btn" @onclick="OnReverse"
             disabled="@(!enoughPoints || Saving)"
             title="@(!enoughPoints ? "Need at least 2 waypoints" : "Reverse waypoint order")">Reverse</button>
-    @* Save is the primary action in every flow. Was previously secondary
-       to Save & Go, but the helm pointed out that:
+    @* Save is the primary action in every flow, not Save & Go:
          (a) editing an active route makes Save and Save & Go the
              *same* operation (the route is already active), and
          (b) on a fresh create the helm reads "Save" as the obvious
-             commit verb anyway. Promoting Save to primary in both
-             cases removes the "wait, which button do I want?" pause. *@
+             commit verb anyway. Save as primary in both cases
+             removes the "wait, which button do I want?" pause. *@
     <button class="map-btn active" @onclick="OnSave"
             disabled="@(!canSave)"
             title="@(Saving ? "Saving..." : !enoughPoints ? "Need at least 2 waypoints" : "Save route")">

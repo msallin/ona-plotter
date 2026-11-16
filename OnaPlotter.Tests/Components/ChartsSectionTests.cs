@@ -23,12 +23,12 @@ public class ChartsSectionTests
         new() { Identifier = id, Name = name };
 
     private static IRenderedComponent<ChartsSection> RenderExpanded(
-        Bunit.TestContext ctx,
+        Bunit.BunitContext ctx,
         SignalkChart[] charts,
         HashSet<string> enabled,
         EventCallback<(SignalkChart, int)> onReorder = default)
     {
-        var cut = ctx.RenderComponent<ChartsSection>(p => p
+        var cut = ctx.Render<ChartsSection>(p => p
             .Add(x => x.Charts, charts)
             .Add(x => x.Enabled, enabled)
             .Add(x => x.OnReorder, onReorder));
@@ -40,10 +40,10 @@ public class ChartsSectionTests
     public async Task Rendering_Dot_Only_On_Enabled_Rows()
     {
         // Every row renders, but only enabled charts carry the
-        // .chart-rendering-dot glyph next to their name. The amber
-        // row highlight was dropped, so the dot is the sole signal
-        // that a chart is on the map.
-        using var ctx = new Bunit.TestContext();
+        // .chart-rendering-dot glyph next to their name. There is no
+        // row highlight, so the dot is the sole signal that a chart
+        // is on the map.
+        using var ctx = new Bunit.BunitContext();
         var charts = new[] { Chart("a", "A"), Chart("b", "B"), Chart("c", "C") };
         var enabled = new HashSet<string> { "a", "c" };  // b disabled
         var cut = RenderExpanded(ctx, charts, enabled);
@@ -61,7 +61,7 @@ public class ChartsSectionTests
     {
         // A chart that's in the quick bar but not currently drawn
         // on the map has no stack position; both arrows disabled.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var charts = new[] { Chart("a", "A"), Chart("b", "B") };
         var enabled = new HashSet<string> { "a" };  // only a renders
         var cut = RenderExpanded(ctx, charts, enabled);
@@ -80,10 +80,9 @@ public class ChartsSectionTests
         //   - A at row 0 (top of list)    -> up disabled, down enabled
         //   - B in the middle             -> both enabled
         //   - C at row 2 (bottom of list) -> up enabled, down disabled
-        // This is the flip from the earlier stack-indexed behaviour
-        // which had the arrows report the opposite of the direction
-        // the user saw the chip move.
-        using var ctx = new Bunit.TestContext();
+        // Stack-indexed arrows would report the opposite of the
+        // direction the user sees the chip move.
+        using var ctx = new Bunit.BunitContext();
         var charts = new[] { Chart("a", "A"), Chart("b", "B"), Chart("c", "C") };
         var enabled = new HashSet<string> { "a", "b", "c" };
         var cut = RenderExpanded(ctx, charts, enabled);
@@ -107,7 +106,7 @@ public class ChartsSectionTests
     [Test]
     public async Task Up_Click_Fires_Reorder_With_Direction_Minus_One()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         (SignalkChart chart, int direction)? captured = null;
         var charts = new[] { Chart("a", "A"), Chart("b", "B"), Chart("c", "C") };
         var enabled = new HashSet<string> { "a", "b", "c" };
@@ -126,7 +125,7 @@ public class ChartsSectionTests
     [Test]
     public async Task Down_Click_Fires_Reorder_With_Direction_Plus_One()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         (SignalkChart chart, int direction)? captured = null;
         var charts = new[] { Chart("a", "A"), Chart("b", "B"), Chart("c", "C") };
         var enabled = new HashSet<string> { "a", "b", "c" };

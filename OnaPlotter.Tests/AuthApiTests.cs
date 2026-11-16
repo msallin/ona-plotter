@@ -70,11 +70,11 @@ public class AuthApiTests
     public async Task LoggedIn_Admin_With_ReadOnlyAccess_Hides_Banner()
     {
         // Field-captured response from openplotter.local for a logged-in
-        // admin: status=loggedIn, BUT readOnlyAccess=true. The original
-        // rule treated readOnlyAccess as a per-user authority and lit
-        // the chip on a fully-logged-in admin - helm reported "I am
-        // logged in but the chip says I'm not". The fix: trust
-        // status=="loggedIn" alone; readOnlyAccess is a server-config
+        // admin: status=loggedIn, BUT readOnlyAccess=true. Treating
+        // readOnlyAccess as a per-user authority would light the chip
+        // on a fully-logged-in admin ("I am logged in but the chip
+        // says I'm not"). Trust status=="loggedIn" alone;
+        // readOnlyAccess is a server-config
         // signal ("by default sessions are read-only") that even a
         // signed-in admin sees as true. Pinned here so a future rule
         // tweak that re-introduces readOnlyAccess into the gate goes

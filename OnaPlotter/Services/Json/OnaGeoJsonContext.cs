@@ -12,11 +12,9 @@ namespace OnaPlotter.Services.Json;
 /// stay compact.
 /// <para>
 /// Per-record <c>[JsonIgnore(Condition = WhenWritingNull)]</c> on
-/// share-blob nullable fields reproduces the earlier per-call-site
-/// <c>DefaultIgnoreCondition = WhenWritingNull</c> option that the
-/// reflection serializer used. Export-feature properties don't carry
-/// the attribute, matching the previous PrettyJson behaviour where
-/// nulls were emitted literally.
+/// share-blob nullable fields elides absent values from share blobs.
+/// Export-feature properties don't carry the attribute, so exports
+/// emit nulls literally.
 /// </para>
 /// <para>
 /// Adding a new export shape: drop a <c>[JsonSerializable(typeof(T))]</c>

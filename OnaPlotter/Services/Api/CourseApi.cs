@@ -74,9 +74,9 @@ public sealed class CourseApi : ICourseApi
     {
         // SignalK v2 Course API: PUT /activeRoute/nextPoint with body
         // {"value": n} where n is the number of positions to advance.
-        // +1 = next waypoint, -1 = previous. The older empty-body form
-        // worked on some server builds but is non-spec; the explicit
-        // value is what the docs mandate.
+        // +1 = next waypoint, -1 = previous. An empty body works on
+        // some server builds but is non-spec; the explicit value is what
+        // the docs mandate.
         var url = _baseUrl.Combine(SignalKUrls.CourseActiveRouteNextPointPath);
         return ResourceHttp.PutAsync(_http, url, body: new { value = 1 }, ct);
     }

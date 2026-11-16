@@ -70,10 +70,10 @@ public sealed class NavigationData
     // --- Per-field freshness timestamps ---
     // Safety-critical fields carry a UTC update time so HUDs can badge
     // "stale" / "Xs ago" rather than showing a frozen sensor value
-    // indefinitely. Covers the audit's "depth sensor dies, HUD reads
-    // 3.2m forever" and "GPS loss while anchored" scenarios.
+    // indefinitely. Covers the "depth sensor dies, HUD reads 3.2m
+    // forever" and "GPS loss while anchored" scenarios.
     //
-    // Only fields the audit flagged are instrumented; adding new ones
+    // Only safety-critical fields are instrumented; adding new ones
     // is a two-line change (timestamp field + setter assignment). A
     // blanket per-field dictionary would be more uniform but costs
     // allocation per tick; this explicit set is zero-alloc in the hot
@@ -562,9 +562,8 @@ public sealed class NavigationData
                 // course-provider plugins) lands as 3 not 2; finite-
                 // guard so a NaN doesn't silently cast to 0 and reset
                 // route progress mid-leg. Bare cast `(int)NaN` returns
-                // 0 with no warning, which previously dimmed the
-                // already-passed leg history every time the server
-                // misbehaved.
+                // 0 with no warning, which would dim the already-passed
+                // leg history every time the server misbehaves.
                 case OnaPlotter.Utilities.SkPaths.Navigation.Course.ActiveRoutePointIndex:
                     ActiveRoutePointIndex = double.IsFinite(value.Value) ? (int)Math.Round(value.Value) : null;
                     break;

@@ -4,7 +4,7 @@ namespace OnaPlotter.Utilities;
 /// AIS marker fade ramp: the helm should see at-a-glance which
 /// targets are fresh (full opacity), drifting stale (mid-fade), or
 /// almost certainly gone (heavily faded). The threshold and the
-/// linear interpolation are the decision; <c>AisPushService</c> stamps
+/// linear interpolation are the decision; <c>AisLayerController</c> stamps
 /// the result on each vessel payload and the JS renderer writes it to
 /// <c>style.opacity</c> verbatim.
 ///

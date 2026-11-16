@@ -6,7 +6,7 @@ namespace OnaPlotter.Services.Settings;
 /// or after a parse failure the loader logs a warning and the map
 /// falls back to live-position centre.
 ///
-/// <para>Carved from <see cref="IAppSettings"/> as part of ARCH-003.
+/// <para>Narrow slice of <see cref="IAppSettings"/>.
 /// </para>
 /// </summary>
 public interface IPersistedView

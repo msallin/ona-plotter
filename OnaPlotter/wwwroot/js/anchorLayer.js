@@ -153,13 +153,12 @@ export function clearAnchor() {
 }
 
 // Visually mark the anchor as "drop committed but radius not yet set"
-// (v2.0.0+ two-step flow's intermediate state). Switches the marker
+// (the two-step flow's intermediate state). Switches the marker
 // to amber + the circle to a heavier dash so the chart visibly
 // distinguishes "still in step 2" from a fully-armed anchor; the
 // AnchorEditPanel SetRadius dialog itself is the helm-facing
-// instruction surface. The legacy permanent "RADIUS NOT SET"
-// tooltip was helm-flagged as visual noise once the dialog took
-// over the same role, so it's gone.
+// instruction surface. No permanent "RADIUS NOT SET" tooltip: it
+// would duplicate the dialog and add visual noise on the chart.
 //
 // Idempotent: safe to call with the same value, safe to call when no
 // anchor is set (the toggles fall through to no-op).

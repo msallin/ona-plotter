@@ -214,7 +214,7 @@ test('truncated bytes field throws, not silent corruption', () => {
 
 test('truncated double field throws our error, not RangeError', () => {
     // Spoke body declares lat (wire 1) at the end, then only 3 bytes.
-    // Previously DataView.getFloat64 would surface a RangeError; we
+    // A raw DataView.getFloat64 would surface a RangeError; we
     // want the uniform "ran off end" failure mode.
     const spokeBody = [
         (1 << 3) | 0, ...encodeVarint(5),
@@ -228,7 +228,7 @@ test('truncated double field throws our error, not RangeError', () => {
 
 test('repeat decode calls reuse the Reader without leaking state', () => {
     // Perf: the module-level scratch Reader is reused across calls,
-    // and Spoke objects are now pooled too. Pin both:
+    // and Spoke objects are pooled too. Pin both:
     //   - Reader: a second call decodes the second buffer correctly
     //     (no leftover offset / view from the first).
     //   - Spoke pool: each call's Spoke ref is the pool's slot, so
@@ -257,8 +257,8 @@ test('repeat decode calls reuse the Reader without leaking state', () => {
 test('Spoke pool reuses the same object instance across calls', () => {
     // Pin the contract: identical-shape decodes return the same
     // pooled Spoke instance. Production caller relies on this for
-    // GC pressure relief. A regression that switches back to fresh
-    // literals would re-introduce ~1k allocs/sec on a typical
+    // GC pressure relief. A regression to fresh literals would cost
+    // ~1k allocs/sec on a typical
     // recreational radar.
     const a = encodeMessage([{ angle: 1, range: 10, data: [1] }]);
     const ma = decodeRadarMessage(a);
@@ -276,7 +276,7 @@ test('pool slots above current count release their WS-buffer pins', () => {
     // data Uint8Arrays - and each view pins the entire WS ArrayBuffer
     // alive until the next time that slot is refilled. Over a
     // long-running session with variable spoke counts that's a
-    // steady-state leak the GC can't drain. Pin the fix: after a
+    // steady-state leak the GC can't drain. Pin the release: after a
     // lower-count decode the higher slots' `data` MUST be the empty
     // sentinel.
     //

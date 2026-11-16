@@ -10,9 +10,9 @@ namespace OnaPlotter.Services.Resources;
 /// notes,regions}.*</c> on the helm. Composition over <see cref="SignalkClient"/>
 /// (subscribes to its <see cref="SignalkClient.OnResourceDelta"/>) and
 /// over the four <c>*Api</c> REST clients (initial load + reconnect
-/// reconcile). Both pages that previously did their own REST polling -
-/// <c>Map.razor</c> and <c>Resources.razor</c> - now read from this
-/// store and subscribe to its typed change events.
+/// reconcile). <c>Map.razor</c> and <c>Resources.razor</c> read from
+/// this store and subscribe to its typed change events instead of
+/// polling REST themselves.
 ///
 /// <para><b>Why this exists:</b> the helm reported a multi-plotter
 /// sync bug where editing a route on plotter A left plotter B's chart

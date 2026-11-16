@@ -1,5 +1,6 @@
 using Bunit;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Web;
 using Microsoft.Extensions.DependencyInjection;
 using OnaPlotter.Components.Layout;
 using OnaPlotter.Services.Places;
@@ -40,17 +41,39 @@ public class SearchBoxTests
     }
 
     private static IRenderedComponent<SearchBox> Render(
-        Bunit.TestContext ctx,
+        Bunit.BunitContext ctx,
         StubSearch search,
         EventCallback<PlaceResult>? onPicked = null,
-        EventCallback? onCleared = null)
+        EventCallback? onCleared = null,
+        List<bool>? expandedLog = null)
     {
         ctx.Services.AddSingleton<IPlaceSearchService>(search);
-        return ctx.RenderComponent<SearchBox>(p => p
+        var onExpanded = expandedLog is null
+            ? EventCallback<bool>.Empty
+            : EventCallback.Factory.Create<bool>(new object(), expandedLog.Add);
+        return ctx.Render<SearchBox>(p => p
             .Add(x => x.DebounceMs, 0)
             .Add(x => x.OnPicked, onPicked ?? EventCallback<PlaceResult>.Empty)
-            .Add(x => x.OnCleared, onCleared ?? EventCallback.Empty));
+            .Add(x => x.OnCleared, onCleared ?? EventCallback.Empty)
+            .Add(x => x.OnExpandedChanged, onExpanded));
     }
+
+    /// <summary>Renders the box and taps the phone magnifier, the way a
+    /// helm opens the search on a 390 px phone.</summary>
+    private static async Task<IRenderedComponent<SearchBox>> RenderExpanded(
+        Bunit.BunitContext ctx, StubSearch search, List<bool> expandedLog,
+        EventCallback<PlaceResult>? onPicked = null)
+    {
+        var cut = Render(ctx, search, onPicked, expandedLog: expandedLog);
+        await cut.Find(".topbar-search-toggle").ClickAsync(new MouseEventArgs());
+        return cut;
+    }
+
+    private static bool IsExpanded(IRenderedComponent<SearchBox> cut) =>
+        cut.Find(".topbar-search").ClassList.Contains("topbar-search--expanded");
+
+    private static int FocusCalls(Bunit.BunitContext ctx) =>
+        ctx.JSInterop.Invocations.Count(i => i.Identifier == "Blazor._internal.domWrapper.focus");
 
     private static PlaceResult Pl(string name, double lat = 47.0, double lon = 8.0) =>
         new(name, $"{name} - locality, country", lat, lon, "photon");
@@ -58,7 +81,7 @@ public class SearchBoxTests
     [Test]
     public async Task Empty_Input_Renders_Just_The_Field()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var search = new StubSearch();
         var cut = Render(ctx, search);
 
@@ -74,7 +97,7 @@ public class SearchBoxTests
     [Test]
     public async Task Typing_Triggers_Search_And_Renders_Results()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var search = new StubSearch
         {
             NextResults = new[] { Pl("Berlin"), Pl("Bremen") },
@@ -96,7 +119,7 @@ public class SearchBoxTests
     [Test]
     public async Task Empty_Result_Renders_No_Results_Message_With_Connection_Hint()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var search = new StubSearch { NextResults = Array.Empty<PlaceResult>() };
         var cut = Render(ctx, search);
 
@@ -117,7 +140,7 @@ public class SearchBoxTests
     [Test]
     public async Task ArrowDown_Then_Enter_Picks_Highlighted_Row()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var search = new StubSearch
         {
             NextResults = new[] { Pl("Berlin", 52.5, 13.4), Pl("Bremen", 53.1, 8.8) },
@@ -129,8 +152,8 @@ public class SearchBoxTests
 
         await cut.Find(".topbar-search-input").InputAsync(new() { Value = "br" });
         // Default highlight is index 0; press ArrowDown to move to 1.
-        await cut.Find(".topbar-search-input").KeyDownAsync(new() { Key = "ArrowDown" });
-        await cut.Find(".topbar-search-input").KeyDownAsync(new() { Key = "Enter" });
+        await cut.Find(".topbar-search-input").KeyDownAsync(new KeyboardEventArgs { Key = "ArrowDown" });
+        await cut.Find(".topbar-search-input").KeyDownAsync(new KeyboardEventArgs { Key = "Enter" });
 
         await Assert.That(picked).IsNotNull();
         await Assert.That(picked!.Name).IsEqualTo("Bremen");
@@ -140,7 +163,7 @@ public class SearchBoxTests
     [Test]
     public async Task Escape_With_Query_Clears_Input()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var search = new StubSearch
         {
             NextResults = new[] { Pl("Berlin") },
@@ -152,21 +175,21 @@ public class SearchBoxTests
         await Assert.That(cut.FindAll(".topbar-search-row").Count).IsEqualTo(1);
 
         // Escape with results-open: closes dropdown, keeps the query.
-        await cut.Find(".topbar-search-input").KeyDownAsync(new() { Key = "Escape" });
+        await cut.Find(".topbar-search-input").KeyDownAsync(new KeyboardEventArgs { Key = "Escape" });
         await Assert.That(cut.FindAll(".topbar-search-dropdown").Count).IsEqualTo(0);
     }
 
     [Test]
     public async Task Click_Clear_Button_Resets_State()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var search = new StubSearch { NextResults = new[] { Pl("Berlin") } };
         var cut = Render(ctx, search);
 
         await cut.Find(".topbar-search-input").InputAsync(new() { Value = "ber" });
         await Assert.That(cut.FindAll(".topbar-search-clear").Count).IsEqualTo(1);
 
-        await cut.Find(".topbar-search-clear").ClickAsync(new());
+        await cut.Find(".topbar-search-clear").ClickAsync(new MouseEventArgs());
         // Clear hides dropdown + removes the clear button (input empty).
         await Assert.That(cut.FindAll(".topbar-search-dropdown").Count).IsEqualTo(0);
         await Assert.That(cut.FindAll(".topbar-search-clear").Count).IsEqualTo(0);
@@ -177,7 +200,7 @@ public class SearchBoxTests
     {
         // Mousedown is used (not click) so the dropdown closes BEFORE
         // the input loses focus. This test pins that path.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var search = new StubSearch
         {
             NextResults = new[] { Pl("Marathon", 24.7, -81.1) },
@@ -204,7 +227,7 @@ public class SearchBoxTests
         // return). End-to-end via bUnit InputAsync we can pin the
         // observable contract: each keystroke produces a service
         // call carrying the latest typed text.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var search = new StubSearch
         {
             NextResults = new[] { Pl("Berlin") },
@@ -224,7 +247,7 @@ public class SearchBoxTests
         // Three-in-one: ArrowUp at index 0 stays at 0; ArrowDown past
         // last row stays at last; default-highlight Enter picks the
         // first row (no arrow press needed).
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var search = new StubSearch
         {
             NextResults = new[] { Pl("A", 1, 1), Pl("B", 2, 2) },
@@ -236,14 +259,14 @@ public class SearchBoxTests
         await cut.Find(".topbar-search-input").InputAsync(new() { Value = "a" });
 
         // ArrowUp at index 0: still index 0.
-        await cut.Find(".topbar-search-input").KeyDownAsync(new() { Key = "ArrowUp" });
+        await cut.Find(".topbar-search-input").KeyDownAsync(new KeyboardEventArgs { Key = "ArrowUp" });
         // ArrowDown past last (twice): clamped at index 1 (last).
-        await cut.Find(".topbar-search-input").KeyDownAsync(new() { Key = "ArrowDown" });
-        await cut.Find(".topbar-search-input").KeyDownAsync(new() { Key = "ArrowDown" });
+        await cut.Find(".topbar-search-input").KeyDownAsync(new KeyboardEventArgs { Key = "ArrowDown" });
+        await cut.Find(".topbar-search-input").KeyDownAsync(new KeyboardEventArgs { Key = "ArrowDown" });
         // ArrowUp from last: back to index 0.
-        await cut.Find(".topbar-search-input").KeyDownAsync(new() { Key = "ArrowUp" });
+        await cut.Find(".topbar-search-input").KeyDownAsync(new KeyboardEventArgs { Key = "ArrowUp" });
         // Enter on default index 0.
-        await cut.Find(".topbar-search-input").KeyDownAsync(new() { Key = "Enter" });
+        await cut.Find(".topbar-search-input").KeyDownAsync(new KeyboardEventArgs { Key = "Enter" });
 
         await Assert.That(picked).IsNotNull();
         await Assert.That(picked!.Name).IsEqualTo("A");
@@ -254,14 +277,14 @@ public class SearchBoxTests
     {
         // Escape on an empty query (no results, dropdown closed):
         // shouldn't throw, shouldn't fire OnCleared spuriously.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var search = new StubSearch();
         bool clearedFired = false;
         var onCleared = EventCallback.Factory.Create(
             new object(), () => clearedFired = true);
         var cut = Render(ctx, search, onCleared: onCleared);
 
-        await cut.Find(".topbar-search-input").KeyDownAsync(new() { Key = "Escape" });
+        await cut.Find(".topbar-search-input").KeyDownAsync(new KeyboardEventArgs { Key = "Escape" });
 
         await Assert.That(clearedFired).IsFalse();
     }
@@ -272,7 +295,7 @@ public class SearchBoxTests
         // The clear button must invoke OnCleared so the parent can
         // tear down the search-pin on the JS side. Without this the
         // pin lingers on the chart after the helm clears the input.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var search = new StubSearch
         {
             NextResults = new[] { Pl("Berlin") },
@@ -283,7 +306,7 @@ public class SearchBoxTests
         var cut = Render(ctx, search, onCleared: onCleared);
 
         await cut.Find(".topbar-search-input").InputAsync(new() { Value = "ber" });
-        await cut.Find(".topbar-search-clear").ClickAsync(new());
+        await cut.Find(".topbar-search-clear").ClickAsync(new MouseEventArgs());
 
         await Assert.That(clearedFired).IsTrue();
     }
@@ -294,7 +317,7 @@ public class SearchBoxTests
         // The helm clicks away then back into a populated input.
         // The dropdown should close on blur, and re-open on refocus
         // when results are still available + the query is non-empty.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var search = new StubSearch
         {
             NextResults = new[] { Pl("Berlin") },
@@ -318,7 +341,7 @@ public class SearchBoxTests
         // SearchBox must cap the helm-typed query at MaxQueryLength
         // before invoking the geocoder, so the cache key + URL stay
         // bounded regardless of input.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var search = new StubSearch
         {
             NextResults = Array.Empty<PlaceResult>(),
@@ -345,4 +368,147 @@ public class SearchBoxTests
     // OperationCanceledException catch is the fix; the regression
     // path is the SearchBox.razor source itself rather than a unit
     // test.
+
+    // ---- Phone-width magnifier / expand contract ----
+    // CSS shows the magnifier and hides the input on phone viewports;
+    // these tests pin the state machine behind it (the CSS itself is
+    // checked in the browser).
+
+    [Test]
+    public async Task Collapsed_By_Default_With_Magnifier_Reporting_Not_Expanded()
+    {
+        using var ctx = new Bunit.BunitContext();
+        var log = new List<bool>();
+        var cut = Render(ctx, new StubSearch(), expandedLog: log);
+
+        await Assert.That(IsExpanded(cut)).IsFalse();
+        await Assert.That(cut.Find(".topbar-search-toggle").GetAttribute("aria-expanded")).IsEqualTo("false");
+        await Assert.That(cut.Find(".topbar-search-toggle").GetAttribute("aria-label")).IsEqualTo("Search for a place");
+        await Assert.That(log.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Tapping_Magnifier_Expands_Notifies_And_Focuses_Input()
+    {
+        // Helm taps the magnifier: the input shows, the topbar is told
+        // to make room, and the caret lands in the input so the phone
+        // keyboard comes up without a second tap.
+        using var ctx = new Bunit.BunitContext();
+        var log = new List<bool>();
+        var cut = await RenderExpanded(ctx, new StubSearch(), log);
+
+        await Assert.That(IsExpanded(cut)).IsTrue();
+        await Assert.That(cut.Find(".topbar-search-toggle").GetAttribute("aria-expanded")).IsEqualTo("true");
+        await Assert.That(string.Join(",", log)).IsEqualTo("True");
+        await Assert.That(FocusCalls(ctx)).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task FocusOut_Of_Empty_Expanded_Input_Collapses()
+    {
+        // Helm opened the search, changed their mind and tapped the
+        // chart: nothing typed, so the magnifier comes back.
+        using var ctx = new Bunit.BunitContext();
+        var log = new List<bool>();
+        var cut = await RenderExpanded(ctx, new StubSearch(), log);
+
+        await cut.Find(".topbar-search").FocusOutAsync(new());
+
+        await Assert.That(IsExpanded(cut)).IsFalse();
+        await Assert.That(string.Join(",", log)).IsEqualTo("True,False");
+    }
+
+    [Test]
+    public async Task FocusOut_With_Typed_Query_Stays_Expanded()
+    {
+        // Helm typed "mar" and glanced at the chart: the query stays on
+        // screen so they can refine it.
+        using var ctx = new Bunit.BunitContext();
+        var log = new List<bool>();
+        var cut = await RenderExpanded(ctx, new StubSearch { NextResults = new[] { Pl("Marina") } }, log);
+
+        await cut.Find(".topbar-search-input").InputAsync(new() { Value = "mar" });
+        await cut.Find(".topbar-search").FocusOutAsync(new());
+
+        await Assert.That(IsExpanded(cut)).IsTrue();
+        await Assert.That(string.Join(",", log)).IsEqualTo("True");
+    }
+
+    [Test]
+    public async Task Pick_Collapses_Before_Reporting_The_Pick()
+    {
+        // After a pick the map flies; the search folds away first so
+        // the zoom pair is back for the arrival.
+        using var ctx = new Bunit.BunitContext();
+        var log = new List<bool>();
+        int logCountAtPick = -1;
+        var onPicked = EventCallback.Factory.Create<PlaceResult>(
+            new object(), _ => logCountAtPick = log.Count);
+        var cut = await RenderExpanded(ctx, new StubSearch { NextResults = new[] { Pl("Marina") } }, log, onPicked);
+
+        await cut.Find(".topbar-search-input").InputAsync(new() { Value = "mar" });
+        await cut.Find(".topbar-search-row").MouseDownAsync(new());
+
+        await Assert.That(string.Join(",", log)).IsEqualTo("True,False");
+        await Assert.That(logCountAtPick).IsEqualTo(2);
+        await Assert.That(IsExpanded(cut)).IsFalse();
+    }
+
+    [Test]
+    public async Task Escape_On_Empty_Expanded_Input_Collapses()
+    {
+        using var ctx = new Bunit.BunitContext();
+        var log = new List<bool>();
+        var cut = await RenderExpanded(ctx, new StubSearch(), log);
+
+        await cut.Find(".topbar-search-input").KeyDownAsync(new KeyboardEventArgs { Key = "Escape" });
+
+        await Assert.That(IsExpanded(cut)).IsFalse();
+        await Assert.That(string.Join(",", log)).IsEqualTo("True,False");
+    }
+
+    [Test]
+    public async Task Escape_When_Collapsed_Does_Not_Report_A_Change()
+    {
+        // Desktop / iPad never expand; Escape there must not tell the
+        // topbar anything changed.
+        using var ctx = new Bunit.BunitContext();
+        var log = new List<bool>();
+        var cut = Render(ctx, new StubSearch(), expandedLog: log);
+
+        await cut.Find(".topbar-search-input").KeyDownAsync(new KeyboardEventArgs { Key = "Escape" });
+
+        await Assert.That(log.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Clear_Keeps_Expanded_And_Refocuses_Input()
+    {
+        // Helm clears a wrong query to type another: the input stays
+        // open and focused rather than folding away under their thumb.
+        using var ctx = new Bunit.BunitContext();
+        var log = new List<bool>();
+        var cut = await RenderExpanded(ctx, new StubSearch { NextResults = new[] { Pl("Marina") } }, log);
+
+        await cut.Find(".topbar-search-input").InputAsync(new() { Value = "mar" });
+        await cut.Find(".topbar-search-clear").ClickAsync(new MouseEventArgs());
+
+        await Assert.That(IsExpanded(cut)).IsTrue();
+        await Assert.That(string.Join(",", log)).IsEqualTo("True");
+        await Assert.That(FocusCalls(ctx)).IsEqualTo(2);
+    }
+
+    [Test]
+    public async Task Clear_When_Collapsed_Does_Not_Steal_Focus()
+    {
+        // Desktop: clearing via the x button must not yank focus back
+        // into the input; that refocus is a phone-expanded behaviour.
+        using var ctx = new Bunit.BunitContext();
+        var cut = Render(ctx, new StubSearch { NextResults = new[] { Pl("Marina") } });
+
+        await cut.Find(".topbar-search-input").InputAsync(new() { Value = "mar" });
+        await cut.Find(".topbar-search-clear").ClickAsync(new MouseEventArgs());
+
+        await Assert.That(FocusCalls(ctx)).IsEqualTo(0);
+    }
 }

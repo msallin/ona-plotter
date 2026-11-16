@@ -59,12 +59,19 @@ public static class Format
             : $"{ts.Minutes}m{ts.Seconds:D2}s";
     }
 
-    /// <summary>Formats ETA as "HH:mm" today, "dd.MM HH:mm" otherwise.</summary>
-    public static string Eta(double? ttgSeconds)
+    /// <summary>Formats ETA as "HH:mm" when it falls on the same local
+    /// day as <paramref name="nowLocal"/>, "dd.MM HH:mm" otherwise.
+    /// <paramref name="nowLocal"/> is the caller's local wall-clock instant
+    /// (<see cref="TimeProvider.GetLocalNow"/>).
+    /// Example: nowLocal 2026-06-01 22:00, ttg 3600 s -> "23:00";
+    /// ttg 10800 s -> "02.06 01:00".</summary>
+    public static string Eta(double? ttgSeconds, DateTimeOffset nowLocal)
     {
         if (ttgSeconds is null) return "--";
-        var eta = DateTime.Now.AddSeconds(ttgSeconds.Value);
-        return eta.Date == DateTime.Today ? eta.ToString("HH:mm") : eta.ToString("dd.MM HH:mm");
+        var eta = nowLocal.AddSeconds(ttgSeconds.Value);
+        return eta.Date == nowLocal.Date
+            ? eta.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture)
+            : eta.ToString("dd.MM HH:mm", System.Globalization.CultureInfo.InvariantCulture);
     }
 
     /// <summary>Formats a lat/lon pair as DMS with hemisphere

@@ -108,6 +108,24 @@ public sealed class SignalkChart
     public double Opacity { get; set; } = 0.8;
 
     /// <summary>
+    /// True for a transparent overlay chart (OpenSeaMap seamarks and the
+    /// like) rather than a base chart. Overlays are drawn in their own
+    /// map pane above the weather radar, so precipitation never hides a
+    /// buoy or light; base charts stay below it. SignalK chart servers
+    /// carry no overlay field, so it is recognised from the descriptor:
+    /// the built-in OpenSeaMap id, an id containing "seamark", or a tile
+    /// URL with a <c>/seamark/</c> path segment.
+    /// <para>Example: id "signalk-charts:seamarks" -> overlay;
+    /// url "https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png" -> overlay;
+    /// id "noaa-enc", url "/charts/noaa/{z}/{x}/{y}" -> base chart.</para>
+    /// </summary>
+    [JsonIgnore]
+    public bool IsOverlay =>
+        Identifier == OnaPlotter.Utilities.BuiltInCharts.OpenSeaMapIdentifier
+        || Identifier.Contains("seamark", StringComparison.OrdinalIgnoreCase)
+        || (GetTileUrl()?.Contains("/seamark/", StringComparison.OrdinalIgnoreCase) ?? false);
+
+    /// <summary>
     /// Returns the tile URL, preferring tilemapUrl (v1) over url (v2).
     /// </summary>
     public string? GetTileUrl() => TilemapUrl ?? Url;

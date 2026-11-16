@@ -31,6 +31,53 @@ public class ResourceHttpTests
     private static HttpClient MalformedClient() =>
         ApiTestHelpers.JsonClient(_ => "{ not json");
 
+    // --- GetTextAsync -----------------------------------------------
+
+    [Test]
+    public async Task GetText_2xx_ReturnsRawBody_EvenWhenNotJson()
+    {
+        // /signalk/v1/api/self on some servers: a bare, unquoted URN.
+        var http = ApiTestHelpers.JsonClient(_ => "urn:mrn:imo:mmsi:261006533");
+
+        var r = await ResourceHttp.GetTextAsync(http, Url, NullLogger.Instance);
+
+        await Assert.That(r.Success).IsTrue();
+        await Assert.That(r.Value).IsEqualTo("urn:mrn:imo:mmsi:261006533");
+    }
+
+    [Test]
+    public async Task GetText_404_FailsWithStatus()
+    {
+        var http = ApiTestHelpers.JsonClient(_ => "", HttpStatusCode.NotFound);
+
+        var r = await ResourceHttp.GetTextAsync(http, Url, NullLogger.Instance);
+
+        await Assert.That(r.Success).IsFalse();
+        await Assert.That(r.StatusCode).IsEqualTo(404);
+    }
+
+    [Test]
+    public async Task GetText_TransportFailure_FailsAndLogsWarning()
+    {
+        var logger = new RecordingLogger<ResourceHttpTests>();
+
+        var r = await ResourceHttp.GetTextAsync(NetworkDownClient(), Url, logger);
+
+        await Assert.That(r.Success).IsFalse();
+        await Assert.That(r.StatusCode).IsNull();
+        await Assert.That(logger.Entries.Single().Level)
+            .IsEqualTo(Microsoft.Extensions.Logging.LogLevel.Warning);
+    }
+
+    [Test]
+    public async Task GetText_Timeout_FailsWithoutThrowing()
+    {
+        var r = await ResourceHttp.GetTextAsync(TimeoutClient(), Url, NullLogger.Instance);
+
+        await Assert.That(r.Success).IsFalse();
+        await Assert.That(r.Error).IsEqualTo("request timed out");
+    }
+
     // --- GetJsonAsync<T> -------------------------------------------
 
     [Test]
@@ -182,7 +229,7 @@ public class ResourceHttpTests
     public async Task ChartApi_TransportTimeoutOrMalformed_FallsBackToBuiltIns()
     {
         // The helm must keep the built-in basemaps whatever the SK
-        // server does; a timeout or a garbage body used to escape.
+        // server does; a timeout or a garbage body must not escape.
         foreach (var http in new[] { NetworkDownClient(), TimeoutClient(), MalformedClient() })
         {
             var api = new ChartApi(http, ApiTestHelpers.FixedBaseUrl(), NullLogger<ChartApi>.Instance);

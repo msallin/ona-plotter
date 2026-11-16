@@ -13,11 +13,10 @@
 
 export function setNightMode(enabled) {
     const html = document.documentElement;
-    // Single binary class. The previous dusk / soft / amber / red
-    // preset cycle was helm-flagged as confusing; collapsed to one
-    // red-shift on/off matching the binary mental model. Defensive
-    // teardown of legacy preset classes so an upgrade from a build
-    // that wrote them doesn't leave stale state on <html>.
+    // Single binary class: one red-shift on/off matches the helm's
+    // binary mental model better than a multi-preset cycle. Defensive
+    // teardown of the per-preset night-mode-* classes so a stale one
+    // left on <html> by an older build can't linger.
     for (const p of ['soft', 'amber', 'red', 'dusk']) {
         html.classList.remove('night-mode-' + p);
     }
@@ -54,12 +53,11 @@ export function setTheme(theme) {
 
 // Synthetic class that's true when the page should render in a light
 // palette: explicit theme-light, theme-high-contrast, OR theme-system
-// resolved against a light OS via prefers-color-scheme. CSS rules that
-// previously needed three hand-rolled selectors (one per theme name +
-// a media-query-wrapped system mirror) collapse to a single
-// `:where(.theme-effective-light) X` selector. Reduces ~50 duplicated
-// rules in app.css to single-source overrides; keeps the cascade and
-// specificity calm.
+// resolved against a light OS via prefers-color-scheme. CSS rules use
+// a single `:where(.theme-effective-light) X` selector instead of three
+// hand-rolled ones (one per theme name + a media-query-wrapped system
+// mirror), which keeps app.css overrides single-source and the cascade
+// and specificity calm.
 //
 // Listener: matchMedia change events propagate at runtime so a sunset
 // flip on iOS / macOS automatically re-applies the class without

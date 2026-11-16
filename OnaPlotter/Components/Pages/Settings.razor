@@ -49,7 +49,7 @@
    ~600 lines and growing - Ctrl-F works but scrolls past group
    headings, and the helm screen doesn't always have a physical
    keyboard. Clearing the input removes the highlight. *@
-@* max-width 1200 (was 600) so iPad landscape + desktop actually use
+@* max-width 1200 so iPad landscape + desktop actually use
    the available width; .col-sm-6 / .col-md-6 on individual cards then
    puts two settings cards side-by-side at >= 720 px instead of forcing
    a single column on a 1400 px iMac. The search input stays narrow. *@
@@ -89,8 +89,7 @@
     </div>
 
     @* Night mode: a single binary toggle. Helms wanting a non-red
-       dark intermediate use Theme = "dark" instead of the previous
-       "dusk" preset. Big screen mode is in its own card - it's an
+       dark intermediate use Theme = "dark". Big screen mode is in its own card - it's an
        independent zoom of the whole HUD, not a night-vision knob. *@
     <div class="col-sm-6">
         <div class="card">
@@ -226,9 +225,9 @@
 
     @* === HUD ===
        Toggles that change which HUDs render on the Map page +
-       chart-detail level. Previously called "HUD & input" - the
-       input bits (keep-screen-awake, keyboard hints) moved to
-       Display alongside the rest of the look-and-feel knobs. *@
+       chart-detail level. Input bits (keep-screen-awake, keyboard
+       hints) sit in Display alongside the rest of the look-and-feel
+       knobs. *@
     <div class="col-12 mt-3">
         <h5 class="page-section-header">HUD</h5>
     </div>
@@ -458,10 +457,10 @@
     </div>
 
     @* === Map elements ===
-       Visual overlays on the chart that aren't HUD cards.
-       Previously co-housed with the alarm thresholds; the helm
-       flagged the mix as confusing - vector lengths and radar
-       rings aren't alarms, just chart annotations. *@
+       Visual overlays on the chart that aren't HUD cards. Kept
+       apart from the alarm thresholds because mixing them confuses
+       the helm - vector lengths and radar rings aren't alarms, just
+       chart annotations. *@
     <div class="col-12 mt-3">
         <h5 class="page-section-header">Map elements</h5>
     </div>
@@ -970,7 +969,7 @@
     </div>
 
     @* Anchor Tide setup checklist + auto-radius formula card.
-       Helm asked the formula to live here so the maths behind
+       The formula lives here so the maths behind
        the Auto chip on the Drop / Set panel is one tap from
        the rest of the anchor settings. *@
     <div class="col-sm-6">
@@ -1143,20 +1142,6 @@
             </div>
         </div>
     </div>
-
-    @* The "Display" section moved to the top of the page (Theme,
-       Night Mode + presets + Auto flip, Big screen mode, Keep
-       screen awake, Show keyboard hints). Show tide and Expand
-       all HUD panels live under HUD. *@
-
-    @* Backup / GPX import + export moved to /resources where the
-       per-tab lists already live (focus-group field report 2026-04).
-       Per-row Export already shipped on every Resources row with a
-       format chooser; the page-level Import on /resources accepts
-       any GPX or GeoJSON drop-in and routes each feature into its
-       matching API (Routes / Waypoints / Notes / Regions). Keeping
-       data-in / data-out in one place stops the helm hunting
-       between Settings and Resources. *@
 
     @* === Advanced / developer tools ========================
        Out of the helm's daily flow; collapsed by default so the
@@ -1648,8 +1633,7 @@
             // rebuilt multiple times and want to confirm the latest
             // landed on the Pi. ReportAsync returns false if the JS
             // bootstrap isn't reachable, so the toast tells the truth
-            // about whether anything actually went out (the previous
-            // version always reported success).
+            // about whether anything actually went out.
             bool ok = await ErrorRelay.ReportAsync(
                 $"test log from Settings @ build {OnaPlotter.BuildInfo.CommitHash} ({OnaPlotter.BuildInfo.BuildUtc} UTC)");
             if (ok) Toasts.Success("Test log sent. Check the SignalK server log for [onaplotter].");
@@ -2319,8 +2303,8 @@
         if (firstRender) await Polar.InitializeAsync();
     }
 
-    // GPX import / export moved to /resources where the per-tab
-    // lists already live. Settings keeps tooling concerns only;
+    // GPX import / export lives on /resources with the per-tab
+    // lists. Settings keeps tooling concerns only;
     // the helm's data-management flow stays in one place. Per-row
     // Export is on every Resources row (gpx + geojson per format
     // chooser); the page-level Import handles bulk drop-in.

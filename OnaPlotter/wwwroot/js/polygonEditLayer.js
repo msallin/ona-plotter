@@ -9,10 +9,10 @@
 import { haversineMeters, NM_PER_METER } from './geoMath.js';
 
 // Polygon edit uses the same violet as route-edit so "I am editing"
-// reads consistently across both drawing modes. Was amber
-// (--ann-region) which matched finished regions but fought the
-// route-edit cue. User feedback: keep the in-edit colour the same
-// regardless of shape; saved-region amber kicks in on save.
+// reads consistently across both drawing modes. Amber (--ann-region)
+// would match finished regions but fight the route-edit cue, so the
+// in-edit colour stays the same regardless of shape; saved-region
+// amber kicks in on save.
 const POLYGON_COLOR = '#a78bfa';                    // --map-current
 
 let mapRef = null;

@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Logging.Abstractions;
 using OnaPlotter.Models;
 using OnaPlotter.Services.Api;
 
@@ -33,22 +32,22 @@ internal sealed class SignalkConnectSeeding
     private readonly SignalkVesselNamesSeeder _vesselNames;
     private readonly SignalkCourseSeeder _course;
 
-    // The seeders are constructed here rather than registered in DI, so
-    // they get null loggers; the receive loop logs the surrounding
-    // lifecycle and each seeder's failures are best-effort by design.
+    // The seeders are constructed here rather than registered in DI
+    // because their callbacks bind to this connection's client; each
+    // still gets its own category logger from the factory.
     public SignalkConnectSeeding(HttpClient http, ISignalKBaseUrl baseUrl, NavigationData data,
-        AisStore ais, Action<string?> setSelfContext, Action onDataChanged, ILogger logger)
+        AisStore ais, Action<string?> setSelfContext, Action onDataChanged, ILoggerFactory loggerFactory)
     {
         _ais = ais;
-        _logger = logger;
+        _logger = loggerFactory.CreateLogger<SignalkConnectSeeding>();
         _draft = new SignalkDraftSeeder(http, baseUrl, data,
-            NullLogger<SignalkDraftSeeder>.Instance, onDataChanged);
+            loggerFactory.CreateLogger<SignalkDraftSeeder>(), onDataChanged);
         _selfContext = new SignalkSelfContextSeeder(http, baseUrl,
-            NullLogger<SignalkSelfContextSeeder>.Instance, setSelfContext);
+            loggerFactory.CreateLogger<SignalkSelfContextSeeder>(), setSelfContext);
         _vesselNames = new SignalkVesselNamesSeeder(http, baseUrl, ais,
-            NullLogger<SignalkVesselNamesSeeder>.Instance);
+            loggerFactory.CreateLogger<SignalkVesselNamesSeeder>());
         _course = new SignalkCourseSeeder(http, baseUrl, data,
-            NullLogger<SignalkCourseSeeder>.Instance, onDataChanged);
+            loggerFactory.CreateLogger<SignalkCourseSeeder>(), onDataChanged);
     }
 
     /// <summary>Starts every seed for a freshly opened socket. The tasks

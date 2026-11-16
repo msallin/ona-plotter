@@ -24,9 +24,8 @@ public sealed class AisStore
     /// fixtures that exercise the store standalone; falls back to
     /// <see cref="DefaultRemoveMinutes"/> when absent.</summary>
     private readonly IMapDisplaySettings? _settings;
-    /// <summary>Default prune-after window. Matches the historical hard-coded
-    /// 10 minutes so behaviour is unchanged for callers (mainly tests) that
-    /// don't wire a settings instance.</summary>
+    /// <summary>Default prune-after window, used by callers (mainly tests)
+    /// that don't wire a settings instance.</summary>
     internal const double DefaultRemoveMinutes = 10.0;
     private static readonly TimeSpan PruneInterval = TimeSpan.FromMinutes(2);
 
@@ -36,12 +35,12 @@ public sealed class AisStore
     private int _version;
     private int _snapshotVersion = -1;
 
-    /// <summary>Monotonic per-Apply / per-mutation counter. AisPushService
+    /// <summary>Monotonic per-Apply / per-mutation counter. AisLayerController
     /// reads this at the start of each tick and skips the JS interop +
     /// snapshot rebuild when the value hasn't advanced since the previous
     /// push AND the own-vessel geometry fed into CPA / COLREGS hasn't
-    /// changed either. 200-vessel harbour at 3 s push cadence dropped
-    /// ~14 short-lived allocs per vessel per tick on idle ticks.</summary>
+    /// changed either. In a 200-vessel harbour at 3 s push cadence that
+    /// saves ~14 short-lived allocs per vessel on every idle tick.</summary>
     public int Version => Volatile.Read(ref _version);
 
     public event Action? OnAisUpdated;
@@ -148,8 +147,8 @@ public sealed class AisStore
         // and our pre-sized buf can fall short. The `n >= buf.Length`
         // guard backstops the count snapshot; whatever doesn't fit
         // this tick lands on the next one (the version counter then
-        // forces a fresh rebuild). The earlier "single-thread WASM"
-        // comment was wrong about test-time invariants.
+        // forces a fresh rebuild). Production WASM is single-threaded,
+        // but the guard keeps the test-time invariant honest.
         // Enumerate the dictionary itself, not .Values: Values takes
         // every bucket lock and copies the whole value list on each
         // call, while the dictionary enumerator is lock-free.
@@ -282,7 +281,7 @@ public sealed class AisStore
     private void PruneStale(DateTime now)
     {
         // Read once per sweep. Helm-tunable via the AIS-remove setting; tests
-        // and the parameterless ctor fall back to the historical 10 min.
+        // and the parameterless ctor fall back to the 10 min default.
         double minutes = _settings?.AisRemoveMinutes ?? DefaultRemoveMinutes;
         if (!double.IsFinite(minutes) || minutes <= 0) minutes = DefaultRemoveMinutes;
         var cutoff = now - TimeSpan.FromMinutes(minutes);

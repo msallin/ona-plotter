@@ -18,10 +18,9 @@
 
 @* Wrap the page body in .app-page so the heading + tables centre at
    the same max-width gutter Resources / Settings / Wind already use.
-   Drops the inline 820 px caps that used to live on the heading and
-   filter - the .app-page-subtitle helper carries that constraint
-   now, and the filter input sits under the subtitle so it inherits
-   the same column. *@
+   No inline 820 px caps on the heading and filter - the
+   .app-page-subtitle helper carries that constraint, and the filter
+   input sits under the subtitle so it inherits the same column. *@
 <div class="app-page">
     <header class="app-page-header">
         <h1>SignalK data paths</h1>
@@ -159,9 +158,9 @@
             // the position to null. Without v2.0.0+ of the plugin
             // (Settings -> SignalK admin -> App Store -> Anchor
             // Alarm) the helm sees "plugin v2.0.0+ required" toasts
-            // on Drop / Set / Raise. The legacy JS-only manual
-            // fallback was removed so the alarm path is unambiguous:
-            // server-armed or no anchor at all.
+            // on Drop / Set / Raise. There is no JS-only manual
+            // fallback, so the alarm path is unambiguous: server-armed
+            // or no anchor at all.
             new PathGroup("Anchor (signalk-anchoralarm-plugin v2.0.0+ REQUIRED)",
             [
                 new("navigation.anchor.position", "Anchor pin on chart, drag-alarm reference point",

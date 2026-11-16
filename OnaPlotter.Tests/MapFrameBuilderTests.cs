@@ -4,8 +4,8 @@ using OnaPlotter.Utilities;
 namespace OnaPlotter.Tests;
 
 /// <summary>
-/// Covers the decision tree in MapFrameBuilder.Build. The builder was
-/// extracted from Map.razor's HandleDataChanged so the per-tick
+/// Covers the decision tree in MapFrameBuilder.Build. The builder is
+/// separate from Map.razor's HandleDataChanged so the per-tick
 /// layering logic (what's in the frame, what's not, throttle counters,
 /// clear-course latching) can be asserted directly instead of relying
 /// on Playwright to notice a regression.

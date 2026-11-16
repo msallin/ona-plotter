@@ -100,20 +100,19 @@ public sealed class AppSettingsService : IAppSettings
     /// armed).</summary>
     public bool HarborMode { get; private set; }
     public bool SidebarCollapsed { get; private set; }
-    // Defaults reviewed 2026-05 after helm field-feedback that the
-    // first-install thresholds tripped too easily. Each retuned to
-    // be less sensitive while staying conservative for the use case:
-    //   SHALLOW         3.0 -> 2.0 m: 3 m tripped on every chop in
-    //                                 typical 4-5 m anchorages.
-    //   ANCHOR TIDE     1.0 -> 0.5 m: 1 m clearance fired hours
-    //                                 before any real risk.
-    //   WIND SHIFT     15   -> 30 deg: 15 deg is normal sailing
-    //                                  oscillation; 30 deg matches
-    //                                  the helm-noticeable threshold.
-    //   WIND lookback   5   -> 10 min: longer averaging window cuts
-    //                                  short-gust false positives.
-    //   WIND min TWS    3   -> 5 kn:   suppress more wobble in
-    //                                  light air where TWD is noisy.
+    // First-install alarm defaults lean less sensitive so they don't
+    // nag, while staying conservative for the use case:
+    //   SHALLOW         2.0 m:  3 m would trip on every chop in
+    //                           typical 4-5 m anchorages.
+    //   ANCHOR TIDE     0.5 m:  1 m clearance fires hours before
+    //                           any real risk.
+    //   WIND SHIFT      30 deg: 15 deg is normal sailing oscillation;
+    //                           30 deg matches the helm-noticeable
+    //                           threshold.
+    //   WIND lookback   10 min: a longer averaging window cuts
+    //                           short-gust false positives.
+    //   WIND min TWS    5 kn:   suppresses wobble in light air where
+    //                           TWD is noisy.
     public double DepthAlarmThreshold { get; private set; } = 2.0;
     /// <summary>Inner / strict CPA-tier distance (nm). Tighter than the
     /// awareness tier so the audio klaxon only fires for genuinely
@@ -373,10 +372,9 @@ public sealed class AppSettingsService : IAppSettings
             LastManualNightOverrideSunCluster = NormalizeSunCluster(
                 await LoadString(SettingKeys.LastManualNightOverrideSunCluster));
             ChartsSeeded = await LoadBool(SettingKeys.ChartsSeeded, false);
-            // nightModePreset key intentionally not migrated. The previous
-            // dusk / soft / amber / red cycle collapsed to a single
-            // soft red-shift on/off; helms wanting a non-red dark
-            // intermediate use Theme = "dark" instead.
+            // The nightModePreset key is intentionally not read: night
+            // mode is a single soft red-shift on/off; helms wanting a
+            // non-red dark intermediate use Theme = "dark" instead.
             Theme = NormalizeTheme(await LoadString(SettingKeys.Theme));
             WindHeroMode = NormalizeWindHeroMode(await LoadString(SettingKeys.WindHeroMode));
             MapOrientation = await LoadString(SettingKeys.MapOrientation) ?? "north";
@@ -389,10 +387,9 @@ public sealed class AppSettingsService : IAppSettings
             FollowBoat = await LoadBool(SettingKeys.FollowBoat, true);
             LaylinesVisible = await LoadBool(SettingKeys.LaylinesVisible, false);
             ShipLinesVisible = await LoadBool(SettingKeys.ShipLinesVisible, true);
-            // localTrackVisible.v1 was retired; the unified ship-track
-            // toggle (serverTrackVisible.v1) now gates both layers.
-            // Legacy localStorage entries from previous versions stay
-            // orphaned; we never read them again.
+            // The unified ship-track toggle (serverTrackVisible.v1)
+            // gates both track layers. Any orphaned localTrackVisible.v1
+            // entry in localStorage is never read.
             ServerTrackVisible = await LoadBool(SettingKeys.ServerTrackVisible, true);
             ServerTrackDuration = NormalizeServerTrackDuration(
                 await LoadString(SettingKeys.ServerTrackDuration));
@@ -434,9 +431,9 @@ public sealed class AppSettingsService : IAppSettings
             var sidebarRaw = await LoadString(SettingKeys.SidebarCollapsed);
             _sidebarCollapsedExplicit = sidebarRaw is not null;
             SidebarCollapsed = sidebarRaw == "true";
-            // Defaults retuned 2026-05 (see field declarations above
-            // for rationale). Existing helms keep their stored values;
-            // these defaults only apply on first install.
+            // See the field declarations above for the default
+            // rationale. Stored values win; these defaults only apply
+            // on first install.
             DepthAlarmThreshold = await LoadDouble(SettingKeys.DepthAlarmThreshold, 2.0);
             // CPA / TCPA two-tier load with legacy migration. Helms
             // upgrading from the single-threshold model have their
@@ -526,11 +523,11 @@ public sealed class AppSettingsService : IAppSettings
             RadarBearingCorrectionDeg = Math.Clamp(
                 await LoadDouble(SettingKeys.RadarBearingCorrection, 0.0), -180.0, 180.0);
             PreferMagneticHeading = await LoadBool(SettingKeys.PreferMagneticHeading, false);
-            // CogReadoutSource replaces the legacy preferMagneticCourse.v1
-            // boolean. On first load after the upgrade, migrate the old
-            // bool -> the smoothed variant of the same axis (matches
-            // the helm's prior experience: HUD always ran on smoothed
-            // COG via Avg.CogMean30Sec). LoadString swallows the
+            // CogReadoutSource supersedes the legacy preferMagneticCourse.v1
+            // boolean. When no CogReadoutSource is stored, a stored legacy
+            // bool maps to the smoothed variant of the same axis (the
+            // HUD COG that bool drove came from Avg.CogMean30Sec).
+            // LoadString swallows the
             // JSException raised in private-browsing mode so the
             // migration probe is safe on storage-disabled clients.
             var legacyMagCourse = await LoadString(SettingKeys.LegacyPreferMagneticCourse);
@@ -619,7 +616,7 @@ public sealed class AppSettingsService : IAppSettings
         // this fan-out a stored StandaloneMode=true / StandaloneServerUrl
         // never reaches the WS pipeline on startup: the helm has to
         // toggle the switch off-and-on to trigger the next Set*Async,
-        // which is where the fan-out historically happened. Fires
+        // the only other place the fan-out happens. Fires
         // outside the lock so a subscriber that calls back into the
         // service doesn't deadlock.
         OnSettingsChanged?.Invoke();
@@ -885,8 +882,8 @@ public sealed class AppSettingsService : IAppSettings
         // Already-set sidebar wins (user toggled it intentionally on a
         // previous visit, or the mobile-default ran on an earlier mount
         // - either way no overwrite). Desktop viewport doesn't change
-        // anything; the historical default is "expanded" which is
-        // already correct.
+        // anything; the default is "expanded" which is already
+        // correct.
         if (_sidebarCollapsedExplicit) return;
         if (!isMobile) return;
         SidebarCollapsed = true;
@@ -1207,12 +1204,11 @@ public sealed class AppSettingsService : IAppSettings
         OnSettingsChanged?.Invoke();
     }
 
-    /// <summary>Back-compat setter: flips the True/Magnetic axis of
+    /// <summary>Boolean-axis setter: flips the True/Magnetic axis of
     /// <see cref="CogReadoutSource"/> while preserving the picked
-    /// smoothed/realtime variant. Existing callers (legacy migrations,
-    /// page-side toggles that haven't been moved to the four-way
-    /// dropdown yet) keep working without writes to the retired
-    /// <c>preferMagneticCourse.v1</c> key.</summary>
+    /// smoothed/realtime variant, for callers that only deal in the
+    /// boolean (legacy migrations, page-side toggles). Never writes the
+    /// retired <c>preferMagneticCourse.v1</c> key.</summary>
     public async Task SetPreferMagneticCourseAsync(bool value)
     {
         var current = OnaPlotter.Utilities.CogSourceResolver.Parse(CogReadoutSource);

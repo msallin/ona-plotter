@@ -172,11 +172,10 @@ public sealed class AlarmManager : IAlarmManager
     }
 
     /// <summary>Single-pass sort over <c>_active.Values</c> shared by
-    /// every public sorted-active reader. Replaces a triple-OrderBy
-    /// LINQ chain (3 enumerator-class allocations + a deferred List
-    /// allocation per read) with one allocation + one Array.Sort call.
-    /// Tie-break order matches the previous LINQ semantics:
-    /// severity desc, time-to-event asc (null = +infinity), priority
+    /// every public sorted-active reader. One allocation + one
+    /// Array.Sort call per read, where a triple-OrderBy LINQ chain would
+    /// cost 3 enumerator-class allocations + a deferred List.
+    /// Tie-break order: severity desc, time-to-event asc (null = +infinity), priority
     /// asc. Caller materialises into the per-property shape.</summary>
     private ActiveEntry[] SortedEntries()
     {
@@ -381,7 +380,7 @@ public sealed class AlarmManager : IAlarmManager
         var ctx = new AlarmEvaluationContext(data, vessels, settings, now, IsSnoozed);
         var disabledRules = settings.DisabledAlarmRules;
 
-        // Every rule gets a chance to produce an alarm. Unlike the earlier
+        // Every rule gets a chance to produce an alarm. Rather than a
         // first-wins model, we collect all hits and stack them so a depth
         // warning doesn't hide a closing ferry (and vice versa). The
         // display order is severity-then-priority; the rules themselves
@@ -417,12 +416,10 @@ public sealed class AlarmManager : IAlarmManager
 
         // Remove alarms that didn't fire this tick and whose rule wants
         // auto-clear. Latching rules (WIND SHIFT) stay in the stack until
-        // the user dismisses them, matching the pre-refactor behaviour.
-        // The previous Where + Select + ToList allocated an enumerator
-        // chain + a List per Evaluate tick (every alarm evaluation,
-        // multi-Hz under bursty SK feeds), even when no alarms were
-        // up. Defer the list allocation to the case where something
-        // actually needs dropping.
+        // the user dismisses them.
+        // Evaluate runs multi-Hz under bursty SK feeds, so the drop list
+        // is allocated only when something actually needs dropping
+        // rather than on every tick (as a Where + Select + ToList would).
         // Disabled-rule sweep: if the helm just flipped a rule to
         // disabled, any alarms it had raised stay in _active because
         // the rule is no longer being evaluated (so the auto-clear
@@ -460,8 +457,8 @@ public sealed class AlarmManager : IAlarmManager
             {
                 // Same rule + same target. A severity change or a message
                 // update should update the stored entry. Message-only
-                // changes don't re-arm the audio, matching the
-                // pre-refactor quiet-tick behaviour.
+                // changes don't re-arm the audio, so a steady alarm
+                // stays quiet tick to tick.
                 if (existing.Info != info)
                 {
                     _active[key] = new ActiveEntry(info, rule);
@@ -522,10 +519,8 @@ public sealed class AlarmManager : IAlarmManager
         RecordDismissCooldown(key, removed.Info.Severity, now);
         removed.Rule.OnDismissed(removed.Info, now);
         FireAlarmsChanged();
-        // Cross-plotter ack via the per-alarm acknowledger handle.
-        // Pre-Phase A this directly inspected NotificationId+CanAcknowledge
-        // on the alarm; the abstraction now keeps the manager transport-
-        // neutral (ARCH-001).
+        // Cross-plotter ack via the per-alarm acknowledger handle, which
+        // keeps the manager transport-neutral.
         if (removed.Info.Acknowledger is { CanAcknowledge: true } ack)
             FireAcknowledge(new[] { ack });
         return Task.CompletedTask;

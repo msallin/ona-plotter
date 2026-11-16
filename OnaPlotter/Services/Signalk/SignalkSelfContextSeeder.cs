@@ -38,9 +38,9 @@ public sealed class SignalkSelfContextSeeder
     /// <summary>
     /// Fetch <c>/signalk/v1/api/self</c> and forward the trimmed URN
     /// to the <c>setSelfContext</c> callback. Best-effort: a non-2xx
-    /// response is silent at Debug level; an unexpected exception is
-    /// logged at Warning since a missing self URN noticeably degrades
-    /// AIS filtering.
+    /// response is silent at Debug level; transport failures and
+    /// timeouts are logged at Warning by <see cref="ResourceHttp"/>
+    /// since a missing self URN noticeably degrades AIS filtering.
     /// </summary>
     /// <remarks>
     /// Response shape: a bare JSON string, e.g.
@@ -54,21 +54,17 @@ public sealed class SignalkSelfContextSeeder
         try
         {
             var url = _baseUrl.Combine("/signalk/v1/api/self");
-            using var res = await _http.GetAsync(url, ct);
-            if (!res.IsSuccessStatusCode)
+            var result = await ResourceHttp.GetTextAsync(_http, url, _logger, ct);
+            if (!result.Success)
             {
-                _logger.LogDebug("self endpoint {Url} returned {Status}", url, (int)res.StatusCode);
+                _logger.LogDebug("self endpoint {Url} failed: {Status} {Error}", url, result.StatusCode, result.Error);
                 return;
             }
             // Server returns the URN as a JSON-encoded string; strip the
             // surrounding quotes so callers see the raw URN.
-            var raw = (await res.Content.ReadAsStringAsync(ct)).Trim().Trim('"');
+            var raw = (result.Value ?? "").Trim().Trim('"');
             if (!string.IsNullOrWhiteSpace(raw)) _setSelfContext(raw);
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "REST self-context resolution failed");
-        }
     }
 }

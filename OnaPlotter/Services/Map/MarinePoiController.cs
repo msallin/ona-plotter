@@ -156,9 +156,9 @@ public sealed class MarinePoiController : IAsyncDisposable
 
     // Cached snapshot of the marine-POI flags this controller actually
     // consumes. OnSettingsChanged fires for ANY setting (font size,
-    // night mode, ...); the previous handler re-rendered + cancelled
-    // the in-flight fetch + re-scheduled on every fire, even when none
-    // of the marine-POI flags had changed. Snapshot+compare gates the
+    // night mode, ...); re-rendering, cancelling the in-flight fetch
+    // and re-scheduling on every fire would be wasted work when none of
+    // the marine-POI flags changed. Snapshot+compare gates the
     // expensive work on a real change.
     private (bool Fuel, bool Marina, bool Harbour, bool Mooring,
         bool Slipway, bool Pier, bool Chandlery, bool DrinkingWater, bool PumpOut)

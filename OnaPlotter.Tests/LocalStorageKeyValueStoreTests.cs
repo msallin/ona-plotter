@@ -16,7 +16,7 @@ public class LocalStorageKeyValueStoreTests
     [Test]
     public async Task GetAsync_Prefixes_Key_And_Calls_GetItem()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         ctx.JSInterop.Setup<string?>("localStorage.getItem", "ona.nightMode")
             .SetResult("true");
         var store = new LocalStorageKeyValueStore(ctx.JSInterop.JSRuntime);
@@ -35,7 +35,7 @@ public class LocalStorageKeyValueStoreTests
         // wrapper must surface that as C# null so the caller can fall
         // back to a default rather than blow up parsing "null" as a
         // double or bool.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         ctx.JSInterop.Setup<string?>("localStorage.getItem", "ona.nope").SetResult(null);
         var store = new LocalStorageKeyValueStore(ctx.JSInterop.JSRuntime);
 
@@ -50,7 +50,7 @@ public class LocalStorageKeyValueStoreTests
         // handler - without it the InvokeVoidAsync task stays pending
         // and await hangs forever (bUnit 1.x semantics: a Setup with no
         // SetResult / SetVoidResult / SetException never fires).
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         object?[]? captured = null;
         ctx.JSInterop.SetupVoid("localStorage.setItem", i =>
         {
@@ -70,7 +70,7 @@ public class LocalStorageKeyValueStoreTests
     [Test]
     public async Task RemoveAsync_Prefixes_Key_And_Calls_RemoveItem()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         object?[]? captured = null;
         ctx.JSInterop.SetupVoid("localStorage.removeItem", i =>
         {
@@ -92,7 +92,7 @@ public class LocalStorageKeyValueStoreTests
         // exhausted. AppSettingsService.Save() has a catch that swallows
         // JSException; if the KV store silently swallowed too we'd never
         // know a setting failed to persist.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         ctx.JSInterop.SetupVoid("localStorage.setItem", "ona.x", "y")
             .SetException(new JSException("quota exceeded"));
         var store = new LocalStorageKeyValueStore(ctx.JSInterop.JSRuntime);
@@ -106,7 +106,7 @@ public class LocalStorageKeyValueStoreTests
         // Page teardown: the JS runtime is gone. A settings load racing
         // the teardown must read as "unset" instead of throwing into
         // Blazor's error UI.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         ctx.JSInterop.Setup<string?>("localStorage.getItem", "ona.k")
             .SetException(new JSDisconnectedException("gone"));
         var store = new LocalStorageKeyValueStore(ctx.JSInterop.JSRuntime);
@@ -119,7 +119,7 @@ public class LocalStorageKeyValueStoreTests
     {
         // A settings save fired from a component's dispose path lands
         // after the runtime is gone; there is nowhere to persist to.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         ctx.JSInterop.SetupVoid("localStorage.setItem", "ona.x", "y")
             .SetException(new JSDisconnectedException("gone"));
         var store = new LocalStorageKeyValueStore(ctx.JSInterop.JSRuntime);
@@ -130,7 +130,7 @@ public class LocalStorageKeyValueStoreTests
     [Test]
     public async Task RemoveAsync_Swallows_Js_Runtime_Disconnected()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         ctx.JSInterop.SetupVoid("localStorage.removeItem", "ona.x")
             .SetException(new JSDisconnectedException("gone"));
         var store = new LocalStorageKeyValueStore(ctx.JSInterop.JSRuntime);
@@ -144,7 +144,7 @@ public class LocalStorageKeyValueStoreTests
         // The interface returns Task<string?>; the concrete class exposes
         // ValueTask<string?>. The explicit interface impl bridges; this
         // pins that nothing broke the adaptation.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         ctx.JSInterop.Setup<string?>("localStorage.getItem", "ona.k").SetResult("v");
         IKeyValueStore store = new LocalStorageKeyValueStore(ctx.JSInterop.JSRuntime);
 

@@ -1,8 +1,8 @@
 // Screen Wake Lock — standalone from leafletInterop so it can be held
-// across the whole app, not only the Map page. Used to be inside
-// leafletInterop.js which meant the lock released every time the user
-// navigated to Settings / Wind / History; defeats the "don't let the
-// helm's tablet sleep mid-watch" intent.
+// across the whole app, not only the Map page. Tied to the map module,
+// the lock would release every time the user navigated to Settings /
+// Wind / History, defeating the "don't let the helm's tablet sleep
+// mid-watch" intent.
 //
 // Browser support: Chrome / Edge / Safari 16.4+. iOS Safari releases
 // the lock when the tab is hidden (switching apps, background); the

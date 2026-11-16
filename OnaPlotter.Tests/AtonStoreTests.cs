@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.Time.Testing;
 using OnaPlotter.Services;
 
 namespace OnaPlotter.Tests;
@@ -113,5 +114,49 @@ public class AtonStoreTests
         s.OnAtonsUpdated += () => fires++;
         s.Reset();
         await Assert.That(fires).IsEqualTo(0);
+    }
+
+    private static (AtonStore store, FakeTimeProvider time) StoreWithBuoy()
+    {
+        var time = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero));
+        var s = new AtonStore(time);
+        const string ctx = "atons.urn:mrn:imo:mmsi:992111234";
+        s.Apply(ctx, "name", Parse("\"BUOY\""));
+        s.Apply(ctx, "navigation.position", Parse("""{"latitude":54.5,"longitude":10.2}"""));
+        return (s, time);
+    }
+
+    [Test]
+    public async Task GetAtons_SilentUnder24h_Kept()
+    {
+        // A buoy last heard 23 h ago is still on the chart: AIS Type 21
+        // gaps of hours happen at the edge of receiver range.
+        var (s, time) = StoreWithBuoy();
+        time.Advance(TimeSpan.FromHours(23));
+
+        await Assert.That(s.GetAtons().Length).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task GetAtons_SilentOver24h_Pruned()
+    {
+        // Multi-day passage: a buoy seen at departure and silent for a
+        // day is astern and out of range; the sweep drops it.
+        var (s, time) = StoreWithBuoy();
+        time.Advance(TimeSpan.FromHours(24) + TimeSpan.FromMinutes(1));
+
+        await Assert.That(s.GetAtons().Length).IsEqualTo(0);
+        await Assert.That(s.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Apply_StampsLastSeenFromTimeProvider()
+    {
+        var (s, time) = StoreWithBuoy();
+        time.Advance(TimeSpan.FromMinutes(5));
+        s.Apply("atons.urn:mrn:imo:mmsi:992111234", "name", Parse("\"BUOY 2\""));
+
+        await Assert.That(s.GetAtons()[0].LastSeen)
+            .IsEqualTo(new DateTime(2026, 1, 1, 12, 5, 0, DateTimeKind.Utc));
     }
 }

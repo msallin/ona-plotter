@@ -1,16 +1,11 @@
 // Active-route navigate-back guard.
 //
-// User report: "I have a route active and an anchor down. I navigate
-// to Dashboard and back to /map - the route is silently deactivated
-// on the SignalK server (other plotters lose it too)."
-//
-// Root cause: Map.razor.SyncServerAnchorAsync used a per-Map-instance
-// `serverAnchorDrawn` flag to detect a fresh anchor drop, and on the
-// false branch fired CourseApi.ClearAsync() to dismiss any co-active
-// course. The flag resets on every Map mount, so a session with both
-// states already active on the SK server interpreted each navigate-
-// back as a fresh anchor drop and DELETEd the course. The fix drops
-// the auto-clear; the manual Anchor button still clears the course
+// With a route active and an anchor down, navigating to Dashboard and
+// back to /map must not deactivate the route on the SignalK server
+// (other plotters would lose it too). Map state is per-mount, so any
+// "fresh anchor drop" detection on mount would misread each
+// navigate-back with both states already active on the server and
+// DELETE the course. Only the manual Anchor button clears the course,
 // when the helm taps it explicitly.
 //
 // This spec mocks both an active anchor (via a WebSocket delta on
@@ -155,9 +150,8 @@ test.describe('Active route survives page navigation', () => {
 
     test('navigate Map -> Dashboard -> Map does not DELETE the course', async ({ page }) => {
         // Track every DELETE the page sends to the SK course endpoint.
-        // Pre-fix this would fire from SyncServerAnchorAsync's
-        // serverAnchorDrawn branch on every Map mount whenever both
-        // anchor + course were active server-side.
+        // None may fire on Map mount while both anchor + course are
+        // active server-side.
         const courseDeletes = [];
         page.on('request', req => {
             if (req.method() === 'DELETE'

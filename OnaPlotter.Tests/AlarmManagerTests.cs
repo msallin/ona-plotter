@@ -160,7 +160,8 @@ public class AlarmManagerTests
         store.Apply("notifications.mob", "emergency", "MOB");
         var clock = new MutableClock();
         var settings = new FakeSettings();
-        IAlarmRule[] rules = [new OnaPlotter.Services.Alarms.ServerNotificationsAlarmRule(store)];
+        IAlarmRule[] rules = [new OnaPlotter.Services.Alarms.ServerNotificationsAlarmRule(
+            store, NoopNotificationsApi.Instance, OnaPlotter.Services.Alarms.NoopPublishedAlarmTracker.Instance)];
         var mgr = new AlarmManager(rules, new DelegateTimeProvider(() => clock.Now));
 
         settings.DisabledAlarmRulesSet.Add("APPROACH");
@@ -185,12 +186,12 @@ public class AlarmManagerTests
         var (mgr, clock, settings, _) = NewMgr();
         // Own at origin, going north at 5 kn. Target 0.4 nm north going
         // south at 5 kn (inside the 0.5 nm default guard zone -> Danger
-        // band). Previously this test placed the target at exactly 1 nm
-        // (1/60 deg lat) which sits right at the outer-ring boundary;
-        // with the PR #264 current-distance gate (alarm rule shares the
-        // chart-overlay's Cpa.ClassifyThreat), 1 nm is on the wrong side
-        // and the alarm would not fire. 0.4 nm is comfortably inside
-        // the guard zone and exercises the same head-on geometry.
+        // band). Not 1 nm: that (1/60 deg lat) sits right at the
+        // outer-ring boundary, and with the current-distance gate (alarm
+        // rule shares the chart-overlay's Cpa.ClassifyThreat) it lands on
+        // the wrong side and the alarm would not fire. 0.4 nm is
+        // comfortably inside the guard zone and exercises the head-on
+        // geometry.
         var data = Nav(lat: 0, lon: 0, cogRad: 0, sogMs: 2.57);   // ~5 kn
         var target = Vessel("vessels.ctx1", 0.4/60.0, 0, cogRad: Math.PI, sogMs: 2.57);
 
@@ -364,9 +365,9 @@ public class AlarmManagerTests
     [Test]
     public async Task SnoozeDuration_FallsBackToConst_WhenNoSettingsWired()
     {
-        // Tests using the legacy 2-arg ctor (no settings) still get the
-        // 10-min default. Regression guard against the const being
-        // silently dropped to 0 or some other value mid-refactor.
+        // Tests using the 2-arg ctor (no settings) still get the
+        // 10-min default. Guards against the const being silently
+        // changed to 0 or some other value.
         var cpa = new StubRule("CPA", 200, AlarmSeverity.Danger, "vessels.x");
         var (mgr, _, _) = NewMgrWith(cpa);
 
@@ -422,15 +423,15 @@ public class AlarmManagerTests
     }
 
     // --- dismiss cooldown ----------------------------------------------
-    // Pins the "7 dismisses in 7 seconds" UX fix: a dismissed alarm does
+    // Guards against "7 dismisses in 7 seconds": a dismissed alarm does
     // NOT re-fire for DismissCooldownSeconds, unless severity escalates.
 
     [Test]
     public async Task Dismiss_SuppressesReFire_Within_CooldownWindow()
     {
-        // The original bug: CPA on SALTY BREEZE at 0.02nm in 8min was
-        // dismissed, re-fired on the next tick, dismissed, re-fired...
-        // six more times. With cooldown, the helmsman's acknowledgment
+        // Scenario: a CPA at 0.02nm in 8min is dismissed, re-fires on
+        // the next tick, is dismissed, re-fires... over and over. With
+        // cooldown, the helmsman's acknowledgment
         // buys them ~30 seconds of quiet.
         var cpa = new StubRule("CPA", 200, AlarmSeverity.Danger, "vessels.x");
         var (mgr, clock, settings) = NewMgrWith(cpa);
@@ -996,7 +997,7 @@ public class AlarmManagerTests
     public async Task MultiOutputRule_KeysAutoClearWhenSourceStopsYielding()
     {
         // Server clears anchor notification: store removes path,
-        // CheckMany no longer yields ANCHOR, manager auto-drops the
+        // CheckMany stops yielding ANCHOR, manager auto-drops the
         // banner entry.
         var supply = new List<AlarmInfo>
         {
@@ -1200,12 +1201,11 @@ public class AlarmManagerTests
     // to re-dismiss on every chart-plotter at the helm separately.
 
     /// <summary>Test acknowledger that records every
-    /// <see cref="AcknowledgeAsync"/> call. After the ARCH-001 refactor
-    /// AlarmManager no longer holds an INotificationsApi; the dismiss
-    /// path invokes whatever IAlarmAcknowledger the bridge rule (or, in
-    /// these tests, the test itself) attached to the AlarmInfo. So a
-    /// recording acknowledger replaces the previous FakeNotificationsApi
-    /// for "did dismiss fire the cross-plotter ack?" assertions.</summary>
+    /// <see cref="AcknowledgeAsync"/> call. AlarmManager holds no
+    /// INotificationsApi; the dismiss path invokes whatever
+    /// IAlarmAcknowledger the bridge rule (or, in these tests, the test
+    /// itself) attached to the AlarmInfo. So a recording acknowledger
+    /// answers "did dismiss fire the cross-plotter ack?" assertions.</summary>
     private sealed class FakeAcknowledger : IAlarmAcknowledger
     {
         public string Label { get; }

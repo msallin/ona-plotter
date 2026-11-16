@@ -43,9 +43,9 @@ public class MapWelcomeQueryTests
     [Arguments("https://boat.local/map?welcomes=1")]
     public async Task ShouldForceShow_SubstringCollisions_DoNotTrigger(string uri)
     {
-        // Regression for PARA-001: the Contains("welcome=1") version
-        // matched all of these, surfacing the welcome card on a URL
-        // the helm never asked for. Strict parsed-key match.
+        // A Contains("welcome=1") check would match all of these,
+        // surfacing the welcome card on a URL the helm never asked
+        // for. Strict parsed-key match.
         await Assert.That(Map.ShouldForceShowFromUri(uri)).IsFalse();
     }
 

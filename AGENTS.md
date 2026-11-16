@@ -23,7 +23,7 @@ SignalK server  --WS deltas-->  SignalkClient
             Pages + Components observe these stores; Services/Map/* are
             controllers that diff store state and push to JS interop.
 
-JS (leafletInterop.js + helpers): renderer ONLY. C# resolves
+JS (leafletInterop.js + layer modules): renderer ONLY. C# resolves
 classification, colour, CPA, ETA, etc. and pushes shaped payloads.
 JS-side decisions (e.g. "is this ship a SART?") are a code smell.
 ```
@@ -43,10 +43,28 @@ elsewhere. Services that only observe the connection take `ISignalkClient`.
 new tier entry. Don't sprinkle ad-hoc `subscribe` calls; reconnect replays
 from the table.
 
+**Connect-time seeding.** Deltas only carry changes, so state settled
+before the socket opened (vessel names, self URN, active course, draft)
+comes from REST: `SignalkConnectSeeding` starts the four
+`Signalk*Seeder`s per connect. They fetch through `ResourceHttp` and log
+through category loggers from the `ILoggerFactory` `SignalkClient` takes.
+
 **Services/Map/*** controllers wrap JS interop and own diff-and-push state
-(`ServerAnchorController`, `ServerTrackController`, ...). Pages call into them;
-controllers decide when JS actually needs an update. Stops pages from
-spamming interop on every render.
+(`AisLayerController`, `AtonLayerController`, `ActiveRouteController`,
+`ServerAnchorController`, `ServerTrackController`, `ChartLayerController`,
+...). Pages call into them; controllers decide when JS actually needs an
+update. Stops pages from spamming interop on every render. Pure rules
+sit beside them: `AisVesselPresentation` (name fallbacks, colour roles,
+label visibility) and `VesselListBuilder` (Layers-panel list, CPA from
+the dead-reckoned target exactly like `CpaAlarmRule` and the chart).
+
+**AIS delta protocol.** `AisLayerController` pushes `AisUpdatePayload`
+(`seq`, `baseSeq`, `vessels`, `removed`). The first push, and any push
+after a failure, is a full snapshot (`baseSeq = -1`); later pushes carry
+only changed vessels, changed identity fields, trail points appended /
+trimmed and removed contexts. `aisLayer.js` refuses a delta whose
+`baseSeq` isn't the `seq` it holds (`acceptsUpdate`), and C# answers
+with a full snapshot on the next tick.
 
 **Services/Api/*Api.cs** is one HTTP client per SignalK resource sharing
 `ResourceHttp`. Wire-shape contracts are pinned by tests
@@ -54,7 +72,53 @@ spamming interop on every render.
 
 **Services/Alarms/*AlarmRule.cs** is rule-per-file, DI-registered,
 `IAlarmRule.Check(ctx)` returns 0..N alarms. Manager sorts by
-`(severity desc, TTI asc, priority asc)` and surfaces the head.
+`(severity desc, TTI asc, priority asc)` and surfaces the head. Each
+rule and alarm carries an `AlarmRuleId` (stable identity for persisted
+disables, Settings toggles, dismiss keys; adding one is a
+compiler-guided checklist in `AlarmRuleId.cs`). `AlarmEvaluationDriver`
+runs the manager on every delta / server-notification change plus a
+timer, so time-based rules (DEADMAN) fire while the socket is down.
+`AutoAdvanceService` moves the route on the false -> true edge of the
+course provider's `perpendicularPassed` / `arrivalCircleEntered`.
+Dependencies are required, not optional; tests pass fakes
+(`NoopNotificationsApi`, `NoopPublishedAlarmTracker`).
+
+**Time.** Read the clock through the injected `TimeProvider`, or take
+the instant as a parameter (`Format.Eta`); tests use
+`FakeTimeProvider`. No `DateTime.UtcNow` / `DateTime.Now` in services.
+
+**Settings keys.** Every persisted key is declared in `SettingKeys` as
+`<name>.vN`. Bump N on a breaking value-format change so a stale value
+reads as missing. A renamed key keeps its old spelling as a `Legacy*`
+constant plus a `Renamed` row; `KeyValueStoreMigration` moves values on
+boot (the new key wins; a storage failure retries next boot).
+
+**JS modules.** `leafletInterop.js` is the chart page's mux; layer
+modules (`aisLayer.js`, `anchorLayer.js`, ...) own their state.
+`mapRotation.js` does course-up / head-up: `#mapDiv` sits in an
+unrotated, clipping `.map-viewport`; while rotation is on it grows past
+the viewport to the half-diagonal (`overscanFor`) so the corners stay
+covered, and Leaflet's control corners and the range-scale chip live in
+the viewport so they stay upright. One transitioned `@property
+--map-rot` drives the container rotation and every counter-rotation
+(labels, tooltips, popups), so they turn together. Pointer input is
+un-rotated in `mouseEventToContainerPoint` / `L.Draggable`. For
+anything on screen use `viewportSize()`, `toLayoutPoint()` and
+`fitPadding()`, not `map.getSize()` or raw container points.
+`historyMapLayer.js` renders the History page's separate map.
+
+**Release bundle.** `dotnet publish -c Release` (needs `npm ci` for
+esbuild) minifies JS / CSS, bundles `leafletInterop.js` and its imports
+into one hashed module (`scripts/bundle-interop.mjs`), stamps
+`CACHE_NAME` with the git hash, deletes the SDK's now-stale `.br` /
+`.gz` siblings and regenerates them (`scripts/precompress.mjs`) for
+`deploy/index.js` to serve. Debug serves the unbundled modules.
+
+**CSS tokens.** Stacking uses the `--z-*` tiers in `app.css :root`
+(map-layer, hud, quick-bar, controls, popup, topbar, alarm, toast,
+modal); safe-area insets come from `--safe-top` / `--safe-bottom` and
+the derived `--app-height` / `--content-height`. No hardcoded z-index
+or `env(safe-area-inset-*)` in new rules.
 
 ## Design decisions
 
@@ -76,7 +140,10 @@ spamming interop on every render.
   `try/catch (ObjectDisposedException)`. Page switches tear down the
   SynchronizationContext mid-render.
 - **Every `module.InvokeVoidAsync` catches `JSDisconnectedException`.**
-- **Zero compiler warnings.** Treat the analyzer as authoritative.
+- **Zero compiler warnings.** `Directory.Build.props` sets
+  `TreatWarningsAsErrors` for every project (NuGet audit warnings
+  included), so a warning fails the build. Treat the analyzer as
+  authoritative.
 - **No history-flavoured comments.** Present-tense rationale only.
   No "was X / now Y", no "from PR #N", no "tech-debt pass dropped Z".
   Git blame carries history; comments carry the *why* of the
@@ -108,7 +175,8 @@ across DST flips and leap seconds.
 ### 2. Component tests (bUnit)
 
 `OnaPlotter.Tests/Components/*Tests.cs`. Renders Razor components in
-isolation, exercises DOM + parameter contracts.
+isolation (bUnit 2: `BunitContext`, `Render<T>`), exercises DOM +
+parameter contracts.
 
 ```bash
 dotnet test OnaPlotter.Tests/OnaPlotter.Tests.csproj   # same runner
@@ -142,12 +210,15 @@ drop anchor at sundown.
 
 ### 5. JS unit tests
 
-`OnaPlotter/wwwroot/js/*.test.js`. Pure-JS modules (geoMath, geomPixels,
-markerLayer, popupHelpers, overzoomLayer, chartDownshift, aisLayer).
-node:test runner.
+`OnaPlotter/wwwroot/js/*.test.js` (plus `js/__tests__/*.test.mjs`,
+`deploy/*.test.js`, `scripts/__tests__/`). Pure-JS modules (geoMath,
+geomPixels, markerLayer, popupHelpers, overzoomLayer, chartDownshift,
+aisLayer, mapRotation, ...). node:test runner. `npm run lint` covers
+`OnaPlotter/wwwroot/js`, `deploy` and `scripts`.
 
 ```bash
-node --test 'OnaPlotter/wwwroot/js/*.test.js'
+node --test "OnaPlotter/wwwroot/js/*.test.js" "deploy/*.test.js"
+npm run lint
 ```
 
 JS hosts only renderers + low-level geometry helpers; everything else
@@ -178,8 +249,8 @@ FUZZ_SEED=12345 npm run test:fuzz                   # 40 random clicks
 Coverage report: `dotnet run --project OnaPlotter.Tests - --coverage`
 produces a `.coverage` file; merge with `dotnet-coverage merge ... -f
 cobertura` and run `reportgenerator`. Don't chase the overall line rate
-(Map.razor is a 2000-line view); target stateful sub-components with
-bUnit instead.
+(Map.razor is a ~5000-line view plus ~2000 lines of partial
+code-behind); target controllers and stateful sub-components instead.
 
 ## SignalK setup for manual testing
 
@@ -238,16 +309,20 @@ yesterday's WASM with today's HTML.
 ## Layout map
 
 - `Components/Pages/*.razor` + code-behind. `Map.razor.cs` is the resource
-  CRUD + routing.
+  CRUD + routing; the `Map.RouteEditing` / `Map.PolygonEditing` /
+  `Map.Editing` / `Map.FirstRun` partials split out the rest.
 - `Components/Map/*` - HUD, controls, per-resource `*Section.razor` rows in
   LayersPanel.
 - `Services/Api/*Api.cs` - one HTTP client per SignalK resource.
 - `Services/Alarms/*AlarmRule.cs` - rule-per-file, DI-registered.
-- `Services/Map/*` - diff-and-push controllers around JS interop.
+- `Services/Map/*` - diff-and-push `*Controller`s around JS interop.
+- `Services/Signalk/*` - delta dispatcher, per-store handlers, REST seeders.
 - `Utilities/*.cs` - pure math (Cpa, Colregs, Format, AisPalette,
   GeoBearing, RouteProgress).
 - `Models/*.cs` - value records (TrackPoint, TrackBbox, ...).
-- `wwwroot/js/leafletInterop.js` + sibling modules - renderer.
+- `wwwroot/js/leafletInterop.js` + sibling modules - renderer;
+  `mapRotation.js` course-up; `historyMapLayer.js` History map.
+- `scripts/` - Release build helpers (bundle, CACHE_NAME stamp, precompress).
 
 ## Branching + commits
 
@@ -307,14 +382,15 @@ server when deployed as a webapp. Pointing at a remote server via
 `SignalK:ServerUrl` 404s the flag and hides via `onerror`. Don't make
 anything safety-critical depend on it.
 
-**Chart overzoom vs overlays.** `recomputeChartOverzoom()` in
-`leafletInterop.js` picks the chart with the highest native maxZoom and
-stretches it past its limit. Overlays (OpenSeaMap seamarks, anything
-whose id is `openseamap` / contains `seamark` or whose tile URL has
-`/seamark/`) are excluded from the "top native" race; otherwise an
-overlay's native 18 beats a base chart's native 17 and the base chart
-disappears past its limit. New overlay plugins: match the heuristic or
-extend `isOverlayChart`.
+**Chart overlays vs base charts.** `SignalkChart.IsOverlay` (built-in
+`openseamap`, an id containing `seamark`, or a `/seamark/` tile path)
+puts a chart in `chartOverlayPane` (z 260), above the weather radar
+pane (z 250); base charts stay in `tilePane` (z 200). An overlay plugin
+that matches none of these draws under the rain: extend `IsOverlay`
+(and `SignalkChartOverlayTests`). Overzoom is per chart:
+`ChartLayerController` resolves the upscale levels (helm setting x the
+chart's `AllowUpscale`) and `overzoomLayer.js` (`withOverzoom`) applies
+them; the built-in OSM / OpenSeaMap opt out.
 
 **Anchor flow is plugin-driven (v2.0.0+).** Drop = `POST
 /plugins/anchoralarm/dropAnchor` (empty body, plugin reads GPS).

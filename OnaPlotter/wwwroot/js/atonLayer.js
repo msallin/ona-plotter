@@ -5,7 +5,7 @@
 // water - e.g. wreck warnings) get a dashed outline so the helm
 // doesn't go looking for an actual buoy.
 //
-// AtoNs are static enough that the C# side (AtonPushService) pushes
+// AtoNs are static enough that the C# side (AtonLayerController) pushes
 // the full set, at most once per AIS tick and only when the store
 // changed. setAtons diffs each mark against what it last drew, so an
 // unchanged buoy costs no DOM work; ids missing from the payload are
@@ -132,7 +132,7 @@ function makeAtonIcon(symbol, side, isVirtual) {
     return icon;
 }
 
-// Popup text is resolved C#-side (AtonPushService); escaped here
+// Popup text is resolved C#-side (AtonLayerController); escaped here
 // because names come off the air.
 export function buildAtonPopupHtml(a) {
     return `<div class="aton-popup">

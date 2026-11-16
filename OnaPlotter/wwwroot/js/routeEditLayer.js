@@ -7,8 +7,8 @@
 // Undo semantics: each addEditWaypoint or insertEditVertexOnSegment
 // pushes the inserted index onto routeEditAddStack. Undo pops the
 // most-recent index and splices that vertex out - so "undo last
-// thing I added" works for both append and mid-route insert (the
-// previous "pop the last coord" behaviour was wrong on inserts).
+// thing I added" works for both append and mid-route insert (a plain
+// "pop the last coord" would be wrong on inserts).
 
 import { haversineMeters, NM_PER_METER } from './geoMath.js';
 
@@ -381,7 +381,7 @@ export function removeRouteEditWaypoint(index) {
     rebuildRouteEditMarkers();
 }
 
-// getEditRouteStats removed: C# RouteEditing.UpdateRouteStats now
+// No route stats here: C# RouteEditing.UpdateRouteStats
 // derives (waypointCount, totalDistanceNm) from getEditRouteCoords +
 // RouteProgress.TotalDistanceMeters. One haversine sum, in C#.
 

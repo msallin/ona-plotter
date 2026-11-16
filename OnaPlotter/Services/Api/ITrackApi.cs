@@ -2,11 +2,6 @@ using OnaPlotter.Models;
 
 namespace OnaPlotter.Services.Api;
 
-// TrackBbox moved to OnaPlotter.Models - it's a domain value type
-// (geographic bounds), not an API-specific shape. Old call-sites
-// imported it from this namespace; the using above + the relocated
-// definition keeps them compiling.
-
 /// <summary>
 /// Fetches the server-stored historical track for own vessel from the
 /// SignalK History API v2 (<c>/signalk/v2/api/history/values</c>).
@@ -99,5 +94,3 @@ public enum TrackFetchPathSet
     /// rejects rows without a fix.</summary>
     WindSeed,
 }
-
-// TrackBbox is now in OnaPlotter.Models (see TrackBbox.cs).

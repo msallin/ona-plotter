@@ -29,6 +29,7 @@ import * as waypointLayerMod from './waypointLayer.js';
 import * as noteLayerMod from './noteLayer.js';
 import * as regionLayerMod from './regionLayer.js';
 import { installRotationSupport, attachRotation, detachRotation, setRotation,
+         setOverscanEnabled, unrotatedLayer, viewportSize, fitPadding,
          toContainerPoint, toLayoutPoint, toContainerVector } from './mapRotation.js';
 import { isTypingTarget, shortcutKey } from './keyboardShortcuts.js';
 import { buildSelfPopupHtml } from './ownBoatPopup.js';
@@ -51,8 +52,8 @@ let isSlowClient = false;
 // IAppSettings.OwnCogVectorMinutes / AisCogVectorMinutes (10). C#
 // updates these via setCogVectorMinutes on init + on settings change;
 // vectorEnd / the own-boat label below read the live values. The
-// AIS layer no longer needs its own copy - C# precomputes the AIS
-// COG-vector endpoint per vessel via AisPushService.FillPayload.
+// AIS layer needs no copy: C# precomputes the AIS COG-vector endpoint
+// per vessel via AisLayerController.FillPayload.
 let ownCogMinutes = 10;
 
 // Master gate for own-ship informational lines on the chart: COG
@@ -126,7 +127,7 @@ let _visibilityChange = null;
 // origin-bound URLs (flag images, future direct API hits) target
 // the right host. Empty string falls through to page-relative,
 // which only works when the SK server lives on the same origin
-// (the legacy localhost:3000 setup).
+// (e.g. the app served by SK itself on localhost:3000).
 let signalKBaseUrl = '';
 
 export function setSignalKBaseUrl(url) {
@@ -144,7 +145,7 @@ function flagUrl(mmsi) {
 // CPA pipeline - the ring is the visual companion to the alarm
 // thresholds it carries.
 
-// MarkerLayer now lives in markerLayer.js so it's unit-testable in
+// MarkerLayer lives in markerLayer.js so it's unit-testable in
 // node (see markerLayer.test.js). Each instance needs a reference to
 // the Leaflet map for removeLayer() - since `map` gets assigned in
 // initMap *after* these dicts are constructed, MarkerLayer takes the
@@ -183,14 +184,11 @@ function computeNiceScale(map, sampleHalfPx, minPx) {
 }
 
 // Wake-lock code lives in platform/wakeLock.js so it can
-// be held across every page, not just the Map. MainLayout manages it
-// now.
+// be held across every page, not just the Map. MainLayout manages it.
 
-// Zoom-level badge. Compact "z N" at glance; an amber "↑" appears
-// when the map is zoomed past the top chart's native max so tiles
-// are being scaled up. Full "native K" text moves to the title
-// tooltip rather than widening the badge - the bottom-left row
-// was pushing the depth HUD upward when the badge grew mid-pan.
+// Zoom-level badge. Compact "zN" at a glance; the longer "Zoom N"
+// text goes in the title tooltip rather than widening the badge,
+// which would push the depth HUD upward in the bottom-left row.
 const ZoomBadge = L.Control.extend({
     onAdd() {
         this._el = L.DomUtil.create('div', 'ona-zoom-badge');
@@ -200,8 +198,6 @@ const ZoomBadge = L.Control.extend({
     update() {
         if (!this._el || !this._map) return;
         const z = this._map.getZoom();
-        // Overzoom-awareness stripped (feature removed); the badge is
-        // now a plain zoom-level indicator.
         this._el.textContent = `z${z}`;
         this._el.title = `Zoom ${z}`;
     }
@@ -213,16 +209,15 @@ const ZoomBadge = L.Control.extend({
 //
 // Positioning lives in CSS (.ona-range-scale): the chip sits in the
 // bottom-centre column just above the bc-stack (anchor watch /
-// active route HUD card), NOT inside Leaflet's control rail. Helm
-// asked for it there because the bottom-left corner felt
-// disconnected from anything ("just somewhere").
+// active route HUD card), NOT inside Leaflet's control rail: a
+// bottom-left corner chip feels disconnected from anything ("just
+// somewhere").
 //
 // Visibility: only shown DURING a zoom (zoomstart -> zoomend) plus a
 // short linger so the helm reads the final value before it fades.
-// Earlier iteration kept the chip permanently visible AND a separate
-// centred chip appeared mid-pinch; the helm reported that as
-// duplicate UI. Now there's one chip, in the helm's chosen spot,
-// visible exactly when it's useful (during the zoom gesture).
+// One chip, visible exactly when it's useful (during the zoom
+// gesture); a permanently visible chip or a second mid-pinch chip
+// would be duplicate UI.
 //
 // The chip is also force-hidden via setRangeScaleHidden whenever an
 // active-route HUD card occupies the same vertical slot.
@@ -236,8 +231,10 @@ let _rangeScaleHideTimer = null;
 let _rangeScaleShown = { label: null, width: null, zoom: null };
 function initRangeScale(mapInstance) {
     _rangeScaleShown = { label: null, width: null, zoom: null };
+    // In the unrotated viewport, so the chip stays upright and on
+    // screen in course-up.
     _rangeScaleEl = L.DomUtil.create('div', 'ona-range-scale',
-        mapInstance.getContainer());
+        unrotatedLayer() ?? mapInstance.getContainer());
     _rangeScaleLabelEl = L.DomUtil.create('span', 'ona-range-scale-label',
         _rangeScaleEl);
     _rangeScaleBarEl = L.DomUtil.create('span', 'ona-range-scale-bar',
@@ -266,9 +263,9 @@ function initRangeScale(mapInstance) {
     mapInstance.on('zoomend', () => {
         updateRangeScale();
         // Linger after release so the helm reads the final value.
-        // Same PINCH_PREVIEW_LINGER_MS budget the now-removed centred
-        // chip used; combined with the .visible -> opacity transition
-        // it gives ~700 ms of stable read + 400 ms fade.
+        // PINCH_PREVIEW_LINGER_MS budget; combined with the .visible ->
+        // opacity transition it gives ~700 ms of stable read + 400 ms
+        // fade.
         if (_rangeScaleHideTimer) clearTimeout(_rangeScaleHideTimer);
         _rangeScaleHideTimer = setTimeout(
             () => _rangeScaleEl.classList.remove('visible'),
@@ -320,12 +317,12 @@ let serverTrackLayer = null;
 
 // Anchor watch state lives in anchorLayer.js.
 
-// MOB rendering: dropped as a separate layer; MOBs are now waypoints
+// MOB rendering: no separate layer; MOBs are waypoints
 // with isMob=true / isActive flags carried via the resource API. The
 // pulsing-red icon variant lives in waypointLayer.js so the chart
 // surface for any user-placed point sits in one module.
 
-// Own-vessel state lives in the layer modules now (aisLayer for CPA,
+// Own-vessel state lives in the layer modules (aisLayer for CPA,
 // anchorLayer / measureLayer for their own geometry).
 // boatMarker still stashes its data on _onaSelfData for popup rendering.
 
@@ -402,9 +399,9 @@ function readMapColors() {
 }
 
 // selfIcon is rebuilt on each initMap() call so a fresh palette read
-// is reflected. Previously it was a module-level const built before
-// CSS had a chance to load, which locked the magenta hex even after
-// the stylesheet defined a new --map-own.
+// is reflected. A module-level const would be built before CSS had a
+// chance to load and lock the magenta hex even after the stylesheet
+// defines a new --map-own.
 let selfIcon = null;
 
 function rotateMarker(marker, rad) {
@@ -490,8 +487,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient, opt
     // past the base layers' native cap. The map's view-zoom is the
     // ceiling for what L.tileLayer.maxZoom can deliver, and a
     // hardcoded 19 here would silently cap the upscale feature
-    // before the decorator even runs (the symptom the helm reported
-    // as "overzoom doesn't work"). OSM / OpenSeaMap (synthesised in
+    // before the decorator even runs ("overzoom doesn't work"). OSM / OpenSeaMap (synthesised in
     // OnaPlotter/Utilities/BuiltInCharts.cs) deliberately ship with
     // AllowUpscale=false and MaxZoom=19, so they cap at native and
     // go blank past 19 - this is intentional, so the upscaled SK
@@ -566,11 +562,10 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient, opt
     //
     // Declared BEFORE the waypoint / note / region inits below: those
     // three spread `...editModeDeps` into their options bag, and `const`
-    // is in the temporal dead zone until its line executes. The
-    // previous order ("declare after the spreads, hoping function-scope
-    // hoisting saves us") threw ReferenceError at runtime - `var`
-    // would have hoisted, but `const` does not, and a freshly-loaded
-    // page crashed the whole map render.
+    // is in the temporal dead zone until its line executes. Declaring
+    // it after the spreads throws ReferenceError at runtime - `var`
+    // would hoist, but `const` does not - and crashes the whole map
+    // render on a freshly-loaded page.
     const editModeDeps = {
         getEditModeFlags: () => ({
             routeEdit: routeEditLayerMod.isActive(),
@@ -633,10 +628,9 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient, opt
     // Zoom-level badge in the bottom-left of the Leaflet control area:
     // "z14" chip so the helm can tell at a glance whether they're at
     // z14 or z16 without poking the +/- buttons until tile detail
-    // changes. The metric + nautical scale bars used to live here too
-    // but were removed - the helm asked for a quieter chrome strip
-    // and the rose / radar overlays both carry their own range cues
-    // already (rings, radar range chip), so the scale was redundant.
+    // changes. No metric + nautical scale bars here: the helm wants a
+    // quiet chrome strip and the rose / radar overlays already carry
+    // their own range cues (rings, radar range chip).
     zoomBadge = new ZoomBadge({ position: 'bottomleft' });
     zoomBadge.addTo(map);
     map.on('zoomend', () => zoomBadge.update());
@@ -649,12 +643,9 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient, opt
     // HUD card moves on viewport changes.
     initRangeScale(map);
 
-    // (The centred pinch-zoom preview chip used to live here; it was
-    // a duplicate of the bottom-centre range-scale chip in a different
-    // spot. The helm asked for one chip in the bottom-centre slot only,
-    // visible during the zoom gesture. initRangeScale now wires the
-    // zoomstart/zoom/zoomend listeners so the bottom-centre chip
-    // appears + updates + lingers exactly when the helm wants it.)
+    // No separate pinch-zoom preview chip: initRangeScale wires the
+    // zoomstart/zoom/zoomend listeners so the single bottom-centre
+    // chip appears + updates + lingers during the zoom gesture.
 
     // Base maps (OSM, OpenSeaMap) and SignalK charts all come in through
     // addChartLayer (built-in ones synthesised in BuiltInCharts.cs), so
@@ -703,12 +694,11 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient, opt
     // mode, drop a measurement point. Otherwise just dismiss menus.
     //
     // Priority: measure FIRST, then route-edit, then polygon-edit.
-    // Helm asked for this after testing route-edit + measure
-    // simultaneously: every click landed on the route, and the
-    // ruler couldn't be extended without ending route-edit. Now an
-    // active measurement always wins the click; route-edit stays
-    // open in the background and resumes accepting clicks once
-    // measure stops.
+    // With route-edit + measure both active, route-first would land
+    // every click on the route and the ruler couldn't be extended
+    // without ending route-edit. So an active measurement always wins
+    // the click; route-edit stays open in the background and resumes
+    // accepting clicks once measure stops.
     map.on('click', (e) => {
         if (measureLayerMod.isActive()) {
             // Segment-click insertion (insertMeasurePointOnSegment)
@@ -754,7 +744,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient, opt
         // The menu is placed on screen, outside the rotated container.
         const cp = map.latLngToContainerPoint(latlng);
         const pt = toLayoutPoint(cp.x, cp.y);
-        const sz = map.getSize();
+        const sz = viewportSize();
         const x = Math.min(pt.x, sz.x - 175);
         const y = Math.min(pt.y, sz.y - 125);
         // .catch: dotNetRef can be disposed between the null-check above
@@ -890,10 +880,10 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient, opt
             return;
         }
         // COLREGS "?" link in the AIS popup: open the in-app
-        // quick-reference modal instead of navigating away. The
-        // previous href="/help/colregs" target was broken under
-        // the SK plugin mount AND took the helm off the map; the
-        // modal keeps the popup + chart context intact.
+        // quick-reference modal instead of navigating away. An
+        // href="/help/colregs" target breaks under the SK plugin
+        // mount AND takes the helm off the map; the modal keeps the
+        // popup + chart context intact.
         const colregs = e.target.closest('a[data-ona-colregs]');
         if (colregs) {
             e.preventDefault();
@@ -971,8 +961,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient, opt
 // map.zoomIn / zoomOut which already respect minZoom / maxZoom, so we
 // don't need to clamp here. No-ops before initMap so Blazor can race-
 // call without blowing up.
-// Default step matches map.zoomDelta (0.5 since the half-step zoom
-// landed). Topbar tap, keyboard +/- and wheel all snap to the same
+// Default step matches map.zoomDelta (0.5, half-step zoom). Topbar tap, keyboard +/- and wheel all snap to the same
 // half-integer levels. Blazor passes a step explicitly when it wants
 // 1.0; null / undefined falls through to the map's own delta.
 export function zoomIn(step) {
@@ -1217,7 +1206,7 @@ const FOLLOW_PAN_MIN_PX = 1.5;
  */
 function followPan(lat, lon) {
     const z = map.getZoom();
-    const size = map.getSize();
+    const size = viewportSize();
     const down = toContainerVector(0, size.y * 0.1);
     const newCenterPx = map.project([lat, lon], z).add(L.point(down.x, down.y));
     if (newCenterPx.distanceTo(map.project(map.getCenter(), z)) < FOLLOW_PAN_MIN_PX) return;
@@ -1346,15 +1335,20 @@ export function setRadarRangeRings(enabled, count) {
  */
 export function setCogVectorMinutes(ownMin, _aisMin) {
     if (typeof ownMin === 'number' && isFinite(ownMin) && ownMin > 0) ownCogMinutes = ownMin;
-    // _aisMin is now consumed C#-side directly (AisPushService reads
+    // _aisMin is consumed C#-side directly (AisLayerController reads
     // _settings.AisCogVectorMinutes per push and bakes the COG vector
     // endpoint into each AisVesselPayload via GeoMath.VectorEnd). The
-    // parameter stays in the signature so the existing
+    // parameter stays in the signature to match the
     // IMapControlsJs.SetCogVectorMinutesAsync(ownMin, aisMin) interop
-    // contract doesn't change; the underscore name signals "received
-    // but no longer needed on this side". A future cleanup can drop
-    // the second arg from the wire.
+    // contract; the underscore name signals "received
+    // but not needed on this side".
 }
+
+// Overlay charts (C# SignalkChart.IsOverlay: seamarks) get their own
+// pane above the weather radar (weatherLayer.js, z 250) and below the
+// vector overlays (overlayPane, z 400), so precipitation tints the base
+// charts but never hides a buoy or light. Base charts stay in tilePane.
+const CHART_OVERLAY_PANE = 'chartOverlayPane';
 
 // --- Night Mode ---
 
@@ -1362,10 +1356,10 @@ export function setCogVectorMinutes(ownMin, _aisMin) {
 export function setNightMode(enabled, speedPaletteForMode) {
     if (!map) return;
     if (Array.isArray(speedPaletteForMode)) setSpeedPalette(speedPaletteForMode);
-    // The weather overlay has its own pane above the charts; it gets the
-    // same red-shift so a bright precipitation layer doesn't break the
-    // night palette.
-    for (const name of ['tilePane', 'weatherPane']) {
+    // The weather overlay and the overlay charts have their own panes
+    // above the base charts; they get the same red-shift so a bright
+    // precipitation or seamark layer doesn't break the night palette.
+    for (const name of ['tilePane', 'weatherPane', CHART_OVERLAY_PANE]) {
         const pane = map.getPane(name);
         if (!pane) continue;
         pane.style.filter = enabled
@@ -1411,11 +1405,10 @@ const chartTileErrors = new Map();   // id -> total count
 // cap by 1 and redraw - the helm's chart server claims a maxzoom
 // the tile pyramid doesn't actually reach (common with MBTiles
 // providers that publish the requested-build maxzoom even when the
-// build truncated earlier). v1 of the overzoom feature avoided
-// runtime probes precisely because mixed signals (404 vs 200-empty
-// vs redirect) made the calibrator unstable; this iteration only
-// listens to bonafide `tileerror` events (the 404 case) and only
-// downshifts when the error is AT the current cap, so the fix is
+// build truncated earlier). Runtime probes are unstable because of
+// mixed signals (404 vs 200-empty vs redirect), so the calibrator
+// only listens to bonafide `tileerror` events (the 404 case) and only
+// downshifts when the error is AT the current cap, which keeps it
 // idempotent: once we drop to the chart's actual native zoom,
 // errors stop and the calibrator goes quiet.
 const chartZoomErrors = new Map();   // id -> Map<zoom, count>
@@ -1443,11 +1436,17 @@ function acceptTilesInAnyBox(layer, boxes) {
     };
 }
 
-export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds, upscaleLevels, attribution) {
+function ensureChartOverlayPane() {
+    if (map.getPane(CHART_OVERLAY_PANE)) return;
+    const pane = map.createPane(CHART_OVERLAY_PANE);
+    pane.style.zIndex = '260';
+    pane.style.pointerEvents = 'none';
+}
+
+export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds, upscaleLevels, attribution, overlay) {
     if (!map || chartLayers.has(id)) return false;
-    // OSM + OpenSeaMap used to be hardcoded as Leaflet base layers
-    // attached at initMap time. They now flow through this function
-    // like any other chart, synthesised on the C# side via
+    // OSM + OpenSeaMap flow through this function like any other
+    // chart, synthesised on the C# side via
     // OnaPlotter/Utilities/BuiltInCharts.cs. The helm can toggle them
     // off, reorder them, and they participate in the same opacity
     // stacking + chart-upscale opt-out that SignalK-served charts do.
@@ -1494,14 +1493,15 @@ export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds, up
         // licence string through here so Leaflet's bottom-right
         // attribution control surfaces it whenever the layer is on.
         attribution: attribution || '',
-        // referrerPolicy: matches what the previous hardcoded
-        // osmBaseLayer / seaBaseLayer used so the OSM tile servers
+        // referrerPolicy: so the OSM tile servers
         // see only the origin (not the full referrer URL) - some
         // tile providers reject when the referrer carries a path
         // they don't whitelist.
         referrerPolicy: 'strict-origin-when-cross-origin',
-        errorTileUrl: ''  // Suppress broken tile images for out-of-bounds requests.
+        errorTileUrl: '',  // Suppress broken tile images for out-of-bounds requests.
+        pane: overlay ? CHART_OVERLAY_PANE : 'tilePane',
     };
+    if (overlay) ensureChartOverlayPane();
     // Constrain tile requests to the chart's coverage area. A SK
     // provider sending [NaN, NaN, NaN, NaN] or [Infinity, ...] or
     // out-of-range lat/lon would otherwise reach L.latLngBounds and
@@ -1537,9 +1537,9 @@ export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds, up
         chartTileErrors.set(id, chartTileErrors.get(id) + 1);
         // Downshift calibrator. Pure decision logic in chartDownshift.js;
         // this handler reads layer state, asks decideDownshift what to
-        // do, then applies side-effects. Refactor preserves the
-        // historical behaviour (idempotent, only acts at the cap, only
-        // on bonafide tileerror events) - pinned by chartDownshift.test.js.
+        // do, then applies side-effects. Behaviour (idempotent, only
+        // acts at the cap, only on bonafide tileerror events) is pinned
+        // by chartDownshift.test.js.
         const zoomMap = chartZoomErrors.get(id);
         if (!zoomMap) return;
         const z = ev?.coords?.z;
@@ -1615,16 +1615,13 @@ export function removeChartLayer(id) {
     chartLayers.remove(id);
     chartTileErrors.delete(id);
     chartZoomErrors.delete(id);
-    // OSM + OpenSeaMap were never removed in addChartLayer (see the
-    // comment there for why), so nothing to re-add here.
     restackChartOpacities();
 }
 
 // Graduated opacity for stacked charts. The bottom (primary) chart
 // always renders at full opacity so a single-chart helm sees the
-// chart's authored colours / contrast verbatim - the previous
-// flat-0.85 dim made raster MBTiles look noticeably less crisp than
-// they should. Each chart stacked ABOVE the primary then ramps
+// chart's authored colours / contrast verbatim; any dim makes raster
+// MBTiles look noticeably less crisp than they should. Each chart stacked ABOVE the primary then ramps
 // down to 0.45 so the helm reads the stack as layers rather than the
 // topmost chart hiding what's underneath. The 0.45 floor keeps the
 // top layer visible on a 4+ chart stack.
@@ -1748,9 +1745,9 @@ export function addRoute(id, name, coords, totalNm) {
     }).addTo(map);
 
     // totalNm is precomputed in C# (see Map.razor's AddRouteToMap
-    // call site - RouteProgress.TotalDistanceMeters / 1852). JS
-    // used to redo the haversine sum here; the duplication has been
-    // removed per the project rule (decisions/math in C#). Defensive
+    // call site - RouteProgress.TotalDistanceMeters / 1852); JS does
+    // not redo the haversine sum, per the project rule (decisions/math
+    // in C#). Defensive
     // fallback if a future caller forgets the arg: 0 reads as
     // "missing" and the popup just shows "N WP" without the distance,
     // which is honest rather than wrong.
@@ -1767,11 +1764,10 @@ export function addRoute(id, name, coords, totalNm) {
             if (!ll) return;
             // Measure beats route / polygon edit on a route-polyline
             // click. Mirrors the same priority on the map-level click
-            // handler above; the helm's original complaint was that
-            // measuring AROUND an existing route was impossible
-            // because the polyline ate every click. Marker / region /
-            // active-route polyline clicks deliberately use the
-            // historical route-first order - those targets are
+            // handler above; otherwise measuring AROUND an existing
+            // route is impossible because the polyline eats every
+            // click. Marker / region / active-route polyline clicks
+            // deliberately use route-first order - those targets are
             // unambiguous (the helm tapped a specific item) so the
             // measure-first override is scoped to the empty-map and
             // stale-route polyline cases only.
@@ -1864,9 +1860,9 @@ function wireRouteEdit(popup, id) {
 // primary action is "Deactivate" (clear the SignalK course) rather
 // than "Activate". Edit + Delete keep working on the route resource
 // via the same JSInvokables the regular-route popup wires up.
-// ETA row dropped per helm-feedback ("popup takes too much space"):
-// the HudRouteCard already shows ETA + TTG continuously, so the
-// popup duplicate was redundant chrome.
+// No ETA row: the HudRouteCard already shows ETA + TTG continuously,
+// so a popup duplicate would be redundant chrome taking too much
+// space.
 function buildActiveRoutePopupHtml(id, name, wpCount, nmTotal) {
     const safeName = esc(name || `Route ${id.substring(0, 6)}`);
     return `
@@ -2088,9 +2084,8 @@ export const getEditRouteCoords = () => routeEditLayerMod.getEditRouteCoords();
 export const undoLastEditWaypoint = () => routeEditLayerMod.undoLastEditWaypoint();
 export const reverseEditRoute = () => routeEditLayerMod.reverseEditRoute();
 export const removeRouteEditWaypoint = (index) => routeEditLayerMod.removeRouteEditWaypoint(index);
-// getEditRouteStats removed: C# polls getEditRouteCoords and computes
-// (count + total NM) via RouteProgress.TotalDistanceMeters. The JS
-// haversine duplicate has been deleted from routeEditLayer.js.
+// No getEditRouteStats: C# polls getEditRouteCoords and computes
+// (count + total NM) via RouteProgress.TotalDistanceMeters.
 export const loadRouteForEdit = (coords) => routeEditLayerMod.loadRouteForEdit(coords);
 // `function` declarations rather than `const` arrows so they hoist
 // to the top of the module: the call sites (line click handlers,
@@ -2109,9 +2104,9 @@ export const removePolygonEditVertex = (index) => polygonEditLayerMod.removePoly
 export const loadPolygonForEdit = (coords) => polygonEditLayerMod.loadPolygonForEdit(coords);
 function addPolygonVertexInternal(lat, lon) { return polygonEditLayerMod.addPolygonVertexInternal(lat, lon); }
 
-// pointToSegmentPixels was extracted to ./geomPixels.js so it can
-// be unit-tested without a Leaflet map. The dep-injection wiring
-// below imports from there; the function lives in one place now.
+// pointToSegmentPixels lives in ./geomPixels.js so it can be
+// unit-tested without a Leaflet map. The dep-injection wiring below
+// imports from there.
 
 // Pan the map to a given lat/lon without changing the current zoom.
 // Used by the layers-panel "Focus" button on notes (and potentially
@@ -2123,7 +2118,7 @@ function addPolygonVertexInternal(lat, lon) { return polygonEditLayerMod.addPoly
 export function fitBounds(minLat, minLon, maxLat, maxLon) {
     if (!map) return;
     const bounds = L.latLngBounds([[minLat, minLon], [maxLat, maxLon]]);
-    map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
+    map.fitBounds(bounds, { padding: fitPadding(40), maxZoom: 16 });
 }
 
 export function panTo(lat, lon) {
@@ -2277,10 +2272,9 @@ export function setCurrentArrow(selfLat, selfLon, setRad, driftMs) {
         if (currentArrow && map) { map.removeLayer(currentArrow); currentArrow = null; }
         return;
     }
-    // Arrow length proportional to drift. Helm flagged the arrow as
-    // "very prominent but not that important" - drift magnitude is
-    // already shown in the bottom-right HUD, so the on-chart arrow
-    // is purely a directional cue. Tone it down to the same visual
+    // Arrow length proportional to drift. Drift magnitude is already
+    // shown in the bottom-right HUD, so the on-chart arrow is purely
+    // a directional cue and must not be prominent. Tone it down to the same visual
     // weight class as the COG vector (thin + dashed + dim) and cap
     // the length at 1000m visual so a strong tide doesn't paint a
     // 2km line across the chart.
@@ -2336,20 +2330,19 @@ export function enableKeyboardShortcuts(dotNetObjRef, keys) {
 
         // Arrow keys pan the map. Leaflet's built-in keyboard handler
         // requires the map container to have focus, which gets lost
-        // whenever the user clicks any other element - in practice
-        // arrows just scrolled the page. Drive it directly so arrows
-        // always pan the chart, regardless of focus.
+        // whenever the user clicks any other element, so arrows would
+        // just scroll the page. Drive it directly so arrows always pan
+        // the chart, regardless of focus.
         //
-        // Step size: 1/5 of viewport by default. Earlier 1/3 lurched
-        // the chart noticeably with each tap; user feedback was that
-        // a smaller step gives better fine-positioning at the helm
-        // without going as small as the previous 1/8. Shift = full
-        // viewport for coarse scrubbing across passages.
+        // Step size: 1/5 of viewport by default. 1/3 lurches the chart
+        // noticeably with each tap; 1/8 is too fine. 1/5 gives good
+        // fine-positioning at the helm. Shift = full viewport for
+        // coarse scrubbing across passages.
         if (map && (e.key === 'ArrowUp' || e.key === 'ArrowDown'
                     || e.key === 'ArrowLeft' || e.key === 'ArrowRight'))
         {
             e.preventDefault();
-            const size = map.getSize();
+            const size = viewportSize();
             const frac = e.shiftKey ? 1.0 : 1 / 5;
             let dx = 0, dy = 0;
             switch (e.key) {
@@ -2411,8 +2404,8 @@ export function setFollow(follow) {
 // While Follow is engaged the boat sits at the map centre, so wheel /
 // pinch zoom should pivot around the centre too - otherwise zooming
 // in on an off-centre cursor immediately fights the next position
-// update which yanks the view back to centre, producing the "strange
-// jumping" the helm flagged. Leaflet exposes 'center' as an option
+// update which yanks the view back to centre, producing "strange
+// jumping". Leaflet exposes 'center' as an option
 // value for both handlers; flipping the option + re-enabling the
 // handler rebinds it with the new pivot rule. When Follow drops, we
 // restore the default cursor-anchored zoom.
@@ -2438,7 +2431,7 @@ function applyFollowZoomMode() {
     } catch (_) {
         // Older Leaflet builds without the handler refs - the helm
         // sees the slightly off-centre zoom on the first interaction,
-        // which is still a strict improvement over the pre-fix lurch.
+        // which is acceptable.
     }
 }
 
@@ -2448,6 +2441,9 @@ function applyFollowZoomMode() {
 export function setMapOrientation(mode) {
     mapOrientation = mode;
     if (!map) return;
+    // Oversize the container before turning it, so the corners are
+    // already covered when the rotation starts.
+    setOverscanEnabled(mode !== 'north');
     const deg = orientationDeg(boatMarker?._onaSelfData);
     if (deg != null) setRotation(deg);
 }
@@ -2461,11 +2457,12 @@ function orientationDeg(fix) {
 }
 
 // Rotates the chart so `deg` points up. mapRotation.js unwraps the
-// angle onto the previous one so the 0.5 s CSS transition always turns
-// the short way, and writes --map-rot on the map container for the
-// counter-rotated labels. The 1 deg gate keeps sub-degree COG jitter
-// from restyling the container on every fix; a CSS transform never
-// changes the container's layout size, so Leaflet needs no resize.
+// angle onto the previous one so the 0.5 s --map-rot transition always
+// turns the short way; the container and the counter-rotated labels
+// read that one property. The 1 deg gate keeps sub-degree COG jitter
+// from restyling the container on every fix. The rotation itself never
+// changes the container's layout size (the oversize is set once per
+// orientation mode), so Leaflet needs no resize per fix.
 function applyMapRotation(deg) {
     if (!map) return;
     setRotation(deg, 1);
@@ -2487,7 +2484,7 @@ export function zoomToTrack() {
     if (typeof trackLayer.getBounds !== 'function') return; // older map instance
     const bounds = trackLayer.getBounds();
     if (bounds && bounds.isValid()) {
-        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
+        map.fitBounds(bounds, { padding: fitPadding(40), maxZoom: 16 });
         return;
     }
     // No track yet: fall back to the boat's position if we have one.
@@ -2541,12 +2538,6 @@ export function dispose() {
     activeRouteLayerMod.dispose();
     courseLineLayerMod.dispose();
     laylineLayerMod.dispose();
-    // `currentLabel` used to exist as a sibling of `currentArrow` for
-    // a drift-speed tooltip on the tidal-current arrow; that label was
-    // dropped but the assignment lingered here under ES module strict
-    // mode, throwing ReferenceError on every dispose() and surfacing
-    // as "Unhandled exception rendering component" in Blazor's error
-    // boundary when the user navigated off the Chart page. Removed.
     currentArrow = null;
     weatherLayerMod.dispose();
     routeEditLayerMod.dispose();
@@ -2557,6 +2548,6 @@ export function dispose() {
     atonLayerMod.dispose();
     marinePoiLayerMod.dispose();
     // AIS state cleanup happens in aisLayerMod.dispose() above.
-    // dotNetRef is now nulled at the TOP of dispose() so map.remove()'s
+    // dotNetRef is nulled at the TOP of dispose() so map.remove()'s
     // synchronous unload handlers can't race into a half-disposed ref.
 }

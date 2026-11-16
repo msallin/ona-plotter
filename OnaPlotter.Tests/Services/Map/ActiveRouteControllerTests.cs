@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Time.Testing;
 using System.Net.Http;
 using OnaPlotter.Models;
 using OnaPlotter.Services.Api;
@@ -100,12 +101,6 @@ public class ActiveRouteControllerTests
             Task.FromResult(ApiResult.Ok);
     }
 
-    private sealed class TimeBox
-    {
-        public DateTime Now { get; set; } = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
-        public DateTime Get() => Now;
-    }
-
     /// <summary>
     /// Stub IMapControlsJs that records SetRangeScaleHiddenAsync
     /// calls. ActiveRouteController uses it to toggle the bottom-centre
@@ -150,19 +145,19 @@ public class ActiveRouteControllerTests
         FakeRouteApi api,
         FakeControlsJs controls,
         List<string> warnings,
-        TimeBox time)
+        FakeTimeProvider time)
     NewSync(bool connected = true)
     {
         var js = new FakeRouteJs();
         var api = new FakeRouteApi();
         var controls = new FakeControlsJs();
-        var time = new TimeBox();
+        var time = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero));
         var warnings = new List<string>();
         var sync = new ActiveRouteController(
             js, controls, api,
             isSignalKConnected: () => connected,
             stopTimeoutWarning: msg => warnings.Add(msg),
-            utcNow: () => time.Get());
+            time: time);
         return (sync, js, api, controls, warnings, time);
     }
 
@@ -326,7 +321,7 @@ public class ActiveRouteControllerTests
         await sync.SyncAsync(ActiveRoute("/resources/routes/r1", 54.6, 11.3, pointIndex: 1), new HashSet<string>(), []);
         sync.MarkCourseStopPending();
 
-        time.Now = time.Now.AddSeconds(6);
+        time.Advance(TimeSpan.FromSeconds(6));
         await sync.SyncAsync(ActiveRoute("/resources/routes/r1", 54.6, 11.3, pointIndex: 1), new HashSet<string>(), []);
 
         await Assert.That(warnings.Count).IsEqualTo(1);
@@ -344,7 +339,7 @@ public class ActiveRouteControllerTests
         await sync.SyncAsync(ActiveRoute("/resources/routes/r1", 54.6, 11.3, pointIndex: 1), new HashSet<string>(), []);
         sync.MarkCourseStopPending();
 
-        time.Now = time.Now.AddSeconds(20);
+        time.Advance(TimeSpan.FromSeconds(20));
         await sync.SyncAsync(ActiveRoute("/resources/routes/r1", 54.6, 11.3, pointIndex: 1), new HashSet<string>(), []);
 
         await Assert.That(warnings).IsEmpty();
@@ -361,7 +356,7 @@ public class ActiveRouteControllerTests
         sync.MarkCourseStopPending();
         await sync.SyncAsync(new NavigationData(), new HashSet<string>(), []);
 
-        time.Now = time.Now.AddSeconds(20);
+        time.Advance(TimeSpan.FromSeconds(20));
         await sync.SyncAsync(new NavigationData(), new HashSet<string>(), []);
 
         await Assert.That(warnings).IsEmpty();
@@ -422,14 +417,13 @@ public class ActiveRouteControllerTests
     [Test]
     public async Task GeometryFetch_Timeout_Does_Not_Propagate()
     {
-        // Pins the runtime-stability fix: a slow / unreachable SK
+        // Pins runtime stability: a slow / unreachable SK
         // server (HttpClient 8 s timeout -> TaskCanceledException)
         // must NOT propagate out of SyncAsync, because HandleDataChanged
         // is async-void and an unhandled exception there terminates
         // the WASM runtime ("Assert failed: .NET runtime already exited
-        // with 1"). Repro on the helm 2026-05-02; root cause was the
-        // raw `await _routeApi.GetCoordinatesAsync(currentHref)` with
-        // no try/catch.
+        // with 1"). A raw `await _routeApi.GetCoordinatesAsync(currentHref)`
+        // with no try/catch is enough to trigger it.
         var (sync, _, api, _, _, _) = NewSync();
         api.ThrowOnFetch = () => new TaskCanceledException("net_http_request_timedout, 8");
         var data = new NavigationData();

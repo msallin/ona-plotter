@@ -17,9 +17,8 @@ namespace OnaPlotter.Services;
 ///
 ///   try { ... } catch (Exception ex) { await relay.ReportAsync("X failed", ex); }
 ///
-/// The previous version of this file imported a sibling ES module
-/// (<c>errorRelay.js</c>) that delegated back to the bootstrap; that
-/// shim is gone - one less file, one less round-trip on cold start.
+/// It calls the bootstrap function directly rather than importing an ES
+/// module, saving a round-trip on cold start.
 /// </summary>
 public sealed class ClientErrorRelay
 {

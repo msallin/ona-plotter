@@ -8,10 +8,10 @@
    (Add / Measure / Race), and finally Layers. "Less-essential" toggles
    (Legend / Night / Orient) live inside the More menu; the More
    button shows a dot when any of its contents are active so an "on"
-   state doesn't hide behind a closed menu. Laylines used to live
-   here too; they moved to the Layers panel "Own ship" section under
-   the master "Show ship lines" toggle so the helm has one knob for
-   all own-ship informational chart lines. *@
+   state doesn't hide behind a closed menu. Laylines live in the
+   Layers panel "Own ship" section next to the master "Show ship
+   lines" toggle so the helm has one place for all own-ship
+   informational chart lines. *@
 
 <div class="map-controls">
     @* Overflow menu anchor. Shows a dot badge when any contained
@@ -42,12 +42,10 @@
                    on the desktop layout finds the same items in the
                    same logical groups (navigation -> safety -> view ->
                    create -> layers). *@
-                @* Follow / Free was previously in the phone-overflow
-                   group (.ctrl-more-overflow) so phone bar showed only
-                   [More, Layers]. Helm flagged the Follow toggle as a
-                   one-tap-recovery affordance ("snap chart back to
-                   the boat") that doesn't deserve a menu indirection
-                   on a phone. Now in the always-visible bar; the
+                @* Follow / Free is a one-tap-recovery affordance
+                   ("snap chart back to the boat") that doesn't
+                   deserve a menu indirection on a phone, so it sits
+                   in the always-visible bar; the
                    .ctrl-more-mobile-hide class suppresses this
                    menu row on phones so the bar version isn't
                    duplicated. Desktop / iPad still show this row in
@@ -154,8 +152,8 @@
                     <span>Legend</span>
                 </button>
                 @* Night mode toggle. One click on, one click off -
-                   the previous preset cycle (dusk / soft / amber /
-                   red) was helm-flagged as confusing. *@
+                   a preset cycle (dusk / soft / amber / red) confuses
+                   the helm. *@
                 <button class="ctrl-more-item @(NightMode ? "ctrl-more-active" : "")"
                         @onclick="() => Select(OnToggleNight)"
                         title="Night mode (N)">
@@ -174,7 +172,7 @@
                     <span class="ctrl-more-ico">@((MarkupString)Icons.Harbor)</span>
                     <span>Harbor@(HarborMode ? " (on)" : "")</span>
                 </button>
-                @* Orient lives in the More menu now (was in the bar). It's a
+                @* Orient lives in the More menu. It's a
                    set-and-forget choice - helms cycle North-up / Course-up /
                    Heading-up at most a few times per passage, so it doesn't
                    earn a permanent bar slot. *@
@@ -205,7 +203,7 @@
     <div class="ctrl-sep"></div>
 
     @* Follow / Free stays in the bar on every viewport (no
-       .ctrl-btn-overflow). Helm-feedback: on a phone, the helm wants
+       .ctrl-btn-overflow). On a phone, the helm wants
        a one-tap "snap back to the boat" affordance without diving
        into the More menu first. Mobile bar therefore renders
        [More, Free/Follow, Layers] -- the three controls that earn
@@ -229,9 +227,8 @@
             @onclick="OnAnchorClicked"
             title="@(anchorClearConfirming ? "Tap again to raise anchor" : AnchorActive ? "Raise anchor (A)" : "Drop anchor (A)")">
         <span class="ctrl-ico">@((MarkupString)Icons.Anchor)</span>
-        @* "Anchored" reads as state ("an anchor IS down") rather than
-           the previous "Set", which the helm field-tested as ambiguous
-           ("set what?"). The button is a state indicator + toggle: when
+        @* "Anchored" reads as state ("an anchor IS down"); "Set"
+           field-tested as ambiguous ("set what?"). The button is a state indicator + toggle: when
            inactive it says "Anchor" (the noun, also the affordance),
            when active it says "Anchored" (the state). *@
         @* Suppress the (A) suffix during the confirm window: the
@@ -285,9 +282,8 @@
 
     @* Add button + its flyout menu. Menu lives inside the wrap so
        position: absolute anchors above the button, same pattern as More.
-       Previously the menu rendered in Map.razor with a fixed left: 12px
-       which put it under More on the left edge of the bar rather than
-       above the Add button.
+       A fixed left offset in Map.razor would put it under More on the
+       left edge of the bar rather than above the Add button.
 
        Route lives inside this menu rather than as its own top-level
        button - the bar was getting crowded and "add a new thing to
@@ -326,12 +322,11 @@
             </div>
         }
     </div>
-    @* Measure sits immediately right of Add: helm asked for it next to
-       the create-bucket since both are "shape work I'm doing on the
-       chart". Was previously between Follow and Centre, where it
-       interrupted the navigation grouping. No `ctrl-btn-overflow` -
-       Measure earns a permanent bar slot on every viewport (the More
-       menu's phone-overflow Measure entry is gone too). *@
+    @* Measure sits immediately right of Add, next to the
+       create-bucket, since both are "shape work I'm doing on the
+       chart"; between Follow and Centre it would interrupt the
+       navigation grouping. On narrow viewports it folds into the
+       More menu like the other .ctrl-btn-overflow buttons. *@
     <button class="ctrl-btn ctrl-btn-overflow @(MeasureActive ? "active" : "")"
             @onclick="OnToggleMeasure"
             title="Measure distance + bearing (D)">
@@ -352,10 +347,10 @@
     <div class="ctrl-sep"></div>
 
     @* Layers stays visible in the bar on every viewport (no
-       .ctrl-btn-overflow). Helm-feedback: Layers is the most-used
+       .ctrl-btn-overflow). Layers is the most-used
        toggle on a phone (chart picker, AIS visibility, depth
        overlays). The phone bar therefore renders [More] + [Layers]
-       even though every other control collapsed into More. The
+       even though every other control collapses into More. The
        More menu still carries a Layers row for the desktop overflow
        but it's gated by .ctrl-more-overflow which only shows on
        phone - on phone the bar version is enough so the duplicate
@@ -399,9 +394,8 @@
 
     [Parameter] public EventCallback OnToggleFollow { get; set; }
     [Parameter] public EventCallback OnCycleOrientation { get; set; }
-    /// <summary>One click on / one click off. Replaces the previous
-    /// dusk / soft / amber / red cycle that was helm-flagged as
-    /// confusing.</summary>
+    /// <summary>One click on / one click off. A dusk / soft / amber /
+    /// red cycle confuses the helm.</summary>
     [Parameter] public EventCallback OnToggleNight { get; set; }
     [Parameter] public EventCallback OnToggleAnchor { get; set; }
     [Parameter] public EventCallback OnToggleMob { get; set; }
@@ -521,13 +515,12 @@
 
     // Dot indicator on the More button when any of its contents is on,
     // so Night / Harbor being active is visible without opening the
-    // menu. Measure used to be in this list, but it now lives on the
-    // bar (right of Add) on every viewport size; the bar button itself
-    // shows the active state, so the More dot would be misleading.
+    // menu. Measure is not in this list: it lives on the bar (right of
+    // Add) on every viewport size and the bar button itself shows the
+    // active state, so the More dot would be misleading.
     // Harbor mode IS in the list - the helm needs to see at a glance
     // "alarms are suppressed" so a forgotten Harbor mode doesn't ride
-    // into open water. Laylines moved to the Layers panel under the
-    // master "Show ship lines" toggle so they're no longer here.
+    // into open water.
     private bool AnyMoreItemActive => NightMode || HarborMode;
 
     // Dynamic tooltip: when items are active it reads "More (on:
@@ -547,7 +540,7 @@
     }
 
     // --- More overflow menu ---
-    // MoreMenuOpen is now owned by the parent (Map.razor) so the three
+    // MoreMenuOpen is owned by the parent (Map.razor) so the three
     // bottom-bar flyouts (More / Add / Layers) can be mutually
     // exclusive - opening one must close the others. The parent
     // routes the tap through OnToggleMore, which flips the flag and

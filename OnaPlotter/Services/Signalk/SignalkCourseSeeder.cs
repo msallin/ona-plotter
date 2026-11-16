@@ -11,10 +11,9 @@ namespace OnaPlotter.Services.Signalk;
 /// (<c>/signalk/v2/api/vessels/self/navigation/course</c>). The v1
 /// self-tree doesn't expose this endpoint at all, which is why a
 /// route activated BEFORE OnaPlotter connects (another plotter, a
-/// previous browser session, freeboard-sk in a second tab) stayed
-/// invisible - the subscription stream only replays deltas on
-/// change, and the activeRoute href hadn't changed since we
-/// connected.
+/// previous browser session, freeboard-sk in a second tab) is
+/// otherwise invisible: the subscription stream only delivers deltas on
+/// change, and the activeRoute href hasn't changed since we connected.
 ///
 /// <para>
 /// Response shape (per SignalK Course API v2 spec): flat object,
@@ -38,6 +37,9 @@ namespace OnaPlotter.Services.Signalk;
 /// left untouched while a course stays active so the auto-advance edge
 /// detector doesn't see a reset leg flag as a fresh edge.
 /// </para>
+/// <para>Transport, timeout and malformed-body failures follow
+/// <see cref="ResourceHttp"/>'s policy (logged at Warning; the course
+/// then arrives through live deltas).</para>
 /// </summary>
 public sealed class SignalkCourseSeeder
 {
@@ -65,34 +67,33 @@ public sealed class SignalkCourseSeeder
     /// Fetch the v2 course endpoint and apply activeRoute / nextPoint /
     /// previousPoint to <see cref="NavigationData"/>. Best-effort: 404
     /// (no v2 Course API or no course-provider plugin) is silent at
-    /// Debug level; an unexpected exception is logged at Warning.
+    /// Debug level.
     /// </summary>
     public async Task SeedAsync(CancellationToken ct)
     {
-        JsonDocument? doc = null;
         try
         {
             var url = _baseUrl.Combine("/signalk/v2/api/vessels/self/navigation/course");
-            using var res = await _http.GetAsync(url, ct);
-            if (!res.IsSuccessStatusCode)
+            var result = await ResourceHttp.GetJsonAsync(_http, url, _logger, static root => root.Clone(), ct);
+            if (!result.Success)
             {
                 // 404 is expected on servers without the v2 Course API
                 // or course-provider plugin; log at Debug to keep the
-                // noise floor low.
-                _logger.LogDebug("v2 course endpoint {Url} returned {Status}", url, (int)res.StatusCode);
+                // noise floor low. Transport failures were already
+                // logged at Warning by ResourceHttp.
+                _logger.LogDebug("v2 course endpoint {Url} failed: {Status} {Error}", url, result.StatusCode, result.Error);
                 return;
             }
 
-            using var stream = await res.Content.ReadAsStreamAsync(ct);
-            doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
-            if (doc.RootElement.ValueKind != JsonValueKind.Object) return;
+            var root = result.Value;
+            if (root.ValueKind != JsonValueKind.Object) return;
 
             bool seeded = false;
 
             // activeRoute: an object when a route is active, null when
             // cleared. Members mirror the SK v2 spec above; OnaPlotter
             // tracks href / name / pointIndex / pointTotal.
-            bool hasActiveRoute = doc.RootElement.TryGetProperty("activeRoute", out var ar)
+            bool hasActiveRoute = root.TryGetProperty("activeRoute", out var ar)
                 && ar.ValueKind == JsonValueKind.Object;
             if (hasActiveRoute)
             {
@@ -110,7 +111,7 @@ public sealed class SignalkCourseSeeder
             // a type discriminator ("RoutePoint" / "Waypoint" / ...).
             // Only position matters to the HUD; type is informational.
             bool hasNext = false, hasPrevious = false;
-            if (doc.RootElement.TryGetProperty("nextPoint", out var np)
+            if (root.TryGetProperty("nextPoint", out var np)
                 && np.TryGetLatLon(out var npLat, out var npLon))
             {
                 _data.ApplyCourseNextPointPosition(npLat, npLon);
@@ -118,7 +119,7 @@ public sealed class SignalkCourseSeeder
                 seeded = true;
             }
 
-            if (doc.RootElement.TryGetProperty("previousPoint", out var pp)
+            if (root.TryGetProperty("previousPoint", out var pp)
                 && pp.TryGetLatLon(out var ppLat, out var ppLon))
             {
                 _data.ApplyCoursePreviousPointPosition(ppLat, ppLon);
@@ -131,7 +132,7 @@ public sealed class SignalkCourseSeeder
             // arrival ring + the client APPROACH alarm threshold use
             // the server's value on the very first frame after connect,
             // rather than waiting for the next delta to land.
-            if (doc.RootElement.TryGetProperty("arrivalCircle", out var ac)
+            if (root.TryGetProperty("arrivalCircle", out var ac)
                 && ac.ValueKind == JsonValueKind.Number)
             {
                 seeded |= _data.Apply(
@@ -167,10 +168,5 @@ public sealed class SignalkCourseSeeder
             }
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "v2 course REST seed failed (active route won't appear until the next delta)");
-        }
-        finally { doc?.Dispose(); }
     }
 }

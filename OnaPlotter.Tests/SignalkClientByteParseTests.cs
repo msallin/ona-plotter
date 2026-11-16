@@ -31,7 +31,7 @@ public class SignalkClientByteParseTests
     private static SignalkClient NewClient(AisStore? store = null) =>
         new(
             baseUrl: new FakeBaseUrl(),
-            logger: NullLogger<SignalkClient>.Instance,
+            loggerFactory: NullLoggerFactory.Instance,
             data: new OnaPlotter.Models.NavigationData(),
             track: new TrackBuffer(),
             ais: store ?? new AisStore(),
@@ -78,7 +78,7 @@ public class SignalkClientByteParseTests
     {
         // Equivalence: routing the same payload through both entry
         // points should leave the AisStore in identical states. This
-        // is the contract that lets the older test suite keep using
+        // is the contract that lets string-based tests use
         // ProcessMessage(string) without diverging from production.
         const string delta = """
             {"context":"vessels.urn:mrn:imo:mmsi:244111222",

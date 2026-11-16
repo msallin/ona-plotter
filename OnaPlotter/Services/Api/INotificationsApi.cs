@@ -22,11 +22,10 @@ namespace OnaPlotter.Services.Api;
 ///     stays. Maps onto helm-style "I hear it, stop the klaxon".</description>
 ///   </item>
 ///   <item>
-///     <term>Raise / Clear (Phase B)</term>
+///     <term>Raise / Clear</term>
 ///     <description>Publish a client-computed alarm (CPA, wind shift,
 ///     shallow) into the server's notification space so other plotters
-///     see it. Not yet wired - declared on the interface so Phase B
-///     doesn't need a breaking-change PR.</description>
+///     see it.</description>
 ///   </item>
 /// </list>
 /// </summary>
@@ -78,10 +77,10 @@ public interface INotificationsApi
     /// signalk-server actually returns from GET /notifications:
     /// each entry is a delta-style wrapper { context, path, value }
     /// where the notification payload sits under value, NOT at the
-    /// top level. The earlier flat-shape DTO silently produced
-    /// every field as null, MobService skipped every entry, and
-    /// the alarm vanished on reload because REST recovery did
-    /// nothing.</summary>
+    /// top level. A flat-shape DTO would silently produce every
+    /// field as null, MobService would skip every entry, and the
+    /// alarm would vanish on reload because REST recovery would
+    /// do nothing.</summary>
     Task<IReadOnlyDictionary<string, ServerNotificationEnvelope>?> ListActiveAsync(CancellationToken ct = default);
 }
 

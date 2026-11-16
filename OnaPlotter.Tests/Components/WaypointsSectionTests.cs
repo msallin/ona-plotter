@@ -18,9 +18,9 @@ public class WaypointsSectionTests
     private static SignalkWaypoint Wp(string id, string? name = null) =>
         new() { Id = id, Name = name };
 
-    private static (Bunit.TestContext ctx, FakeConfirmationService confirm) Context()
+    private static (Bunit.BunitContext ctx, FakeConfirmationService confirm) Context()
     {
-        var ctx = new Bunit.TestContext();
+        var ctx = new Bunit.BunitContext();
         var confirm = new FakeConfirmationService();
         ctx.Services.AddSingleton<IConfirmationService>(confirm);
         return (ctx, confirm);
@@ -31,7 +31,7 @@ public class WaypointsSectionTests
     {
         var (ctx, _) = Context();
         using var _ctx = ctx;
-        var cut = ctx.RenderComponent<WaypointsSection>();
+        var cut = ctx.Render<WaypointsSection>();
         await Assert.That(cut.Markup.Trim()).IsEqualTo("");
     }
 
@@ -40,7 +40,7 @@ public class WaypointsSectionTests
     {
         var (ctx, _) = Context();
         using var _ctx = ctx;
-        var cut = ctx.RenderComponent<WaypointsSection>(p => p
+        var cut = ctx.Render<WaypointsSection>(p => p
             .Add(x => x.Waypoints, new[] { Wp("w1", "Alpha"), Wp("w2", "Bravo"), Wp("w3", "Alpenhorn") })
             .Add(x => x.LayerFilter, "Alp"));
         cut.Find(".section-toggle").Click();
@@ -55,7 +55,7 @@ public class WaypointsSectionTests
     {
         var (ctx, _) = Context();
         using var _ctx = ctx;
-        var cut = ctx.RenderComponent<WaypointsSection>(p => p
+        var cut = ctx.Render<WaypointsSection>(p => p
             .Add(x => x.Waypoints, new[] { Wp("w1", "Alpha") })
             .Add(x => x.LayerFilter, "zzz"));
         await Assert.That(cut.Markup.Trim()).IsEqualTo("");
@@ -67,7 +67,7 @@ public class WaypointsSectionTests
         var (ctx, _) = Context();
         using var _ctx = ctx;
         SignalkWaypoint? captured = null;
-        var cut = ctx.RenderComponent<WaypointsSection>(p => p
+        var cut = ctx.Render<WaypointsSection>(p => p
             .Add(x => x.Waypoints, new[] { Wp("w1", "Harbor") })
             .Add(x => x.OnNavigate, EventCallback.Factory.Create<SignalkWaypoint>(
                 this, w => captured = w)));
@@ -86,14 +86,12 @@ public class WaypointsSectionTests
     {
         var (ctx, _) = Context();
         using var _ctx = ctx;
-        // Replaces the older PromptEdit-based EditButton tests:
-        // the layers-panel Edit button no longer surfaces a JS
-        // prompt; it raises OnEdit which the parent wires to open
-        // the create-dialog pre-filled. This test pins the new
-        // contract so a future drift back to a prompt-based flow
-        // surfaces here first.
+        // The layers-panel Edit button surfaces no JS prompt; it
+        // raises OnEdit which the parent wires to open the
+        // create-dialog pre-filled. This test pins that contract so
+        // a drift to a prompt-based flow surfaces here first.
         SignalkWaypoint? captured = null;
-        var cut = ctx.RenderComponent<WaypointsSection>(p => p
+        var cut = ctx.Render<WaypointsSection>(p => p
             .Add(x => x.Waypoints, new[] { Wp("w1", "Harbor") })
             .Add(x => x.OnEdit, EventCallback.Factory.Create<SignalkWaypoint>(
                 this, w => captured = w)));
@@ -112,7 +110,7 @@ public class WaypointsSectionTests
         using var _ctx = ctx;
         confirm.AutoConfirm = true;
         SignalkWaypoint? captured = null;
-        var cut = ctx.RenderComponent<WaypointsSection>(p => p
+        var cut = ctx.Render<WaypointsSection>(p => p
             .Add(x => x.Waypoints, new[] { Wp("w1", "Harbor") })
             .Add(x => x.OnDelete, EventCallback.Factory.Create<SignalkWaypoint>(
                 this, w => captured = w)));
@@ -130,7 +128,7 @@ public class WaypointsSectionTests
         using var _ctx = ctx;
         confirm.AutoConfirm = false;
         bool fired = false;
-        var cut = ctx.RenderComponent<WaypointsSection>(p => p
+        var cut = ctx.Render<WaypointsSection>(p => p
             .Add(x => x.Waypoints, new[] { Wp("w1", "Harbor") })
             .Add(x => x.OnDelete, EventCallback.Factory.Create<SignalkWaypoint>(
                 this, _ => fired = true)));
@@ -150,7 +148,7 @@ public class WaypointsSectionTests
         var (ctx, _) = Context();
         using var _ctx = ctx;
         SignalkWaypoint? captured = null;
-        var cut = ctx.RenderComponent<WaypointsSection>(p => p
+        var cut = ctx.Render<WaypointsSection>(p => p
             .Add(x => x.Waypoints, new[] { Wp("w1", "Harbor") })
             .Add(x => x.OnFocus, EventCallback.Factory.Create<SignalkWaypoint>(
                 this, w => captured = w)));

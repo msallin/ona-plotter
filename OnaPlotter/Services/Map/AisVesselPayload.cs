@@ -8,7 +8,7 @@ namespace OnaPlotter.Services.Map;
 /// carries only vessels whose rendered state changed since
 /// <see cref="BaseSeq"/>, plus the contexts that left the chart. The
 /// renderer refuses a delta whose base it doesn't hold (map re-init,
-/// deferred update) and <see cref="AisPushService"/> answers with a
+/// deferred update) and <see cref="AisLayerController"/> answers with a
 /// full snapshot.
 /// </summary>
 /// <param name="Seq">Sequence number of this push.</param>

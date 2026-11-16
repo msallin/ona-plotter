@@ -498,11 +498,10 @@ public class CpaAlarmRuleTests
     public async Task EffectiveCpaRadius_Anchored_ClampsToAnchorRadius()
     {
         // SignalK anchoralarm-plugin active with 30 m max radius:
-        // the focus-group field report - a stationary boat in a
-        // crowded anchorage was firing CPA alarms on every passing
-        // vessel because the underway 0.5 nm threshold (~926 m) was
-        // wildly inappropriate. Effective threshold drops to the
-        // anchor swing.
+        // guards against a stationary boat in a crowded anchorage
+        // firing CPA alarms on every passing vessel, because the
+        // underway 0.5 nm threshold (~926 m) is wildly inappropriate
+        // there. Effective threshold drops to the anchor swing.
         var nav = OwnShipUnderway();
         nav.ApplyAnchorPosition(OwnLat, OwnLon);
         nav.Apply("navigation.anchor.maxRadius", 30.0);
@@ -550,9 +549,8 @@ public class CpaAlarmRuleTests
         // move). A vessel passing 200 m east of own at 5 m/s heading
         // north never gets closer than 200 m. Underway 0.5 nm
         // threshold (~926 m) would have fired; the anchor 30 m
-        // (~0.0162 nm) threshold does not. Pins the focus-group fix:
-        // a stationary boat in an anchorage no longer cries CPA on
-        // every passing vessel.
+        // (~0.0162 nm) threshold does not. Pins that a stationary boat
+        // in an anchorage does not cry CPA on every passing vessel.
         var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
         var nav = new NavigationData();
         nav.ApplyPosition(OwnLat, OwnLon);
@@ -581,12 +579,12 @@ public class CpaAlarmRuleTests
     [Test]
     public async Task Banner_DoesNotEnd_With_Trailing_Comma_When_Colregs_Indeterminate()
     {
-        // Helm reported a CPA banner ending with " - ,". Root cause:
-        // Colregs.ShortLabel / RoleLabel previously returned "" for the
-        // Indeterminate / None cases, and the rule's `is not null`
-        // check let the empty string through, rendering "{name}: ... - , "
-        // when category was indeterminate and role had still resolved.
-        // The helpers now return null for those cases; this test pins
+        // Guards against a CPA banner ending with " - ,": if
+        // Colregs.ShortLabel / RoleLabel return "" for the
+        // Indeterminate / None cases, the rule's `is not null` check
+        // lets the empty string through, rendering "{name}: ... - , "
+        // when category is indeterminate and role has still resolved.
+        // The helpers return null for those cases; this test pins
         // that the message has no dangling separators when the
         // classifier doesn't produce a useful label.
         var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());

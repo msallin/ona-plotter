@@ -211,10 +211,10 @@ public class MooredVesselTrackerTests
     {
         // Spoof / stale-navState guard. A vessel claiming
         // navigation.state = "moored" while actually moving at 4 kn is
-        // either lying (AIS-spoof - the review's flagged blocker) or
-        // hasn't updated its navState since leaving the dock. Either
-        // way, granting the CPA-alarm exemption is unsafe. The fix
-        // requires SOG below MooredNavStateMaxSogMs (~2 kn) before the
+        // either lying (AIS-spoof) or hasn't updated its navState
+        // since leaving the dock. Either way, granting the CPA-alarm
+        // exemption is unsafe. The tracker requires SOG below
+        // MooredNavStateMaxSogMs (~2 kn) before the
         // explicit signal is honored; above that, fall through to the
         // SOG heuristic which (correctly) returns false.
         var t = new MooredVesselTracker();

@@ -25,8 +25,23 @@
 @inject IJSRuntime JS
 @implements IAsyncDisposable
 
-<div class="topbar-search @(_open ? "topbar-search--open" : "")"
+<div class="topbar-search @(_open ? "topbar-search--open" : "") @(_expanded ? "topbar-search--expanded" : "")"
      @onfocusout="HandleFocusOut">
+    @* Phone-width icon-only form. CSS shows this toggle and hides the
+       input on phone viewports; tapping it expands the input in place
+       and focuses it. Wider viewports never see the toggle, so
+       _expanded stays false there and the input is always visible.
+       The button stays in the DOM while expanded (CSS hides it):
+       removing a focused element can fire a focusout that would fold
+       the search straight back up. *@
+    <button type="button"
+            class="btn btn-sm btn-outline-secondary topbar-icon-btn topbar-search-toggle"
+            @onclick="Expand"
+            title="Search for a place"
+            aria-label="Search for a place"
+            aria-expanded="@(_expanded ? "true" : "false")">
+        @((MarkupString)OnaPlotter.Utilities.Icons.Small.Search)
+    </button>
     <input @ref="_inputRef"
            type="search"
            class="topbar-search-input"
@@ -114,6 +129,12 @@
     /// search-pin on the JS side.</summary>
     [Parameter] public EventCallback OnCleared { get; set; }
 
+    /// <summary>Fired when the phone-width search expands (true) or
+    /// collapses back to its magnifier button (false). The topbar
+    /// uses it to make room by hiding its secondary icon buttons
+    /// while the input is open.</summary>
+    [Parameter] public EventCallback<bool> OnExpandedChanged { get; set; }
+
     /// <summary>Optional debounce override (milliseconds). Default
     /// 200 ms balances "feels live" against "don't hammer the
     /// geocoder on every keystroke". Tests pass 0 for instant.</summary>
@@ -145,6 +166,13 @@
     /// <summary>Set by HandlePick so the immediately-following blur
     /// doesn't close the dropdown after we've already navigated.</summary>
     private bool _suppressNextFocusOut;
+    /// <summary>Phone-width only: the helm tapped the magnifier and
+    /// the input is showing. Collapses again when focus leaves an
+    /// empty input, after a pick, or on Escape.</summary>
+    private bool _expanded;
+    /// <summary>Set by Expand so OnAfterRenderAsync focuses the input
+    /// once it is actually visible.</summary>
+    private bool _focusPending;
 
     private async Task HandleInput(ChangeEventArgs e)
     {
@@ -215,9 +243,10 @@
     {
         if (!_open || _results.Count == 0)
         {
-            if (e.Key == "Escape" && _hasInput)
+            if (e.Key == "Escape")
             {
-                await HandleClear();
+                if (_hasInput) await HandleClear();
+                else await SetExpandedAsync(false);
             }
             return;
         }
@@ -253,6 +282,9 @@
         // closed and the map is about to fly; updating the input is
         // a UX cue confirming the pick.
         await SetInputValueAsync(result.Name);
+        // Phone: fold the input back to the magnifier so the chart
+        // chrome returns while the map flies to the pick.
+        await SetExpandedAsync(false);
         await OnPicked.InvokeAsync(result);
     }
 
@@ -264,7 +296,7 @@
         }
     }
 
-    private void HandleFocusOut()
+    private async Task HandleFocusOut()
     {
         if (_suppressNextFocusOut)
         {
@@ -272,6 +304,33 @@
             return;
         }
         _open = false;
+        // An empty expanded input has nothing worth keeping on screen;
+        // one with text stays open so the helm can refine the query.
+        // Skipped while focus is in transit from the magnifier (or the
+        // clear button) to the input.
+        if (!_hasInput && !_focusPending) await SetExpandedAsync(false);
+    }
+
+    private async Task Expand()
+    {
+        _focusPending = true;
+        await SetExpandedAsync(true);
+    }
+
+    private async Task SetExpandedAsync(bool expanded)
+    {
+        if (_expanded == expanded) return;
+        _expanded = expanded;
+        if (OnExpandedChanged.HasDelegate) await OnExpandedChanged.InvokeAsync(expanded);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focusPending) return;
+        try { await _inputRef.FocusAsync(); }
+        catch (JSException) { /* input not attached; the helm can tap it */ }
+        catch (JSDisconnectedException) { }
+        finally { _focusPending = false; }
     }
 
     private async Task HandleClear()
@@ -282,6 +341,10 @@
         _hasInput = false;
         _requestId++;
         await SetInputValueAsync("");
+        // Keep the caret in the input so the helm can type a new query
+        // straight away. On phone this also means the later focusout of
+        // the now-empty input is what folds the search back up.
+        if (_expanded) _focusPending = true;
         if (OnCleared.HasDelegate) await OnCleared.InvokeAsync();
     }
 

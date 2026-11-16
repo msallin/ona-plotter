@@ -43,8 +43,10 @@ public sealed class SignalkDraftSeeder
     /// <summary>
     /// Fetch <c>/signalk/v1/api/vessels/self/design/draft</c> and
     /// feed the result into <see cref="NavigationData.Apply"/>.
-    /// Best-effort: 404 (no design data) or parse failure stays at
-    /// Debug level so an empty vessel.json doesn't spam the log.
+    /// Best-effort: a non-2xx answer (no design data) stays at Debug
+    /// level so an empty vessel.json doesn't spam the log; transport and
+    /// malformed-body failures follow <see cref="ResourceHttp"/>'s
+    /// Warning policy. Draft then falls back to the Settings override.
     /// </summary>
     /// <remarks>
     /// Response shape on signalk-server:
@@ -56,26 +58,24 @@ public sealed class SignalkDraftSeeder
     /// </remarks>
     public async Task SeedAsync(CancellationToken ct)
     {
-        JsonDocument? doc = null;
         try
         {
             var url = _baseUrl.Combine("/signalk/v1/api/vessels/self/design/draft");
-            using var res = await _http.GetAsync(url, ct);
-            if (!res.IsSuccessStatusCode)
+            var result = await ResourceHttp.GetJsonAsync(_http, url, _logger, static root => root.Clone(), ct);
+            if (!result.Success)
             {
-                _logger.LogDebug("design.draft endpoint {Url} returned {Status}", url, (int)res.StatusCode);
+                _logger.LogDebug("design.draft endpoint {Url} failed: {Status} {Error}", url, result.StatusCode, result.Error);
                 return;
             }
 
-            using var stream = await res.Content.ReadAsStreamAsync(ct);
-            doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
-            if (doc.RootElement.ValueKind != JsonValueKind.Object) return;
+            var root = result.Value;
+            if (root.ValueKind != JsonValueKind.Object) return;
 
             // Canonical shape: { value: {current, maximum}, ... }.
             // Older / alternate servers may put current+maximum at root
             // or as sibling leaves; the fallbacks keep both shapes wired.
-            JsonElement source = doc.RootElement;
-            if (doc.RootElement.TryGetProperty("value", out var valueEnvelope)
+            JsonElement source = root;
+            if (root.TryGetProperty("value", out var valueEnvelope)
                 && valueEnvelope.ValueKind == JsonValueKind.Object
                 && (valueEnvelope.TryGetProperty("current", out _)
                     || valueEnvelope.TryGetProperty("maximum", out _)))
@@ -118,18 +118,13 @@ public sealed class SignalkDraftSeeder
             }
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "design.draft REST seed failed (falls back to Settings manual override)");
-        }
-        finally { doc?.Dispose(); }
     }
 
     /// <summary>
     /// Some SK servers emit leaves as <c>{"value": x, "timestamp": "..."}</c>
     /// instead of bare scalars; this unwraps so downstream consumers
-    /// see the scalar regardless of the envelope shape. Public-static
-    /// so future seed extracts can share the same helper.
+    /// see the scalar regardless of the envelope shape. Shared with
+    /// <see cref="SignalkVesselNamesSeeder"/>.
     /// </summary>
     public static JsonElement UnwrapValue(JsonElement el)
     {

@@ -33,7 +33,7 @@ namespace OnaPlotter.Services.Map;
 /// Threading: Blazor WASM is single-threaded; assumes every call runs on
 /// the renderer's synchronisation context.
 /// </summary>
-public sealed class AisPushService
+public sealed class AisLayerController
 {
     private readonly IMapAisJs _aisJs;
     private readonly AisStore _aisStore;
@@ -83,7 +83,7 @@ public sealed class AisPushService
     /// expiry, staleness fade, dead-reckoned CPA) still surfaces.</summary>
     internal static readonly TimeSpan MaxSkipInterval = TimeSpan.FromSeconds(5);
 
-    public AisPushService(
+    public AisLayerController(
         IMapAisJs aisJs,
         AisStore aisStore,
         IMooredVesselTracker mooredTracker,
@@ -486,7 +486,7 @@ public sealed class AisPushService
     }
 
     /// <summary>Wire string for the threat band. Pinned in
-    /// <c>AisPushServiceTests</c>; <c>aisLayer.js</c> reads
+    /// <c>AisLayerControllerTests</c>; <c>aisLayer.js</c> reads
     /// <c>'alarm'</c> for the popup's danger styling.</summary>
     internal static string ThreatToWireString(Cpa.Threat t) => t switch
     {

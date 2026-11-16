@@ -27,9 +27,9 @@ public class RoutesSectionTests
     /// <summary>Builds a bUnit TestContext with a FakeConfirmationService
     /// registered. Returns the context + fake so tests can flip
     /// AutoConfirm.</summary>
-    private static (Bunit.TestContext ctx, FakeConfirmationService confirm) Context()
+    private static (Bunit.BunitContext ctx, FakeConfirmationService confirm) Context()
     {
-        var ctx = new Bunit.TestContext();
+        var ctx = new Bunit.BunitContext();
         var confirm = new FakeConfirmationService();
         ctx.Services.AddSingleton<IConfirmationService>(confirm);
         return (ctx, confirm);
@@ -40,7 +40,7 @@ public class RoutesSectionTests
     {
         var (ctx, _) = Context();
         using var _ctx = ctx;
-        var cut = ctx.RenderComponent<RoutesSection>();
+        var cut = ctx.Render<RoutesSection>();
         await Assert.That(cut.Markup.Trim()).IsEqualTo("");
     }
 
@@ -49,7 +49,7 @@ public class RoutesSectionTests
     {
         var (ctx, _) = Context();
         using var _ctx = ctx;
-        var cut = ctx.RenderComponent<RoutesSection>(p => p
+        var cut = ctx.Render<RoutesSection>(p => p
             .Add(x => x.Routes, new[] { Route("abcd1234-rest", "My Passage"), Route("aabbccdd-x") }));
         cut.Find(".section-toggle").Click();
 
@@ -62,7 +62,7 @@ public class RoutesSectionTests
     {
         var (ctx, _) = Context();
         using var _ctx = ctx;
-        var cut = ctx.RenderComponent<RoutesSection>(p => p
+        var cut = ctx.Render<RoutesSection>(p => p
             .Add(x => x.Routes, new[] { Route("r", "R", distanceMeters: 1852 * 12.5) }));
         cut.Find(".section-toggle").Click();
 
@@ -75,7 +75,7 @@ public class RoutesSectionTests
         var (ctx, _) = Context();
         using var _ctx = ctx;
         (SignalkRoute route, bool enabled)? captured = null;
-        var cut = ctx.RenderComponent<RoutesSection>(p => p
+        var cut = ctx.Render<RoutesSection>(p => p
             .Add(x => x.Routes, new[] { Route("r1", "R1") })
             .Add(x => x.OnToggle, EventCallback.Factory.Create<(SignalkRoute, bool)>(
                 this, t => captured = t)));
@@ -93,7 +93,7 @@ public class RoutesSectionTests
         var (ctx, _) = Context();
         using var _ctx = ctx;
         SignalkRoute? captured = null;
-        var cut = ctx.RenderComponent<RoutesSection>(p => p
+        var cut = ctx.Render<RoutesSection>(p => p
             .Add(x => x.Routes, new[] { Route("r1", "R1") })
             .Add(x => x.OnNavigate, EventCallback.Factory.Create<SignalkRoute>(
                 this, r => captured = r)));
@@ -111,7 +111,7 @@ public class RoutesSectionTests
         var (ctx, _) = Context();
         using var _ctx = ctx;
         SignalkRoute? captured = null;
-        var cut = ctx.RenderComponent<RoutesSection>(p => p
+        var cut = ctx.Render<RoutesSection>(p => p
             .Add(x => x.Routes, new[] { Route("r1", "R1") })
             .Add(x => x.OnEdit, EventCallback.Factory.Create<SignalkRoute>(
                 this, r => captured = r)));
@@ -129,7 +129,7 @@ public class RoutesSectionTests
         using var _ctx = ctx;
         confirm.AutoConfirm = true;
         SignalkRoute? captured = null;
-        var cut = ctx.RenderComponent<RoutesSection>(p => p
+        var cut = ctx.Render<RoutesSection>(p => p
             .Add(x => x.Routes, new[] { Route("r1", "R1") })
             .Add(x => x.OnDelete, EventCallback.Factory.Create<SignalkRoute>(
                 this, r => captured = r)));
@@ -149,7 +149,7 @@ public class RoutesSectionTests
         using var _ctx = ctx;
         confirm.AutoConfirm = false;
         bool fired = false;
-        var cut = ctx.RenderComponent<RoutesSection>(p => p
+        var cut = ctx.Render<RoutesSection>(p => p
             .Add(x => x.Routes, new[] { Route("r1", "R1") })
             .Add(x => x.OnDelete, EventCallback.Factory.Create<SignalkRoute>(
                 this, _ => fired = true)));

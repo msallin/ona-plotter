@@ -6,13 +6,12 @@ namespace OnaPlotter.Tests;
 
 /// <summary>
 /// Pins the IsDataStale behavior across the connection lifecycle.
-/// The bug these tests cover: helms reported the connection chip
-/// rendering "Stale" on first load even though dashboard cards were
-/// updating, with the chip flipping to "Live" only on the next
-/// navigation. Root cause was _lastMessageTicks defaulting to 0
-/// (Unix epoch), so IsDataStale returned true the instant IsConnected
-/// became true and stayed there until the chip's parent re-rendered
-/// for an unrelated reason.
+/// Guards against the connection chip rendering "Stale" on first load
+/// even though dashboard cards are updating, flipping to "Live" only
+/// on the next navigation. If _lastMessageTicks defaults to 0 (Unix
+/// epoch), IsDataStale returns true the instant IsConnected becomes
+/// true and stays there until the chip's parent re-renders for an
+/// unrelated reason.
 /// </summary>
 public class SignalkClientStaleTests
 {
@@ -27,7 +26,7 @@ public class SignalkClientStaleTests
     private static SignalkClient NewClient(TimeProvider? time = null)
         => new(
             baseUrl: new FakeBaseUrl(),
-            logger: NullLogger<SignalkClient>.Instance,
+            loggerFactory: NullLoggerFactory.Instance,
             data: new OnaPlotter.Models.NavigationData(),
             track: new TrackBuffer(),
             ais: new AisStore(),
@@ -51,8 +50,8 @@ public class SignalkClientStaleTests
     [Test]
     public async Task IsDataStale_RightAfterConnect_IsFalse()
     {
-        // Reproduces the original first-load bug: connection just
-        // opened, no deltas yet, IsDataStale must return false.
+        // First-load scenario: connection just opened, no deltas
+        // yet, IsDataStale must return false.
         // Without the MarkConnectionOpened seed, _lastMessageTicks
         // is 0 and the assertion below fails (IsDataStale=true).
         var c = NewClient();

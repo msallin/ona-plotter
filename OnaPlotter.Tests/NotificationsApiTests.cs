@@ -68,7 +68,7 @@ public class NotificationsApiTests
         // SignalK notification payload (state / method / message). The
         // server derives the id from (context, path, $source), so
         // re-raising the same path overlays the existing entry. This
-        // is what makes Phase B (publish client alarms) cross-plotter
+        // is what makes publishing client alarms for cross-plotter
         // sync work without the client tracking ids itself.
         string? capturedUrl = null;
         string? capturedBody = null;

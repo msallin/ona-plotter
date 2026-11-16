@@ -365,9 +365,9 @@
            helm honest about totals - "12 nm in 7 days at 30 % coverage"
            reads very differently from "12 nm at 95 % coverage". *@
         @* Three-bucket breakdown - moving + stationary + unknown.
-           The previous "X of Y had position fixes" lumped underway
-           and dwell time together against an opaque gap; ocean-
-           voyager personas asked "but what was the GAP?". Splitting
+           A single "X of Y had position fixes" figure lumps underway
+           and dwell time together against an opaque gap and leaves
+           ocean voyagers asking "but what was the GAP?". Splitting
            it out keeps the helm honest about what 95% (or 30%)
            coverage actually means. *@
         <div class="text-muted" style="font-size:0.85rem;">
@@ -406,10 +406,9 @@
            the page from looking dense on a quick "last 7 days" check.
            Sorted descending (most recent first) by AggregateDaily.
            -
-           Helm-feedback: the toggle was a near-invisible link-style
-           button. Helms missed the daily view entirely. Now an
-           outline-secondary card-spanning button so it reads as a
-           real affordance. Chevron + count + clear "Show daily / Hide
+           The toggle is an outline-secondary card-spanning button
+           rather than a link-style one so it reads as a real
+           affordance and helms don't miss the daily view. Chevron + count + clear "Show daily / Hide
            daily" verb. *@
         @if (daily.Count > 0)
         {
@@ -476,7 +475,7 @@
     // deliberate analysis ("April only"). Defaults restored from
     // the StatsPageState singleton on OnInitialized so a helm who
     // navigates to /map and back finds the page exactly where they
-    // left it (focus-group request 2026-04). Save back happens in
+    // left it. Save back happens in
     // DisposeAsync.
     private string rangeMode = "preset";
     private string selectedTimespan = "7d";

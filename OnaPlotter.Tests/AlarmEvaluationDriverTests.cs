@@ -68,12 +68,12 @@ public class AlarmEvaluationDriverTests
         IAlarmRule[] rules =
         [
             new DeadmanAlarmRule(deadman),
-            new ServerNotificationsAlarmRule(notifications),
+            new ServerNotificationsAlarmRule(notifications, NoopNotificationsApi.Instance, NoopPublishedAlarmTracker.Instance),
         ];
         var manager = new RecordingManager(new AlarmManager(rules, time));
         var signalk = new SignalkClient(
             baseUrl: new OnaPlotter.Tests.Services.Resources.FakeBaseUrl(),
-            logger: NullLogger<SignalkClient>.Instance,
+            loggerFactory: NullLoggerFactory.Instance,
             data: new OnaPlotter.Models.NavigationData(),
             track: new TrackBuffer(),
             ais: ais,

@@ -59,14 +59,23 @@ public sealed class Aton
     /// every time a plugin adds a field.</summary>
     public Dictionary<string, DeltaValue> Properties { get; } = new(StringComparer.Ordinal);
 
+    /// <summary>Instant of the last delta applied to this AtoN (UTC);
+    /// <see cref="Services.AtonStore"/> prunes entries silent for 24 h.</summary>
     public DateTime LastSeen { get; set; }
 
-    public Aton(string context)
+    private readonly TimeProvider _time;
+
+    public Aton(string context) : this(context, TimeProvider.System) { }
+
+    public Aton(string context, TimeProvider time)
     {
+        _time = time;
         Context = context;
-        LastSeen = DateTime.UtcNow;
+        LastSeen = UtcNow();
         Mmsi = ExtractMmsi(context);
     }
+
+    private DateTime UtcNow() => _time.GetUtcNow().UtcDateTime;
 
     /// <summary>Applies a SignalK delta path/value pair. Returns true
     /// when the entry actually changed (caller propagates an update
@@ -74,7 +83,7 @@ public sealed class Aton
     /// of the same value) so the UI doesn't redraw on every tick.</summary>
     public bool Apply(string path, DeltaValue rawValue)
     {
-        LastSeen = DateTime.UtcNow;
+        LastSeen = UtcNow();
 
         // Empty-path delta carries an object payload that's a partial
         // identity / position bundle: { name, mmsi, atonType:{id,name},

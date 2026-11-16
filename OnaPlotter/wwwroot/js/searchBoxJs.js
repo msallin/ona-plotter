@@ -3,10 +3,10 @@
 // The SearchBox input is intentionally UNCONTROLLED on the Blazor
 // side - no `value="@_query"` binding, no `@bind`. Blazor's
 // renderer never writes the value attribute, so the helm's typing
-// stays in the DOM exactly as typed. (The previous controlled
-// pattern raced fast keystrokes against in-handler StateHasChanged
-// calls, dropping characters and silently preventing search
-// requests from firing on those reverted keystrokes.)
+// stays in the DOM exactly as typed. (A controlled input races fast
+// keystrokes against in-handler StateHasChanged calls, dropping
+// characters and silently preventing search requests from firing on
+// those reverted keystrokes.)
 //
 // The trade-off is that programmatic value updates - "clear
 // button" and "fill input with picked place's name" - need a JS

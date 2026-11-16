@@ -1122,11 +1122,10 @@ public sealed class MobService : IMobService, IDisposable
                     // waypoint were already deactivated by ClearAsync
                     // (deferred-clear branch); the server-side cleanup
                     // hands off to the clear-retry loop so a failed
-                    // DELETE survives reload + retries until it lands.
-                    // Pre-clear-loop this was fire-and-forget on the
-                    // raise loop's thread - any failure dissolved into
-                    // the WASM console and the server's WS echo
-                    // resurrected the alarm.
+                    // DELETE survives reload + retries until it lands;
+                    // fire-and-forget here would let a failure vanish
+                    // into the WASM console while the server's WS echo
+                    // resurrects the alarm.
                     if (live.Raise.ClearRequested)
                     {
                         await QueuePendingClearAsync(

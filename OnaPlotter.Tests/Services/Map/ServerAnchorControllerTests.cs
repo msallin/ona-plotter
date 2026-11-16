@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Time.Testing;
 using OnaPlotter.Models;
 using OnaPlotter.Services.Js;
 using OnaPlotter.Services.Map;
@@ -75,23 +76,17 @@ public class ServerAnchorControllerTests
             => Task.FromResult(MovedLatLng);
     }
 
-    private sealed class TimeBox
-    {
-        public DateTime Now { get; set; } = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
-        public DateTime Get() => Now;
-    }
-
-    private static (ServerAnchorController sync, FakeAnchorJs js, List<string> warnings, TimeBox time) NewSync(
+    private static (ServerAnchorController sync, FakeAnchorJs js, List<string> warnings, FakeTimeProvider time) NewSync(
         bool connected = true)
     {
         var js = new FakeAnchorJs();
-        var time = new TimeBox();
+        var time = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero));
         var warnings = new List<string>();
         var sync = new ServerAnchorController(
             js,
             isSignalKConnected: () => connected,
             raiseTimeoutWarning: msg => warnings.Add(msg),
-            utcNow: () => time.Get());
+            time: time);
         return (sync, js, warnings, time);
     }
 
@@ -122,8 +117,9 @@ public class ServerAnchorControllerTests
     {
         // Another plotter (or the helm's own move-anchor commit) moves
         // the anchor while it is set. The ring must follow the server
-        // position; diffing only the radius left it at the old spot,
-        // so the swing circle the helm watches was in the wrong place.
+        // position; diffing only the radius would leave it at the old
+        // spot, so the swing circle the helm watches would be in the
+        // wrong place.
         var (sync, js, _, _) = NewSync();
         var data = WithAnchor(54.5, 11.2, 30);
         await sync.SyncAsync(data);
@@ -235,7 +231,7 @@ public class ServerAnchorControllerTests
         sync.MarkRaisePending();
 
         // Advance past the timeout. Sync again with anchor still active.
-        time.Now = time.Now.AddSeconds(6);
+        time.Advance(TimeSpan.FromSeconds(6));
         await sync.SyncAsync(WithAnchor(54.5, 11.2, 30));
 
         await Assert.That(warnings.Count).IsEqualTo(1);
@@ -253,7 +249,7 @@ public class ServerAnchorControllerTests
         await sync.SyncAsync(WithAnchor(54.5, 11.2, 30));
         sync.MarkRaisePending();
 
-        time.Now = time.Now.AddSeconds(20);
+        time.Advance(TimeSpan.FromSeconds(20));
         await sync.SyncAsync(WithAnchor(54.5, 11.2, 30));
 
         await Assert.That(warnings).IsEmpty();
@@ -272,7 +268,7 @@ public class ServerAnchorControllerTests
 
         // Even after the timeout window, no warning should fire because
         // the pending flag was cleared along with the anchor.
-        time.Now = time.Now.AddSeconds(20);
+        time.Advance(TimeSpan.FromSeconds(20));
         await sync.SyncAsync(new NavigationData());
 
         await Assert.That(warnings).IsEmpty();

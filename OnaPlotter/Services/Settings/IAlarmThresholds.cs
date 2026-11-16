@@ -7,10 +7,8 @@ namespace OnaPlotter.Services.Settings;
 /// test only needs a 12-property double instead of the 43-property
 /// app-wide interface.
 ///
-/// <para>Architecture review (2026-04-28) ARCH-003 carved this out
-/// of the settings God Interface. Production <c>AppSettingsService</c>
-/// implements both this and the legacy <see cref="IAppSettings"/>;
-/// new consumers should depend on the narrowest surface that fits
+/// <para>Production <c>AppSettingsService</c> implements both this and
+/// the full <see cref="IAppSettings"/>; new consumers should depend on the narrowest surface that fits
 /// their need.</para>
 /// </summary>
 public interface IAlarmThresholds
@@ -50,7 +48,7 @@ public interface IAlarmThresholds
     /// after its projected approach has stayed inside the guard zone
     /// for this many seconds continuously. Suppresses the brief
     /// "passed through the warning band on a single sample" flicker
-    /// that used to fire the klaxon, then auto-clear, then fire
+    /// that would fire the klaxon, then auto-clear, then fire
     /// again on the next geometry tick - a behaviour the helm reads
     /// as the alarm being broken. Set to 0 to disable debouncing
     /// (every detected threat raises immediately).</summary>

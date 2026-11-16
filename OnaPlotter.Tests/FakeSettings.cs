@@ -71,9 +71,9 @@ internal sealed class FakeSettings : IAppSettings
     // side course-provider notifications preferred over the client
     // rule). Defaulting to true here means a NEW test that doesn't
     // think about this toggle gets the same gate state the helm sees
-    // in prod. The earlier `= false` invited a silent class of
+    // in prod. A `= false` default invites a silent class of
     // regression: a feature test could pass locally because the muted
-    // client rule never ran the path the prod helm exercises. Tests
+    // client rule never runs the path the prod helm exercises. Tests
     // that DO want the client rule to fire (the WaypointApproach rule
     // tests) override per-construction; see Ctx() in
     // WaypointApproachAlarmRuleTests.

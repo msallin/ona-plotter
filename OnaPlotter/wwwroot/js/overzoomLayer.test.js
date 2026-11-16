@@ -20,8 +20,7 @@ describe('withOverzoom: zero-levels no-op path', () => {
     });
 
     it('does not add an internal _chartUpscaleLevels tag', () => {
-        // The tag was dropped (zero readers) - a future re-introduction
-        // for diagnostics needs to be a deliberate code change with
+        // The tag has no readers - adding one for diagnostics needs to be a deliberate code change with
         // a real consumer, not a quiet sneak-back.
         const result = withOverzoom({ maxNativeZoom: 18 }, 0);
         assert.equal(Object.prototype.hasOwnProperty.call(result, '_chartUpscaleLevels'), false);

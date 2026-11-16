@@ -79,9 +79,8 @@
     [Parameter] public EventCallback<string> OnFocus { get; set; }
 
     // Collapsed by default and stays that way until the user taps to
-    // expand. An earlier version auto-expanded when any tracked vessel
-    // entered the danger / warn CPA band, but that meant the section
-    // popped open in the middle of other edit flows (route editing,
+    // expand. No auto-expand on a danger / warn CPA band: the section
+    // would pop open in the middle of other edit flows (route editing,
     // ticking charts) every time a distant ferry's TCPA dipped below
     // the threshold. Alarms + the banner stack already surface the
     // threat; the Vessels list is purely a drill-down.

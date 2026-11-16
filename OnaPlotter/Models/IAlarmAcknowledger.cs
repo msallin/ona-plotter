@@ -9,11 +9,10 @@ namespace OnaPlotter.Models;
 /// the banner so the dismissal propagates to other plotters.
 /// <para>
 /// The point of the abstraction is to keep <see cref="AlarmInfo"/>
-/// transport-neutral. Pre-Phase A AlarmInfo was a pure domain record;
-/// Phase A bolted on <c>NotificationId</c> + <c>CanAcknowledge</c> for
-/// SignalK v2. As soon as a second transport appears (NMEA-2000 PGN
-/// gateway, peer UDP feed, future SignalK v3) those fields would either
-/// duplicate or have to encode through. An opaque handle pushes that
+/// transport-neutral. Transport-specific fields on the record (a SignalK
+/// v2 <c>NotificationId</c> + <c>CanAcknowledge</c>, say) would have to
+/// duplicate or encode through as soon as a second transport appears
+/// (NMEA-2000 PGN gateway, peer UDP feed, future SignalK v3). An opaque handle pushes that
 /// complexity into the source-specific implementation, leaving the
 /// alarm record clean.
 /// </para>

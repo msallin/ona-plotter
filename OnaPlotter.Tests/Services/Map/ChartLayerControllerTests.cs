@@ -1,14 +1,15 @@
 using OnaPlotter.Models;
 using OnaPlotter.Services.Js;
 using OnaPlotter.Services.Map;
+using OnaPlotter.Utilities;
 
 namespace OnaPlotter.Tests.Services.Map;
 
 /// <summary>
 /// Pins the chart enable / quick-bar / reorder lifecycle. The
-/// reorder + ApplyOrder bits are the highest-value tests: a stale
-/// chart-order list silently broke the up/down arrows in the field
-/// before the safety-pad fix this controller still carries.
+/// reorder + ApplyOrder bits are the highest-value tests: without the
+/// controller's safety pad, a stale chart-order list silently breaks
+/// the up/down arrows.
 /// </summary>
 public class ChartLayerControllerTests
 {
@@ -43,8 +44,9 @@ public class ChartLayerControllerTests
         public List<int> MinZoomCalls { get; } = [];
         public List<int> MaxZoomCalls { get; } = [];
         public List<double[]?> BoundsCalls { get; } = [];
+        public List<bool> OverlayCalls { get; } = [];
 
-        public Task AddChartLayerAsync(string id, string tileUrl, int minZoom, int maxZoom, double opacity, double[]? bounds, int upscaleLevels, string attribution)
+        public Task AddChartLayerAsync(string id, string tileUrl, int minZoom, int maxZoom, double opacity, double[]? bounds, int upscaleLevels, string attribution, bool overlay)
         {
             if (NextAddError is not null) { var e = NextAddError; NextAddError = null; throw e; }
             Added.Add(id);
@@ -54,6 +56,7 @@ public class ChartLayerControllerTests
             MinZoomCalls.Add(minZoom);
             MaxZoomCalls.Add(maxZoom);
             BoundsCalls.Add(bounds);
+            OverlayCalls.Add(overlay);
             return Task.CompletedTask;
         }
 
@@ -268,6 +271,19 @@ public class ChartLayerControllerTests
         await ctrl.ToggleAsync(chart, true);
 
         await Assert.That(js.OpacityCalls[0]).IsEqualTo(1.0);
+    }
+
+    [Test]
+    public async Task Toggle_On_PassesOverlayFlagFromChart()
+    {
+        // OpenSeaMap must land in the overlay pane (above weather radar);
+        // a plain SK chart stays a base chart.
+        var (ctrl, js, _, _, _) = New();
+
+        await ctrl.ToggleAsync(BuiltInCharts.All.First(c => c.Identifier == BuiltInCharts.OpenSeaMapIdentifier), true);
+        await ctrl.ToggleAsync(Chart("c1"), true);
+
+        await Assert.That(js.OverlayCalls).IsEquivalentTo([true, false]);
     }
 
     [Test]

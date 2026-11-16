@@ -135,7 +135,7 @@ public class DeadmanAlarmRuleTests
     public async Task Night_Override_Zero_Falls_Back_To_Day_Value()
     {
         // Users who don't want a night-specific override set DeadmanNightMinutes
-        // to 0; the day value applies at night too (legacy behaviour).
+        // to 0; the day value applies at night too.
         var now = DateTime.UtcNow;
         var tracker = new DeadmanTracker(TimeProvider.System);
         tracker.ForceLastInteraction(now.AddMinutes(-6));

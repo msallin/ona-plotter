@@ -263,10 +263,10 @@ internal sealed class LegendColorConverter : JsonConverter<RadarColor>
             reader.Read();
             // If the value isn't a primitive number, advance the
             // reader PAST the whole value (object / array / etc.)
-            // rather than swallowing only the first token. The
-            // earlier code left the reader mid-value and the outer
-            // loop's EndObject check tripped on the nested object's
-            // closing brace, dropping every subsequent property.
+            // rather than swallowing only the first token. Leaving
+            // the reader mid-value would trip the outer loop's
+            // EndObject check on the nested object's closing brace,
+            // dropping every subsequent property.
             byte v;
             if (reader.TokenType == JsonTokenType.Number)
             {

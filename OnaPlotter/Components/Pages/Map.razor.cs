@@ -196,10 +196,9 @@ public partial class Map
 
     /// <summary>Popup-side Edit: open the same dialog used for
     /// Create, pre-filled with the waypoint's current name +
-    /// description. Helm field-feedback was that a single-field
-    /// PromptAsync rename hid the description and forced two trips
-    /// (one to rename, a separate flow to edit description); the
-    /// reused dialog gives a single edit surface.</summary>
+    /// description. A single-field prompt would hide the description
+    /// and force two trips (one to rename, a separate flow to edit
+    /// description); the reused dialog gives a single edit surface.</summary>
     [JSInvokable]
     public Task WaypointEdit(string id)
     {
@@ -390,10 +389,10 @@ public partial class Map
 
     /// <summary>Invoked from the JS popup's Edit button: open the
     /// same dialog used for Add Note, pre-filled with the current
-    /// title + description. Helm field-feedback was that the
-    /// previous single-field PromptAsync rename hid the description
-    /// and forced two trips (one to rename, a separate flow to edit
-    /// description); the reused dialog gives a single edit surface.
+    /// title + description. A single-field prompt would hide the
+    /// description and force two trips (one to rename, a separate flow
+    /// to edit description); the reused dialog gives a single edit
+    /// surface.
     /// </summary>
     [JSInvokable]
     public Task NoteEdit(string id)
@@ -468,10 +467,8 @@ public partial class Map
     private double newRegionRadiusMeters = 250;
     /// <summary>Hazard flag picked in the Add Region dialog. Applies
     /// to both Circle and Polygon paths so the helm sets it once
-    /// up front rather than discovering on save that the polygon
-    /// route hides it inside the edit panel and the circle route
-    /// can't set it at all (focus-group field report). Defaults
-    /// false; reset on every dialog open.</summary>
+    /// up front for either shape. Defaults false; reset on every
+    /// dialog open.</summary>
     private bool newRegionIsHazard;
     private List<SignalkRegion> loadedRegions = [];
     private bool regionsVisible = true;
@@ -732,16 +729,16 @@ public partial class Map
     // Thin wrapper around the private NavigateRoute logic so JSInvokable
     // activation can reuse it without duplicating the try/catch.
     //
-    // Note on anchor / route relationship: route activation NO LONGER
-    // auto-raises the anchor. The reverse direction stays (dropping the
+    // Note on anchor / route relationship: route activation does NOT
+    // auto-raise the anchor. The reverse direction stays (dropping the
     // anchor clears any active course - see SyncServerAnchorAsync /
     // ToggleAnchor) because anchoring is the more decisive intent: a
     // boat that just dropped the hook is unambiguously not under way.
     // Going the other direction (activating a route) does NOT mean the
     // helm has actually lifted the anchor yet - they may be planning
     // the next leg while still on the hook. Auto-raising on activate
-    // was wrong for that workflow and surprised users when they
-    // weren't ready to leave.
+    // would be wrong for that workflow and surprise users who aren't
+    // ready to leave.
     private async Task NavigateRouteInternal(SignalkRoute route)
     {
         try

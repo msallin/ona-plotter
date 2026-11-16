@@ -27,12 +27,12 @@ namespace OnaPlotter.Services.Alarms;
 public sealed class ServerNotificationsAlarmRule : IAlarmRule
 {
     private readonly ServerNotificationStore _store;
-    private readonly INotificationsApi? _api;
-    private readonly IPublishedAlarmTracker? _publishedTracker;
+    private readonly INotificationsApi _api;
+    private readonly IPublishedAlarmTracker _publishedTracker;
 
     public ServerNotificationsAlarmRule(ServerNotificationStore store,
-        INotificationsApi? api = null,
-        IPublishedAlarmTracker? publishedTracker = null)
+        INotificationsApi api,
+        IPublishedAlarmTracker publishedTracker)
     {
         _store = store;
         _api = api;
@@ -83,13 +83,13 @@ public sealed class ServerNotificationsAlarmRule : IAlarmRule
             // alarm on every Evaluate tick and the snooze is a no-op
             // for server-emitted alarms.
             if (ctx.IsSnoozed(n.Path)) continue;
-            // Skip our own publication echoes. AlarmPublisher (Phase B)
-            // POSTs locally-emitted alarms to the SK server so other
+            // Skip our own publication echoes. AlarmPublisher POSTs
+            // locally-emitted alarms to the SK server so other
             // plotters see them; the same delta loops back to us via
             // the WS feed and lands here. Surfacing it would render
             // the same alarm twice in the banner stack - once from
             // the originating client rule, once from the bridge.
-            if (_publishedTracker?.IsOwnedPath(n.Path) == true) continue;
+            if (_publishedTracker.IsOwnedPath(n.Path)) continue;
             yield return BuildAlarmInfo(n, _api);
         }
     }
@@ -102,10 +102,10 @@ public sealed class ServerNotificationsAlarmRule : IAlarmRule
     /// supplied an id and <c>status.canAcknowledge</c> is true, an
     /// <see cref="SignalKNotificationAcknowledger"/> is attached so
     /// <c>AlarmManager.DismissAsync</c> can trigger the cross-plotter
-    /// ack POST. On pre-v2.21 servers (no id) or when the API client
-    /// isn't wired (legacy test ctors) the <see cref="AlarmInfo.Acknowledger"/>
-    /// field stays null and dismiss falls back to local-only.</summary>
-    internal static AlarmInfo BuildAlarmInfo(ServerNotification n, INotificationsApi? api)
+    /// ack POST. On pre-v2.21 servers (no id) the
+    /// <see cref="AlarmInfo.Acknowledger"/> field stays null and dismiss
+    /// falls back to local-only.</summary>
+    internal static AlarmInfo BuildAlarmInfo(ServerNotification n, INotificationsApi api)
     {
         // Skip the HumaniseTail StringBuilder build when the upstream
         // notification already carried a message (the typical case for
@@ -132,14 +132,12 @@ public sealed class ServerNotificationsAlarmRule : IAlarmRule
         // banner; rewrite to "MMSI <digits>" so the helm reads a
         // recognisable identifier instead of a 30-char garbage id.
         message = SanitiseUrnMmsi(message);
-        // Build the acknowledger only when (a) we have an API client
-        // wired (production DI; absent in some legacy test ctors) and
-        // (b) the server actually gave us an id to address. The
-        // CanAcknowledge field on the acknowledger then mirrors the
-        // server's status.canAcknowledge - false for emergency-state
-        // notifications the spec forbids silencing.
+        // Build the acknowledger only when the server gave us an id to
+        // address. The CanAcknowledge field on the acknowledger then
+        // mirrors the server's status.canAcknowledge - false for
+        // emergency-state notifications the spec forbids silencing.
         IAlarmAcknowledger? ack = null;
-        if (api is not null && n.Id is string id)
+        if (n.Id is string id)
         {
             ack = new SignalKNotificationAcknowledger(
                 api, id, canAcknowledge: n.Status?.CanAcknowledge ?? false);

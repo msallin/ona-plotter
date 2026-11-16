@@ -5,20 +5,18 @@ namespace OnaPlotter.Models;
 // =====================================================================
 // GeoJSON Feature shapes used by ResourceExporter (per-resource exports
 // to RFC 7946) and by the Map / Resources share-blob handlers (system-
-// share-sheet payloads). Replacing the earlier
+// share-sheet payloads). Named records rather than
 // `JsonSerializer.Serialize(new {...})` anonymous shapes so source-gen
-// can take the serialiser path; see OnaGeoJsonContext + the F2 trim
-// audit in docs/research-trimmode.md.
+// can take the serialiser path; see OnaGeoJsonContext and
+// docs/research-trimmode.md.
 //
 // Two flavours of properties bags are needed:
 //
 // - Export features (Route / Waypoint / Note / Trip / Region): null
-//   fields stay in the output. Matches the previous PrettyJson behaviour
-//   on ResourceExporter.cs (no `DefaultIgnoreCondition` set).
+//   fields stay in the output (no `DefaultIgnoreCondition`).
 // - Share features (Map.razor.cs + Resources.razor share-blobs): nullable
 //   fields with `[JsonIgnore(Condition = WhenWritingNull)]` so a missing
-//   createdAt / name elides. Matches the previous per-call-site option
-//   (`DefaultIgnoreCondition = WhenWritingNull`).
+//   createdAt / name elides.
 //
 // Internal records, exposed to the test project via the existing
 // InternalsVisibleTo entry on OnaPlotter.csproj.
@@ -119,18 +117,14 @@ internal sealed record GeoJsonRegionMultiPolygonFeature(
 //
 // Distinct from the export shapes: the share blob carries createdAt
 // (so the receiving app shows "shared at X"), and per-field
-// JsonIgnore preserves the elision behaviour of the previous
-// `DefaultIgnoreCondition = WhenWritingNull` option on the call sites
-// in Map.razor.cs / Resources.razor.
+// JsonIgnore elides null fields from the share blobs built in
+// Map.razor.cs / Resources.razor.
 //
 // Wire-order note: the share Feature ctor is (type, geometry,
 // properties), the export Feature ctors above are
-// (type, properties, geometry). Both shapes match the previous
-// anonymous-type literal layout exactly - preserving byte-level
-// parity with what the helm previously sent / shared. Don't
-// "normalise" the two to the same order: GeoJSON consumers parse
-// by key, but the exact byte sequence is what was field-tested
-// before this migration.
+// (type, properties, geometry). Don't "normalise" the two to the
+// same order: GeoJSON consumers parse by key, but the exact byte
+// sequence of each is the field-tested one.
 
 internal sealed record GeoJsonShareWaypointProperties(
     [property: JsonPropertyName("name"),

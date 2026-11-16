@@ -4,7 +4,7 @@ using OnaPlotter.Utilities;
 namespace OnaPlotter.Tests.Services.Map;
 
 /// <summary>
-/// Pins the presentation rules <see cref="AisPushService"/> stamps on
+/// Pins the presentation rules <see cref="AisLayerController"/> stamps on
 /// every AIS payload: name fallbacks, colour precedence, label and
 /// overlay visibility, popup rounding.
 /// </summary>

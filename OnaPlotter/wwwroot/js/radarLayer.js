@@ -43,7 +43,7 @@
 //     (enableRadar / disableRadar / setBoatState / setRadarRange)
 //     stays the same.
 //   * Doppler / history / target borders all paint at the legend's
-//     configured colours. A future PR can swap to semantic palettes.
+//     configured colours, not semantic palettes.
 
 /** @typedef {import('./radarProtobuf.js').Spoke} Spoke */
 
@@ -192,7 +192,7 @@ export function setRangeRingsConfig(enabled, count) {
  *                                      `bearing = heading_true + angle`
  *                                      correctly when SK true heading
  *                                      is wired in, so the opt-in path
- *                                      is now safe on that provider too.
+ *                                      is safe on that provider too.
  */
 export function enableRadarOverlay(deps, cfg) {
     if (activeRadars.has(cfg.radarId)) return;
@@ -369,7 +369,7 @@ class RadarOverlay {
         // so 512 px of source already runs at or above 1:1 display
         // pixels in most viewport configurations. The 4-cells-per-pixel
         // packing also quarters the per-frame putImageData CPU->GPU
-        // upload size vs. the previous 2-cells layout, which was the
+        // upload size vs. a 2-cells layout, where that upload is the
         // dominant compositor cost on Pi-class helms; the spoke
         // painter overwrites cells that hash to the same pixel
         // (last-write-wins is correct here - adjacent range cells
@@ -725,8 +725,8 @@ class RadarOverlay {
 
     /**
      * Paints one spoke into the ImageData and grows the dirty-rect
-     * accumulator. Folds the previous "clear stale, then paint" two-
-     * pass into one: when the new spoke's byte is transparent we
+     * accumulator. Folds "clear stale, then paint" into a single
+     * pass: when the new spoke's byte is transparent we
      * zero the prior alpha (so a moving target leaves no trail), but
      * skip the write entirely if the cell was already transparent -
      * dominant case in open water, saves both the write and a dirty-
@@ -735,9 +735,9 @@ class RadarOverlay {
      * Hot loop: one Uint32 store per filled pixel via the byteToRgba32
      * + imageData32 views. Equivalent to four Uint8ClampedArray writes
      * but ~1.5x faster on V8 / SpiderMonkey for the filled-pixel
-     * branch. The "transparent stays transparent" branch is unchanged
-     * because zero-equality on a single uint32 is the same work as
-     * the previous alpha-byte check.
+     * branch. The "transparent stays transparent" branch costs the
+     * same either way: zero-equality on a single uint32 is the same
+     * work as an alpha-byte check.
      *
      * @param {Spoke} spoke
      * @param {{minX:number,minY:number,maxX:number,maxY:number}} dirty
@@ -757,8 +757,7 @@ class RadarOverlay {
             // Single packed lookup: 0xAABBGGRR on little-endian. A
             // fully-transparent palette entry (legend's "no echo" or
             // suppressed low-return) has all four bytes zero, so
-            // lut32[b] === 0 is the equivalent of the old
-            // newAlpha === 0 check.
+            // lut32[b] === 0 means "new alpha is 0".
             const rgba = lut32[b];
             const x = xLut[base + r];
             const y = yLut[base + r];
@@ -1053,7 +1052,7 @@ function headingToSpokeOffset(headingRad, spokesPerRevolution) {
  * from the spoke's bow-relative angle, an optional client-side
  * alignment offset, and the boat's TRUE-NORTH heading. The wire's
  * optional `bearing` field is ignored because at least one production
- * provider (Mayara) used to fill it with the radar's internal HS-
+ * provider (Mayara) can fill it with the radar's internal HS-
  * corrected value rather than true-north - paints every spoke bow-up
  * when the radar has no heading sensor wired in.
  *
@@ -1067,11 +1066,9 @@ function headingToSpokeOffset(headingRad, spokesPerRevolution) {
  * The radar's own bearingAlignment (antenna-vs-bow installation
  * offset) is applied by the radar firmware to its azimuth output;
  * the wire `angle` and `bearing` fields are already
- * bow-relative-corrected. Do NOT pass it again here - the previous
- * client-side compensation was a workaround for a Mayara version
- * that turned out to be a stale-install / heading-zero artefact, not
- * a server-side gap. The `alignmentSpokes` parameter is reserved for
- * the helm's residual fine-tune trim from Settings.
+ * bow-relative-corrected. Do NOT pass it again here; applying it
+ * client-side would double-correct. The `alignmentSpokes` parameter
+ * is reserved for the helm's residual fine-tune trim from Settings.
  *
  * Both paths funnel through wrapSpoke for the defensive modulo.
  *

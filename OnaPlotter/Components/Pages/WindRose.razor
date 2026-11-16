@@ -13,16 +13,16 @@
 
 <PageTitle>Wind</PageTitle>
 
-@* Back-to-chart chip removed - the sidebar + topbar already surface
-   navigation back to the map, and the chip duplicated that affordance
-   without earning its screen real estate. *@
+@* No back-to-chart chip - the sidebar + topbar already surface
+   navigation back to the map, and a chip would duplicate that
+   affordance without earning its screen real estate. *@
 
 @*
    Layout: stacked card column, matching the Stats / History design
    language. Selectors -> Hero -> Rose -> Direction history -> Speed
-   history. The previous two-column grid (rose | aside) was unique
-   to this page; aligning on .card / .card-body makes muscle memory
-   carry between pages.
+   history. Aligning on .card / .card-body rather than a page-unique
+   two-column grid (rose | aside) makes muscle memory carry between
+   pages.
 
    SVG colours come from theme tokens (no hex literals on the page)
    so night-mode + high-contrast modes follow without per-chart
@@ -318,18 +318,14 @@
                        axis confusion Tom (the tactician persona) flagged
                        in the field study. The .wind-polar-key chip below
                        the rose names the polar curve explicitly. *@
-                    @* SVG width 44 (was 30): the rect occupies 16 px on
-                       the left edge, leaving x=20..44 for the labels.
-                       At width 30 the labels were anchored at x=20 with
-                       only 10 px of room, so a two-digit MaxSpeedKn
-                       like "30" was clipped at the right edge - the
-                       helm saw "3" alone for the top tick. 44 px gives
-                       room for up to three digits. *@
-                    @* SVG height 188 (was 180) - the bottom "0" tick
-                       sat at baseline y=178 with a 10 px font, and
-                       the digit descender extended past y=180,
-                       clipping the lower curve of the "0" against
-                       the SVG box edge. The gradient rect still
+                    @* SVG width 44: the rect occupies 16 px on the left
+                       edge, leaving x=20..44 for the labels, room for up
+                       to three digits. A narrower box clips a two-digit
+                       MaxSpeedKn like "30" at the right edge. *@
+                    @* SVG height 188: the bottom "0" tick sits at
+                       baseline y=178 with a 10 px font, and the digit
+                       descender extends past y=180, so a 180 px box
+                       clips the lower curve of the "0". The gradient rect still
                        runs 0..180 so the colour band lines up with
                        the top "30" tick at y=12; the extra 8 px
                        below the rect just lets the "0" glyph live
@@ -374,11 +370,11 @@
 
     @* === Wind history (two cards, one per axis) ===
        Sailors read direction and speed together ("is the wind both
-       shifting and building?") so the previous one-section / two-
-       chart layout split into two distinct cards: each one stands
-       on its own, can be scrolled to or focused independently, and
-       carries its own title + the TWD shift headline lives with the
-       direction card where it semantically belongs. Charts are
+       shifting and building?"), so the two cards sit together; each
+       one stands on its own, can be scrolled to or focused
+       independently, and carries its own title, and the TWD shift
+       headline lives with the direction card where it semantically
+       belongs. Charts are
        suppressed individually when their channel lacks >=5 samples
        or <30 s of span. *@
     @{
@@ -969,9 +965,9 @@
 
     /// <summary>
     /// Maps a 0..1 fraction to a viridis colour (purple -> blue ->
-    /// teal -> green -> yellow). Replaces the previous blue->yellow->red
-    /// ramp, which (a) failed for ~8% of male sailors with deutera-
-    /// nomaly in the yellow-green band, and (b) washed out under
+    /// teal -> green -> yellow) rather than a blue->yellow->red
+    /// ramp, which (a) fails for ~8% of male sailors with deutera-
+    /// nomaly in the yellow-green band, and (b) washes out under
     /// polarised sunglasses where yellow disappears. Viridis is
     /// perceptually uniform in lightness so it preserves ordering
     /// under both colour-deficient vision and bright sun.

@@ -16,7 +16,7 @@ namespace OnaPlotter.Services;
 ///   2. <c>navigation.state ==</c> any "underway" / "sailing" /
 ///      "motoring" / "fishing" / "drifting" - NOT moored regardless of
 ///      speed (lets a sailboat ghost in light wind without being tagged).
-///   3. SOG &lt; 1 kn for &gt;= 60 s straight - the legacy heuristic
+///   3. SOG &lt; 1 kn for &gt;= 60 s straight - the fallback heuristic
 ///      that handles the typical case where a vessel doesn't publish
 ///      <c>navigation.state</c> at all.
 /// </para>

@@ -39,18 +39,18 @@ namespace OnaPlotter.Services.Json;
 ///     every <c>Serialize&lt;T&gt;</c> / <c>Deserialize&lt;T&gt;</c>
 ///     to either move to source-gen or carry a
 ///     <c>[DynamicDependency]</c> hint. The application code is
-///     fully migrated as of F2: this context covers wire-protocol
+///     fully on source-gen: this context covers wire-protocol
 ///     DTOs (compact output) and primitive shapes used at JS-interop
 ///     literal-embed sites; <see cref="OnaGeoJsonContext"/> covers
 ///     the helm-facing GeoJSON exports + share blobs (indented
 ///     output).</description></item>
 ///   <item><description><b>Bundle size</b>: source-gen lets the
 ///     linker drop large parts of <c>System.Text.Json.Reflection</c>
-///     once <c>TrimMode=full</c> ships. Audit estimates ~50 KB.</description></item>
+///     once <c>TrimMode=full</c> ships, an estimated ~50 KB.</description></item>
 /// </list>
 /// </summary>
-// PropertyNameCaseInsensitive: matches the previous AuthApi behaviour
-// (the only call site that explicitly enabled it). Other types in the
+// PropertyNameCaseInsensitive: AuthApi needs it so a server that
+// capitalises LoginStatus fields still parses. Other types in the
 // context all carry [JsonPropertyName] attributes that pin the
 // canonical name, so the case-insensitive fallback is a no-op for
 // them in practice; setting it once here keeps the policy uniform

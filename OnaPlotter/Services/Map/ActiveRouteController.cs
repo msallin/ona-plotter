@@ -40,7 +40,7 @@ public sealed class ActiveRouteController
     private readonly IRouteApi _routeApi;
     private readonly Func<bool> _isSignalKConnected;
     private readonly Action<string> _stopTimeoutWarning;
-    private readonly Func<DateTime> _utcNow;
+    private readonly TimeProvider _time;
 
     /// <summary>How long to wait for a server-confirmation delta after
     /// the helm tapped Stop Navigation before surfacing a "didn't
@@ -92,20 +92,22 @@ public sealed class ActiveRouteController
     /// course line from scratch.</summary>
     public Action? OnActiveOverlayCleared { get; set; }
 
+    private DateTime UtcNow() => _time.GetUtcNow().UtcDateTime;
+
     public ActiveRouteController(
         IMapRouteJs routeJs,
         IMapControlsJs controlsJs,
         IRouteApi routeApi,
         Func<bool> isSignalKConnected,
         Action<string> stopTimeoutWarning,
-        Func<DateTime>? utcNow = null)
+        TimeProvider time)
     {
         _routeJs = routeJs ?? throw new ArgumentNullException(nameof(routeJs));
         _controlsJs = controlsJs ?? throw new ArgumentNullException(nameof(controlsJs));
         _routeApi = routeApi ?? throw new ArgumentNullException(nameof(routeApi));
         _isSignalKConnected = isSignalKConnected ?? throw new ArgumentNullException(nameof(isSignalKConnected));
         _stopTimeoutWarning = stopTimeoutWarning ?? throw new ArgumentNullException(nameof(stopTimeoutWarning));
-        _utcNow = utcNow ?? (() => DateTime.UtcNow);
+        _time = time ?? throw new ArgumentNullException(nameof(time));
     }
 
     /// <summary>
@@ -114,7 +116,7 @@ public sealed class ActiveRouteController
     /// sync tick that still sees a non-null active route after
     /// <see cref="StopTimeoutSec"/> fires the warning callback.
     /// </summary>
-    public void MarkCourseStopPending() => _courseStopPendingUtc = _utcNow();
+    public void MarkCourseStopPending() => _courseStopPendingUtc = UtcNow();
 
     /// <summary>
     /// Wipes the cached href so the next <see cref="SyncAsync"/>
@@ -164,9 +166,9 @@ public sealed class ActiveRouteController
         {
             if (!_isSignalKConnected())
             {
-                _courseStopPendingUtc = _utcNow();        // re-arm
+                _courseStopPendingUtc = UtcNow();        // re-arm
             }
-            else if ((_utcNow() - stopT).TotalSeconds > StopTimeoutSec)
+            else if ((UtcNow() - stopT).TotalSeconds > StopTimeoutSec)
             {
                 _courseStopPendingUtc = null;
                 _stopTimeoutWarning("Stop navigation not confirmed by server - still navigating");

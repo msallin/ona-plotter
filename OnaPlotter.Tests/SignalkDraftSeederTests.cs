@@ -10,9 +10,9 @@ namespace OnaPlotter.Tests;
 /// Pins the design.draft REST seeder's parsing across the three
 /// response shapes signalk-server has emitted in the wild
 /// (canonical {value: {current, maximum}}, sibling-leaves shape,
-/// bare scalars). Extracted from SignalkClient as part of ARCH-006
-/// from the architecture review; the seeder is now testable in
-/// isolation without spinning up the full WebSocket lifecycle.
+/// bare scalars). The seeder lives outside SignalkClient so it is
+/// testable in isolation without spinning up the full WebSocket
+/// lifecycle.
 /// </summary>
 public class SignalkDraftSeederTests
 {
@@ -127,5 +127,25 @@ public class SignalkDraftSeederTests
         var doc = System.Text.Json.JsonDocument.Parse("3.14");
         var unwrapped = SignalkDraftSeeder.UnwrapValue(doc.RootElement);
         await Assert.That(unwrapped.GetDouble()).IsEqualTo(3.14);
+    }
+
+    [Test]
+    public async Task SeedAsync_MalformedBody_LogsWarningLeavesDraftUntouched()
+    {
+        // A proxy error page served with 200 must not crash the seed;
+        // it is logged through the injected logger so a misconfigured
+        // reverse proxy shows up in diagnostics.
+        var data = new NavigationData();
+        var logger = new RecordingLogger<SignalkDraftSeeder>();
+        var seeder = new SignalkDraftSeeder(
+            new HttpClient(new StubHandler(HttpStatusCode.OK, "<html>bad gateway</html>")),
+            new FakeBaseUrl(), data, logger, onDataChanged: () => { });
+
+        await seeder.SeedAsync(CancellationToken.None);
+
+        await Assert.That(data.DraftFromSignalK).IsNull();
+        await Assert.That(logger.Entries.Any(e =>
+            e.Level == Microsoft.Extensions.Logging.LogLevel.Warning
+            && e.Message.Contains("design/draft"))).IsTrue();
     }
 }

@@ -35,10 +35,8 @@ public interface IMapEditJs
     /// Leaflet-ordered <c>[lat, lon]</c> pairs. Returns null when the
     /// JS side has torn down. The C# poll derives stats (count +
     /// total NM) from this directly via
-    /// <c>RouteProgress.TotalDistanceMeters</c>; the previously-
-    /// separate <c>GetEditRouteStatsAsync</c> ran the same haversine
-    /// loop in JS and was retired per the project rule (decisions
-    /// in C#).</summary>
+    /// <c>RouteProgress.TotalDistanceMeters</c> rather than a JS-side
+    /// haversine loop, per the project rule (decisions in C#).</summary>
     Task<double[][]?> GetEditRouteCoordsAsync();
 
     // ---- Polygon edit -------------------------------------------------

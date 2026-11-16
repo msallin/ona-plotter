@@ -34,14 +34,14 @@ public sealed record AtonPayload(
 /// Lifecycle: instantiated by Map.razor once the JS module reference is
 /// available; <see cref="PushAsync"/> once after init.
 /// </summary>
-public sealed class AtonPushService
+public sealed class AtonLayerController
 {
     private readonly IMapAisJs _aisJs;
     private readonly AtonStore _atonStore;
     private bool _dirty;
     private int _lastPushedVersion = -1;
 
-    public AtonPushService(IMapAisJs aisJs, AtonStore atonStore)
+    public AtonLayerController(IMapAisJs aisJs, AtonStore atonStore)
     {
         _aisJs = aisJs ?? throw new ArgumentNullException(nameof(aisJs));
         _atonStore = atonStore ?? throw new ArgumentNullException(nameof(atonStore));

@@ -15,7 +15,7 @@ public class SignalkClientSelfContextTests
     private static SignalkClient BuildClient(AisStore store) =>
         new(
             baseUrl: new FakeBaseUrl(),
-            logger: NullLogger<SignalkClient>.Instance,
+            loggerFactory: NullLoggerFactory.Instance,
             data: new OnaPlotter.Models.NavigationData(),
             track: new TrackBuffer(),
             ais: store,

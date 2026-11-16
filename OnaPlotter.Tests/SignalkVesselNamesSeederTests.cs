@@ -159,8 +159,8 @@ public class SignalkVesselNamesSeederTests
     [Test]
     public async Task SeedAsync_MalformedJson_DoesNotThrow()
     {
-        // JsonException must not surface from SeedAsync. The catch-all
-        // logs at Warning so the receive loop keeps going.
+        // JsonException must not surface from SeedAsync; ResourceHttp
+        // turns it into a failed result so the receive loop keeps going.
         var (seeder, ais) = Build(HttpStatusCode.OK, "{ this is not json");
         await seeder.SeedAsync(CancellationToken.None);
         await Assert.That(ais.Count).IsEqualTo(0);
@@ -171,13 +171,17 @@ public class SignalkVesselNamesSeederTests
     {
         // Network failure / TLS error must not crash the receive loop.
         var ais = new AisStore();
+        var logger = new RecordingLogger<SignalkVesselNamesSeeder>();
         var seeder = new SignalkVesselNamesSeeder(
             new HttpClient(new StubHandler(new HttpRequestException("boom"))),
             new FakeBaseUrl(),
             ais,
-            NullLogger<SignalkVesselNamesSeeder>.Instance);
+            logger);
 
         await seeder.SeedAsync(CancellationToken.None);
         await Assert.That(ais.Count).IsEqualTo(0);
+        await Assert.That(logger.Entries.Any(e =>
+            e.Level == Microsoft.Extensions.Logging.LogLevel.Warning
+            && e.Message.Contains("/signalk/v1/api/vessels"))).IsTrue();
     }
 }

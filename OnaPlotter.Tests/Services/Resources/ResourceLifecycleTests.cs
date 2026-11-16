@@ -13,8 +13,7 @@ namespace OnaPlotter.Tests.Services.Resources;
 /// The route catalog is owned by <see cref="ResourceStore"/> which
 /// composes over <see cref="SignalkClient"/> (WS deltas) and the
 /// REST <c>*Api</c> clients (initial load + reconcile-on-reconnect).
-/// These tests pin sequences the helm reported breaking before
-/// PR #236:
+/// These tests pin sequences the helm relies on:
 ///
 /// <list type="bullet">
 ///   <item><description>Initial load -> activate -> remote edit
@@ -44,7 +43,7 @@ public class ResourceLifecycleTests
     {
         var client = new SignalkClient(
             baseUrl: new FakeBaseUrl(),
-            logger: NullLogger<SignalkClient>.Instance,
+            loggerFactory: NullLoggerFactory.Instance,
             data: new OnaPlotter.Models.NavigationData(),
             track: new TrackBuffer(),
             ais: new AisStore(),
@@ -527,8 +526,8 @@ public class ResourceLifecycleTests
     [Test]
     public async Task ReconcileOnReconnect_RestFailure_IsSwallowed_StoreStaysUsable()
     {
-        // PR #236 added a try/catch around RefreshAllAsync inside
-        // ReconcileOnReconnectAsync. If the inner exception escapes,
+        // ReconcileOnReconnectAsync wraps RefreshAllAsync in a
+        // try/catch. If the inner exception escapes,
         // an unobserved task can faulted-state the store; if it's
         // caught but the store enters a broken state, subsequent
         // deltas land on dead caches. This test pins both: the
@@ -541,7 +540,7 @@ public class ResourceLifecycleTests
         var regionApi = new FakeRegionApi();
         var client = new SignalkClient(
             baseUrl: new FakeBaseUrl(),
-            logger: NullLogger<SignalkClient>.Instance,
+            loggerFactory: NullLoggerFactory.Instance,
             data: new OnaPlotter.Models.NavigationData(),
             track: new TrackBuffer(),
             ais: new AisStore(),

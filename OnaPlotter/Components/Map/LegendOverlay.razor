@@ -123,12 +123,11 @@
                 <span class="legend-name">Own ship trail</span>
                 <span class="legend-desc">Own-boat track coloured by SOG (blue slow &rarr; green &rarr; yellow fast).</span>
             </li>
-            @* The "previous WP -> next WP" white dashed leg line was
-               removed (helm reported it as noise - no actionable info
-               beyond "where I was when the course started"). The
-               bearing line + active-route polyline below cover the
-               live navigational picture, so the legend doesn't list a
-               separate "Course leg" entry any more. *@
+            @* No "Course leg" entry: the chart draws no "previous WP
+               -> next WP" leg line (it is noise to the helm, with no
+               actionable info beyond "where I was when the course
+               started"). The bearing line + active-route polyline
+               below cover the live navigational picture. *@
             <li>
                 <span class="legend-swatch legend-bearing"></span>
                 <span class="legend-name">Bearing to waypoint</span>
@@ -139,10 +138,9 @@
                 <span class="legend-name">Passed leg</span>
                 <span class="legend-desc">Cyan dotted, dim. Legs of the active route already crossed - planned legs ahead stay solid.</span>
             </li>
-            @* Cross-track error legend entry was removed: the
-               perpendicular tick at own-boat is no longer drawn on the
-               chart (helm read it as a "fat red line" of unknown
-               purpose). XTE still drives the alarm rule and the
+            @* No cross-track error entry: the chart draws no
+               perpendicular tick at own-boat (helms read it as a "fat
+               red line" of unknown purpose). XTE still drives the alarm rule and the
                route-HUD pill - just not a legend swatch. *@
             <li>
                 <span class="legend-swatch legend-route-edit"></span>

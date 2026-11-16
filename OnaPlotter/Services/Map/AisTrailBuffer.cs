@@ -3,7 +3,7 @@ namespace OnaPlotter.Services.Map;
 /// <summary>
 /// Per-vessel sliding window of recent AIS positions. Owns trail growth,
 /// age-based trim, and the bookkeeping for what the JS renderer already
-/// holds, so <see cref="AisPushService"/> can send only the points
+/// holds, so <see cref="AisLayerController"/> can send only the points
 /// appended and the number trimmed since the last emission instead of
 /// the whole five-minute history on every change.
 ///

@@ -9,7 +9,7 @@ namespace OnaPlotter.Services.Settings;
 /// (GitHub Pages, file://, a separate static-host) against a remote
 /// SK server when CORS is enabled on that server.
 ///
-/// <para>Carved from <see cref="IAppSettings"/> as part of ARCH-003;
+/// <para>Narrow slice of <see cref="IAppSettings"/>;
 /// <see cref="ISignalKBaseUrl"/> binds against this narrow surface so
 /// the URL-resolver doesn't have to know about night-mode or chart
 /// filters.</para>

@@ -8,19 +8,15 @@ namespace OnaPlotter.Tests;
 /// <summary>
 /// Pins the parsing contract for the SignalK History API v2
 /// (<c>/signalk/v2/api/history/values</c>). TrackApi is the thin
-/// shim the History page uses; after the cleanup it only knows
-/// about the History API.
-///
-/// Earlier versions tried the v1 /self/track and v2 /resources/tracks
-/// endpoints as fallbacks, but those returned fixed-cadence data
-/// and every openplotter / modern signalk-server install exposes
-/// the history surface via signalk-parquet, so the fallbacks were
-/// dead weight. Tests for the dropped code went with them.
+/// shim the History page uses; it only knows about the History API.
+/// No v1 /self/track or v2 /resources/tracks fallbacks: those return
+/// fixed-cadence data, and every openplotter / modern signalk-server
+/// install exposes the history surface via signalk-parquet.
 /// </summary>
 public class TrackApiTests
 {
     /// <summary>Helper: the history endpoint returns the given body,
-    /// everything else 404s. Reflects the reality that TrackApi now
+    /// everything else 404s. Reflects the reality that TrackApi
     /// ONLY talks to /history/values.</summary>
     private static TrackApi HistoryApi(string historyBody,
         Action<HttpRequestMessage>? onRequest = null)
@@ -163,8 +159,7 @@ public class TrackApiTests
     public async Task History_Missing_Endpoint_Returns_Null()
     {
         // No history provider installed -> /history/values returns
-        // 404. Used to fall through to track endpoints; now just
-        // returns null because we no longer carry those fallbacks.
+        // 404. Returns null; there are no track-endpoint fallbacks.
         var http = ApiTestHelpers.MockClient(_ =>
             new HttpResponseMessage(HttpStatusCode.NotFound));
         var api = new TrackApi(http, ApiTestHelpers.FixedBaseUrl(), TimeProvider.System, NullLogger<TrackApi>.Instance);
@@ -208,11 +203,10 @@ public class TrackApiTests
     public async Task MapTrack_PathSet_Trims_Request_To_Position_And_Sog()
     {
         // Pin the map-overlay path-set: only position + SOG go on
-        // the wire. Helms flagged the original fetch as overshooting
-        // ("the call takes all paths as argument on the map, while we
-        // only need position and speed"). A regression that quietly
-        // widens this shape would re-introduce ~5 columns of
-        // server-side join + JSON-round-trip waste on every reload.
+        // the wire; the map only needs position and speed. A
+        // regression that quietly widens this shape would add ~5
+        // columns of server-side join + JSON-round-trip waste on
+        // every reload.
         string? capturedQuery = null;
         string body = """{"values":[{"path":"navigation.position","method":"first"},{"path":"navigation.speedOverGround","method":"average"}],"data":[["2026-04-23T14:00:00Z",[-76,24],2.5]]}""";
         var api = HistoryApi(body, req => { capturedQuery = req.RequestUri?.Query; });
@@ -545,8 +539,8 @@ public class TrackApiTests
         // emitting the ISO timestamp with an explicit non-zero offset
         // (e.g. "+02:00") parses to the corresponding UTC instant
         // rather than being kept as local. AdjustToUniversal is what
-        // makes this work; the substring-based test in earlier rounds
-        // didn't catch a regression that dropped that flag.
+        // makes this work; a substring-based assertion would not
+        // catch a regression that drops that flag.
         string body = """
         {
             "values":[{"path":"navigation.position","method":"first"}],
@@ -568,7 +562,7 @@ public class TrackApiTests
     public async Task RichFetch_TransportFailure_ReturnsNull()
     {
         // ResourceHttp catches HttpRequestException internally on the
-        // legacy GetServerTrackAsync path; the rich path has its own
+        // position-only GetServerTrackAsync path; the rich path has its own
         // try/catch. Pin both the catch and the null return so a
         // refactor that drops the wrapper goes red.
         var http = ApiTestHelpers.MockClient(_ => throw new HttpRequestException("dns fail"));
@@ -595,7 +589,7 @@ public class TrackApiTests
     public async Task RichFetch_EmptyData_ReturnsNull()
     {
         // Provider installed but no data in the window. Same fallback
-        // shape as legacy GetServerTrackAsync; pinned independently
+        // shape as position-only GetServerTrackAsync; pinned independently
         // here so a regression on the rich path can't escape.
         string body = """
         {
@@ -632,21 +626,19 @@ public class TrackApiTests
 
     // -----------------------------------------------------------------
     // Single-request contract: every (from, to, timespan, resolution,
-    // bbox) shape lands on exactly one HTTP request. The client used to
-    // chunk large windows to dodge a 500-row response cap that older
-    // signalk-parquet builds enforced; helm field-tested that current
-    // providers honour the requested resolution and the chunking added
-    // latency for no benefit. Page-level CancellationToken (Cancel
+    // bbox) shape lands on exactly one HTTP request. No chunking of
+    // large windows: current providers honour the requested
+    // resolution, so chunking only adds latency. Page-level
+    // CancellationToken (Cancel
     // button + 30 s timeout) handles the slow-server case.
     // -----------------------------------------------------------------
 
     [Test]
     public async Task RichFetch_AnyWindow_StaysSingleRequest()
     {
-        // Both the small-window (fits-anywhere) and the previously-
-        // chunked large-window (7 d at 30 s) shapes must each land on
-        // exactly one HTTP request. Replaces the earlier paginating
-        // tests; a regression that re-introduces chunking goes red here.
+        // Both the small-window (fits-anywhere) and the large-window
+        // (7 d at 30 s) shapes must each land on exactly one HTTP
+        // request; a regression that introduces chunking goes red here.
         int absoluteSmall = 0, relativeSmall = 0, absoluteLarge = 0, relativeLarge = 0;
         string body = """{"values":[{"path":"navigation.position","method":"first"}],"data":[["2026-04-23T14:00:00Z",[-76,24]]]}""";
         var api1 = HistoryApi(body, _ => absoluteSmall++);
@@ -677,7 +669,7 @@ public class TrackApiTests
     {
         // The /wind page seeds NavigationAverages from server history;
         // apparent-wind columns must populate TrackPoint.WindAngleApparent
-        // and WindSpeedApparent rather than the old hard-coded nulls.
+        // and WindSpeedApparent rather than staying null.
         string body = """
         {
             "values": [

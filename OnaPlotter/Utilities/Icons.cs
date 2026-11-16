@@ -57,6 +57,10 @@ public static class Icons
     // "History" text labels eat too much topbar real estate.
     private const string PathHistory = "<rect x=\"6\" y=\"3\" width=\"12\" height=\"18\" rx=\"2\"/><line x1=\"9\" y1=\"3\" x2=\"15\" y2=\"3\"/><line x1=\"9\" y1=\"9\" x2=\"15\" y2=\"9\"/><line x1=\"9\" y1=\"13\" x2=\"15\" y2=\"13\"/><line x1=\"9\" y1=\"17\" x2=\"13\" y2=\"17\"/>";
 
+    // Magnifier. Phone-width icon-only form of the topbar place
+    // search; tapping it expands the search input in place.
+    private const string PathSearch = "<circle cx=\"11\" cy=\"11\" r=\"7\"/><line x1=\"16.5\" y1=\"16.5\" x2=\"21\" y2=\"21\"/>";
+
     // Warning triangle with exclamation. Swapped onto the alarm-log
     // button when active alarms are firing (clipboard switches to
     // history-only state). Triangle stops at top y=3 so it visually
@@ -131,5 +135,6 @@ public static class Icons
         public static readonly string FullscreenExit = Render(PathFullscreenExit, 14);
         public static readonly string History = Render(PathHistory, 14);
         public static readonly string Warning = Render(PathWarning, 14);
+        public static readonly string Search = Render(PathSearch, 14);
     }
 }

@@ -6,10 +6,9 @@
    has Focus (centre + popup), Go (route to the note's lat/lon via
    the SignalK course-destination PUT), Edit (opens the same
    create-dialog with title + description pre-filled), and Delete
-   (with confirm). The previous global "Show" toggle is gone -
-   helms field-tested that the bbox-filter is the natural relevance
-   cue, and the global hide was rarely used once notes started being
-   created at all. *@
+   (with confirm). No global "Show" toggle: helms field-tested that
+   the bbox-filter is the natural relevance cue, and a global hide
+   is rarely used once notes exist at all. *@
 
 <CrudSection TItem="SignalkNote"
              Title="Notes"
@@ -51,11 +50,9 @@
     /// <summary>Fires when the helm taps Edit. Parent opens the
     /// same dialog used for Add Note pre-filled with the current
     /// title + description (see <c>Map.OpenNoteEditDialog</c>);
-    /// the dialog round-trips the API call. Replaces the older
-    /// <c>OnRename</c> two-tuple callback that was wired after a
-    /// single-field PromptAsync - the dialog gives the helm
-    /// description editing in the same surface, which the prompt
-    /// couldn't.</summary>
+    /// the dialog round-trips the API call. A dialog rather than a
+    /// single-field prompt so the helm can edit the description in
+    /// the same surface.</summary>
     [Parameter] public EventCallback<SignalkNote> OnEdit { get; set; }
     [Parameter] public EventCallback<SignalkNote> OnDelete { get; set; }
     [Parameter] public string LayerFilter { get; set; } = "";

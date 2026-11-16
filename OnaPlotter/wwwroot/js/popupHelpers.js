@@ -20,14 +20,12 @@ const _escMap = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&
 const _escRe = /[&<>"']/g;
 export function esc(s) {
     if (s == null) return '';
-    // Pure regex replace - no DOM round-trip. The previous implementation
-    // built a fresh <div>, wrote textContent (which encoded &/<>) then
-    // ran two .replace() passes for "/'. At ~10 esc() calls per AIS popup
-    // build that was ~10 document.createElement allocations + 10 DOM
-    // text-serialization passes per open. This shape is monomorphic
+    // Pure regex replace - no DOM round-trip. A <div>.textContent based
+    // escape would cost a document.createElement allocation + a DOM
+    // text-serialization pass per call, and there are ~10 esc() calls
+    // per AIS popup build. This shape is monomorphic
     // (one string in, one string out), stays in V8 string-internalised
-    // territory, and produces byte-identical output for the same set of
-    // five HTML-significant chars.
+    // territory, and escapes exactly the five HTML-significant chars.
     return String(s).replace(_escRe, ch => _escMap[ch]);
 }
 

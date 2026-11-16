@@ -211,11 +211,11 @@ public class MapControlsJsTests
         // The wrapper is called from OnAfterRenderAsync +
         // HandleSettingsChanged + per-tick frame dispatch; a propagated
         // exception trips Blazor's renderer error UI which empties the
-        // chart for the rest of the session. Helm-feedback: "I enabled
-        // radar HUD ... I dont see infos on the chart anymore" - root
-        // cause was a stale radar-overlay record pointing at a removed
-        // Leaflet map; surfacing the JS crash through here let it
-        // cascade past every subsequent _controlsJs call.
+        // chart for the rest of the session. Scenario: helm enables the
+        // radar HUD while a stale radar-overlay record points at a
+        // disposed Leaflet map; surfacing that JS crash through here
+        // would cascade past every subsequent _controlsJs call and
+        // blank the chart.
         var fake = new RecordingJsRef { ThrowJsExceptionNext = true };
         var sut = new MapControlsJs(fake);
 

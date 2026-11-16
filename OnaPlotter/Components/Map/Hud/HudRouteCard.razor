@@ -1,5 +1,6 @@
 @using OnaPlotter.Utilities
 @using OnaPlotter.Models
+@inject TimeProvider Time
 
 @* Active-route HUD card. Extracted from MapHud so the heaviest subtree
    (~90 lines of conditional rows, 8+ formatted values) only re-renders
@@ -12,17 +13,15 @@
    "no change" and skips re-render. Same optimisation pattern applies
    to HudAnchorCard. *@
 
-@* Previous layout was a 2-col grid (3-4 rows tall) plus a big Stop
-   Navigation button at the bottom, which ate a surprising amount of
-   vertical real estate on the landscape screens that are actually
-   used at sea. Now:
+@* Layout keeps vertical real estate to a minimum on the landscape
+   screens that are actually used at sea:
      - Title row keeps route name + WP-progress chip.
      - Six metrics (DTW / BRG / VMG / TTG / ETA / XTE) live in a
        single horizontal flex row; flex-wrap handles narrow portrait
        iPads by breaking onto two rows before overflowing.
-     - Stop Navigation moved to MapControls, next to Anchor (same
+     - Stop Navigation lives in MapControls, next to Anchor (same
        safety-toggle grouping; route + anchor are already mutually
-       exclusive). Removing the button from here saves a full row. *@
+       exclusive). Keeping the button out of here saves a full row. *@
 @if (Snapshot.Visible)
 {
     @* `route-stopping` class drives a dim+pulse style during the
@@ -122,19 +121,17 @@
                     </div>
                     <div class="route-info-item route-info-item-leg-time">
                         <div class="hud-label">ETA</div>
-                        <div class="hud-value route-value">@Format.Eta(Snapshot.TimeToGo)</div>
+                        <div class="hud-value route-value">@Format.Eta(Snapshot.TimeToGo, Time.GetLocalNow())</div>
                     </div>
                 }
             </div>
-            @* The XTE deviation bar (ILS-localiser-style horizontal
-               track + center mark + marker) used to live here. Helm
-               flagged it as visually noisy without proportional
-               value - the XTE numeric (in Big HUD) and the route
-               polyline + boat icon position on the chart already
-               communicate the same off-track information clearly.
-               Removed so the route card stays a metrics-and-actions
-               surface; the bar wasn't compensating for an unmet
-               need. *@
+            @* No XTE deviation bar (ILS-localiser-style horizontal
+               track + center mark + marker) here: it is visually
+               noisy without proportional value - the XTE numeric (in
+               Big HUD) and the route polyline + boat icon position on
+               the chart already communicate the same off-track
+               information clearly. The route card stays a
+               metrics-and-actions surface. *@
             @if (Snapshot.RouteDistanceRemaining is not null || Snapshot.RouteTimeToGo is not null)
             {
                 <div class="route-total-row">
@@ -163,8 +160,8 @@
                     }
                     @if (Snapshot.RouteTimeToGo is not null)
                     {
-                        @* ETA only on the route-total row. TTG dropped
-                           per helm feedback: TTG is the variable-width
+                        @* ETA only on the route-total row, no TTG:
+                           TTG is the variable-width
                            value that sometimes pushes the row to wrap
                            on a 390-wide phone viewport; ETA is a
                            fixed-width "HH:MM" form that always fits
@@ -172,9 +169,9 @@
                            per-leg TTG (above) covers the
                            "how long until I turn" answer; the
                            route-total ETA covers the "when do I
-                           arrive" answer -- which is the only one
-                           the helm asked to keep here. *@
-                        <span class="route-total-value">ETA @Format.Eta(Snapshot.RouteTimeToGo)</span>
+                           arrive" answer, which is the one the
+                           helm wants here. *@
+                        <span class="route-total-value">ETA @Format.Eta(Snapshot.RouteTimeToGo, Time.GetLocalNow())</span>
                     }
                 </div>
             }

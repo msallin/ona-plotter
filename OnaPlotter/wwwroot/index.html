@@ -2,9 +2,9 @@
 <!-- data-bs-theme is set by the inline boot script below from the
      persisted theme in localStorage, BEFORE Bootstrap's CSS first
      evaluates. This avoids a flash of dark-themed Bootstrap chrome on
-     a light-themed install (the previous hardcoded "dark" value was
-     visibly wrong for half-a-second on light / high-contrast helms
-     until themeApply.js::setTheme caught up). themeApply.js still owns
+     a light-themed install (a hardcoded value would be visibly wrong
+     for half-a-second on light / high-contrast helms until
+     themeApply.js::setTheme caught up). themeApply.js owns
      the attribute at runtime once Settings.Theme is known; this script
      is just the pre-mount seed so first paint matches the helm's
      persisted choice. -->

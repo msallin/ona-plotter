@@ -251,4 +251,26 @@ public class FormatTests
         await Assert.That(Format.DateTimeLocalInput(DateTime.MinValue)).IsEqualTo("0001-01-01T00:00");
         await Assert.That(Format.DateTimeLocalInput(DateTime.MaxValue)).IsEqualTo("9999-12-31T23:59");
     }
+
+    // ETA is wall-clock local time: a helm reading "ETA 23:00" at 22:00
+    // expects the same evening; past midnight the date prefix appears.
+    private static readonly DateTimeOffset EvenOfJune1 =
+        new(2026, 6, 1, 22, 0, 0, TimeSpan.FromHours(2));
+
+    [Test]
+    public async Task Eta_Null_ReturnsDashes()
+    {
+        await Assert.That(Format.Eta(null, EvenOfJune1)).IsEqualTo("--");
+    }
+
+    [Test]
+    [Arguments(0, "22:00")]
+    [Arguments(3600, "23:00")]
+    [Arguments(7199, "23:59")]
+    [Arguments(7200, "02.06 00:00")]
+    [Arguments(10800, "02.06 01:00")]
+    public async Task Eta_FormatsAgainstSuppliedLocalNow(double ttgSeconds, string expected)
+    {
+        await Assert.That(Format.Eta(ttgSeconds, EvenOfJune1)).IsEqualTo(expected);
+    }
 }

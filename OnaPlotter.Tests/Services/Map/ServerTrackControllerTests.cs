@@ -19,7 +19,7 @@ public class ServerTrackControllerTests
         public int Clears { get; private set; }
         public List<bool> ClipFlags { get; } = [];
 
-        public Task AddChartLayerAsync(string id, string tileUrl, int minZoom, int maxZoom, double opacity, double[]? bounds, int upscaleLevels, string attribution) => Task.CompletedTask;
+        public Task AddChartLayerAsync(string id, string tileUrl, int minZoom, int maxZoom, double opacity, double[]? bounds, int upscaleLevels, string attribution, bool overlay) => Task.CompletedTask;
         public Task RemoveChartLayerAsync(string id) => Task.CompletedTask;
         public Task SetChartLayerOrderAsync(string[] orderedIds) => Task.CompletedTask;
         public Task SetWeatherOverlayAsync(string tileUrl, double opacity) => Task.CompletedTask;
@@ -67,9 +67,9 @@ public class ServerTrackControllerTests
         ];
 
         // The light position-only fetch isn't exercised by
-        // ServerTrackController (it switched to the multi-path fetch
-        // so the map polyline can be SOG-coloured like the local
-        // trail). Unused but required by the interface.
+        // ServerTrackController (it uses the multi-path fetch so the
+        // map polyline can be SOG-coloured like the local trail).
+        // Unused but required by the interface.
         public Task<double[][]?> GetServerTrackAsync(string timespan = "1d", string resolution = "1m", CancellationToken ct = default)
             => Task.FromResult<double[][]?>(null);
 
@@ -114,8 +114,8 @@ public class ServerTrackControllerTests
         // ignores COG / heading / wind / depth. Pin that the
         // controller asks for the trimmed shape so a future
         // regression that swaps in TrackFetchPathSet.Rich for "let's
-        // be safe" fattens the request URL + parser cost again -
-        // helm field-reported the original rich-fetch as wasteful.
+        // be safe" fattens the request URL + parser cost for no
+        // benefit.
         var (ctrl, _, api, _) = New();
 
         await ctrl.ToggleAsync(true);
@@ -193,9 +193,9 @@ public class ServerTrackControllerTests
         // controller clears the JS polyline (no points to draw) and
         // surfaces the "no history" hint, but Visible STAYS TRUE so
         // the Layers-panel checkbox doesn't flip back off behind the
-        // helm's back. The old auto-disable read as "the app decided
-        // I didn't want this layer" and forced a re-check just to
-        // try a different duration / resolution.
+        // helm's back. Auto-disabling reads as "the app decided I
+        // didn't want this layer" and forces a re-check just to try
+        // a different duration / resolution.
         var (ctrl, js, api, infos) = New();
         api.Result = [];
 
@@ -334,9 +334,9 @@ public class ServerTrackControllerTests
     {
         // Empty result on first toggle keeps Visible=true. When the
         // helm then picks a different duration the controller MUST
-        // re-fetch (the previous bug auto-disabled, so the duration
-        // change at line `if (_visible) await ReloadAsync();` was a
-        // no-op and the helm had to re-check the box manually).
+        // re-fetch (if the layer auto-disabled, the duration change
+        // at `if (_visible) await ReloadAsync();` would be a no-op
+        // and the helm would have to re-check the box manually).
         var (ctrl, _, api, _) = New();
         api.Result = [];
         await ctrl.ToggleAsync(true);

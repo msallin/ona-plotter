@@ -13,10 +13,10 @@ namespace OnaPlotter.Services.Alarms;
 /// (<see cref="ServerNotificationStore.OnPathChanged"/>), so alarms react
 /// as soon as new data lands;</item>
 /// <item>a <see cref="TickInterval"/> timer, so time-based rules keep
-/// running when no data arrives. Without it DEADMAN never fired while the
-/// WebSocket was down, and server alarms dropped on disconnect
-/// (<see cref="ServerNotificationStore.Reset"/> fires no event) stayed on
-/// the banner until the next delta.</item>
+/// running when no data arrives. Without it DEADMAN would never fire while
+/// the WebSocket is down, and server alarms dropped on disconnect
+/// (<see cref="ServerNotificationStore.Reset"/> fires no event) would stay
+/// on the banner until the next delta.</item>
 /// </list>
 /// The manager throttles to one evaluation per
 /// <see cref="AlarmManager.EvaluationIntervalMs"/> and only then pulls

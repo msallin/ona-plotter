@@ -1,6 +1,6 @@
 // Diagnostic: visit each route, dump console/page errors and the Blazor
-// error UI text. Used to locate which navigation triggers the crash the
-// user reported. Does not make assertions - just logs.
+// error UI text. Used to locate which navigation triggers a crash.
+// Does not make assertions - just logs.
 
 import { test } from '@playwright/test';
 

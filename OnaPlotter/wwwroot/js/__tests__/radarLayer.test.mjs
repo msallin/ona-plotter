@@ -154,12 +154,11 @@ test('headingToSpokeOffset: quarter turn east is +N/4', () => {
 
 // --- computeSpokeIndex policy --------------------------------------------
 //
-// Pins the post-2026-05 default behaviour. Live boat at 192° true with
-// Mayara as the radar provider showed bearing-angle = ~0 (bow-relative)
-// on the wire instead of the spec's true-north reading, so spokes
-// painted bow-up regardless of actual heading and the only times the
-// picture looked correct were when the boat happened to point near
-// north. Default path now composes angle + heading and treats the wire
+// Pins the default behaviour. A provider (e.g. Mayara) can put a
+// bow-relative value (~0) in the wire bearing instead of the spec's
+// true-north reading, which paints spokes bow-up regardless of actual
+// heading, only looking correct when the boat points near north. So
+// the default path composes angle + heading and treats the wire
 // bearing as untrusted; the opt-in path stays available for installs
 // whose provider verifiably emits true-north.
 
@@ -188,9 +187,9 @@ test('computeSpokeIndex default: Mayara-style bearing=angle gets correct rotatio
     // ~0). At the boat's true heading 192deg a wire angle of 0 must
     // paint at the boat's heading offset (1092 on a 2048-spoke radar,
     // i.e. round(192/360 * 2048) = round(1092.27)) so the spoke lands
-    // roughly true-south on the canvas. Pre-fix, the bearing-wins
-    // branch put it at 0 (paint due north) and the user saw the
-    // overlay rotated backwards on every heading.
+    // roughly true-south on the canvas. A bearing-wins branch would
+    // put it at 0 (paint due north) and show the overlay rotated
+    // backwards on every heading.
     const spoke = { angle: 0, bearing: 0 };
     const heading192 = 192 * Math.PI / 180;
     assert.equal(computeSpokeIndex(spoke, heading192, 2048, false), 1092);
@@ -248,8 +247,8 @@ test('computeSpokeIndex: alignment default 0 = no extra rotation', () => {
 });
 
 test('computeSpokeIndex: wire bearing trusted without double-counting alignment', () => {
-    // Regression test for the helm-visible bug fixed by removing the
-    // /controls bearingAlignment read. On a HALO 31 with the radar's
+    // The client must not re-apply the radar's /controls
+    // bearingAlignment. On a HALO 31 with the radar's
     // own bearingAlignment set to -10° in firmware, the wire bearing
     // arrived as (heading_true + angle) - already bow-relative-
     // corrected because the radar's azimuth encoder applied the offset.

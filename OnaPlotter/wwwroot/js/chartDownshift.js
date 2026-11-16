@@ -1,13 +1,13 @@
 // Pure decision logic for the chart-tile downshift calibrator.
-// Extracted from leafletInterop.js's addChartLayer so the branching
+// Kept separate from leafletInterop.js's addChartLayer so the branching
 // can be exercised without a Leaflet TileLayer instance, a real map,
-// or DOM. The original handler still owns the side-effects (mutating
+// or DOM. The tileerror handler there owns the side-effects (mutating
 // layer.options.maxNativeZoom, calling layer.redraw(), the
 // console.warn) - this module only computes the decision.
 //
-// Deferred for discussion (see review SKEP-005 + PARA-004): whether
-// the calibrator is the right level of fix at all (the upstream SK
-// chart server should publish accurate maxzoom) and whether the
+// Open questions: whether the calibrator is the right level of fix
+// at all (the upstream SK chart server should publish accurate
+// maxzoom) and whether the
 // calibrator should re-arm on recovery rather than only ratcheting
 // the cap downward. This file is the seam those discussions will
 // cut against - adding a recovery branch or lifting to C# becomes

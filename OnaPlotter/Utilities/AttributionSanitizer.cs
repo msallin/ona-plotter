@@ -24,7 +24,7 @@ namespace OnaPlotter.Utilities;
 /// <para>Removable contract: drop this file + the call site in
 /// <see cref="OnaPlotter.Services.Map.ChartLayerController"/> +
 /// the <c>IsTrustedAttribution</c> flag on
-/// <see cref="OnaPlotter.Models.SignalkChart"/>. Reverting puts the
+/// <see cref="OnaPlotter.Models.SignalkChart"/>. Removing it puts the
 /// raw chart-provider string back into Leaflet's innerHTML; do NOT
 /// drop without replacing.</para>
 /// </summary>

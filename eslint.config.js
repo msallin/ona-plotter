@@ -1,21 +1,20 @@
 // Repo-root ESLint config. Lints the hand-written JS interop layer
-// under OnaPlotter/wwwroot/js so production-only crashes like the
-// "can't access lexical declaration 'editModeDeps' before
-// initialization" TDZ ReferenceError get caught at PR time, not on
-// a freshly loaded helm tablet.
+// under OnaPlotter/wwwroot/js so runtime-only crashes (a TDZ
+// ReferenceError on a `const` read before its declaration, an
+// undefined global) are caught at review time, not on a freshly
+// loaded helm tablet.
 //
-// Scope: OnaPlotter/wwwroot/js plus the deploy/ plugin shim. The
-// Razor-managed WASM runtime, OnaPlotter.UiTests (Playwright), and
-// node_modules are outside this config - they have their own
-// toolchains.
+// Scope: OnaPlotter/wwwroot/js, the deploy/ plugin shim and the
+// scripts/ build helpers. The Razor-managed WASM runtime,
+// OnaPlotter.UiTests (Playwright) and node_modules are outside this
+// config; they have their own toolchains.
 //
-// Rule philosophy: tight runtime-correctness rules, NO stylistic
-// rules. The codebase is hand-formatted and consistent; turning on
-// `semi`, `quotes`, `indent` etc. now would generate a thousand-
-// line cosmetic diff that buries the actual signal. Things that
-// are likely real bugs (use-before-define / no-undef / dupe-keys)
-// stay; things that are taste calls (arrow style, comma dangle)
-// stay off. Bumping the rule set later is one PR away.
+// Rule philosophy: tight runtime-correctness rules, no stylistic
+// rules. The codebase is hand-formatted and consistent; `semi`,
+// `quotes`, `indent` etc. would generate a large cosmetic diff that
+// buries the actual signal. Likely bugs (use-before-define, no-undef,
+// dupe-keys) are errors; taste calls (arrow style, comma dangle) stay
+// off.
 
 import js from '@eslint/js';
 import globals from 'globals';
@@ -35,45 +34,29 @@ export default [
                 // Leaflet is loaded as a global script tag in
                 // index.html (not an npm import) so Blazor can rely on
                 // window.L being live before the WASM runtime starts
-                // calling JS interop. Marking it readonly here matches
-                // the actual usage and silences no-undef at every
-                // L.map(), L.marker() call.
+                // calling JS interop.
                 L: 'readonly',
-                // Node's built-in test runner is used by *.test.js
-                // siblings of the production sources. The flat config
-                // can't easily split per-file globals without a second
-                // block, so the test-runner globals live alongside
-                // browser globals; production code that touches these
-                // would still trip the runtime, so the leak is mild.
-                process: 'readonly',
             },
         },
         rules: {
-            // The actual rule that would have caught the editModeDeps
-            // bug. functions:false keeps hoisted function declarations
-            // legal (they hoist by spec); variables/classes:true
-            // catches let/const/class TDZ and var-before-decl.
-            // The actual rule that would have caught the editModeDeps
-            // TDZ bug. Tuning:
+            // Catches the TDZ bug class: a `const X` used at
+            // module-init time before its declaration line. Tuning:
             //   functions:false - function declarations hoist, so
             //     forward refs to `function foo()` are legitimate at
             //     runtime. Only `let`/`const`/`class` are in TDZ.
             //   classes:false - L.Layer.extend({...}) and similar
             //     class-style declarations are referenced inside
             //     deferred callbacks (Leaflet draws, mode handlers)
-            //     that fire only after module init completes; TDZ
-            //     can't actually trip in the patterns this codebase
-            //     uses. Setting true generated 3 false positives in
-            //     radarLayer.js with no real bug behind any of them.
-            //   variables:true - catches the bug class. A `const X`
-            //     used at module-init time before its declaration
-            //     line will fire the rule here.
+            //     that fire only after module init completes, so TDZ
+            //     can't trip in the patterns this codebase uses;
+            //     `true` reports false positives in radarLayer.js.
+            //   variables:true - the actual signal.
             'no-use-before-define': ['error', {
                 functions: false,
                 classes: false,
                 variables: true,
             }],
-            // ESLint 9 recommended already enables most of these;
+            // ESLint recommended already enables most of these;
             // explicit listing makes the intent visible at config-
             // review time rather than buried in a preset.
             'no-undef': 'error',
@@ -83,9 +66,9 @@ export default [
             'no-dupe-args': 'error',
             'no-unreachable': 'error',
             // Unused vars are warnings, not errors: the JS interop
-            // code occasionally takes options bags from C# whose
-            // shape will grow in a later PR. argsIgnorePattern lets
-            // the helm prefix `_` to opt a parameter out explicitly.
+            // code takes options bags from C# whose shape may carry
+            // fields a given renderer ignores. A `_` prefix opts a
+            // parameter or binding out explicitly.
             'no-unused-vars': ['warn', {
                 argsIgnorePattern: '^_',
                 varsIgnorePattern: '^_',
@@ -96,18 +79,14 @@ export default [
                 destructuredArrayIgnorePattern: '^_',
                 caughtErrorsIgnorePattern: '^_',
             }],
-            // Empty `catch {}` blocks: idiom in the codebase is
-            // `catch { /* ignore */ }`. allowEmptyCatch:true so the
-            // four sites that don't have the comment yet don't fail
-            // the gate; the real signal of no-empty (e.g. an empty
-            // try block left from a botched refactor) still fires.
+            // Empty `catch {}` blocks are an accepted idiom here
+            // (`catch { /* ignore */ }`); the real signal of no-empty
+            // (an empty try or if block) still fires.
             'no-empty': ['error', { allowEmptyCatch: true }],
         },
     },
     {
         // Test files get the same rules but Node-runner globals.
-        // Splitting into a separate block is the flat-config idiom
-        // for per-file overrides.
         files: ['OnaPlotter/wwwroot/js/**/*.test.js'],
         languageOptions: {
             globals: {
@@ -122,6 +101,19 @@ export default [
         languageOptions: {
             ecmaVersion: 2022,
             sourceType: 'commonjs',
+            globals: {
+                ...globals.node,
+            },
+        },
+    },
+    {
+        // Build helpers invoked by MSBuild targets in
+        // OnaPlotter.csproj (interop bundle, CACHE_NAME stamp,
+        // precompression) plus their node:test suites. Node ESM.
+        files: ['scripts/**/*.mjs'],
+        languageOptions: {
+            ecmaVersion: 2022,
+            sourceType: 'module',
             globals: {
                 ...globals.node,
             },

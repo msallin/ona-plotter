@@ -93,7 +93,7 @@ public class AisVesselTests
         await Assert.That(vessel.ShipType).IsEqualTo("Cargo");
     }
 
-    // --- design.length / design.beam shape coverage (PR #221) ---
+    // --- design.length / design.beam shape coverage ---
     //
     // The wire-format readers below are load-bearing for the AIS popup +
     // VesselsSection LOA/Beam rendering. Three shapes flow into Apply
@@ -141,7 +141,7 @@ public class AisVesselTests
         // LengthOverallMeters was already set by a prior good delta
         // and a half-formed object follows, the prior value MUST
         // survive (some SK plugins emit interim {} during a re-publish
-        // round). Covered together so a single regression PR fails fast.
+        // round). Covered together so a single regression fails fast.
         var vessel = new AisVessel("vessels.test");
         var partial = JsonSerializer.SerializeToElement(new { hull = 30.0, waterline = 28.0 });
         await Assert.That(vessel.Apply("design.length", partial)).IsFalse();
@@ -300,10 +300,10 @@ public class AisVesselTests
     public async Task Apply_EmptyStringName_DoesNotOverwriteGoodName()
     {
         // SK servers occasionally republish identity with name="" - empty
-        // string, NOT null. The previous null-only guard let it through,
-        // and Name="" then made the displayName fallback fire (because
+        // string, NOT null. A null-only guard lets it through, and Name=""
+        // then makes the displayName fallback fire (because
         // IsNullOrEmpty(v.Name) is true), knocking the on-chart label back
-        // to the MMSI even though we previously had a good name. Whitespace-
+        // to the MMSI even though a good name was already known. Whitespace-
         // only deltas are also blocked since they'd render as a visually
         // empty label.
         var vessel = new AisVessel("vessels.test");

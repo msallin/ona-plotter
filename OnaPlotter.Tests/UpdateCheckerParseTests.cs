@@ -4,11 +4,10 @@ namespace OnaPlotter.Tests;
 
 /// <summary>
 /// Pins the <see cref="UpdateChecker.TryParseHash"/> contract.
-/// Replaced an earlier <c>Regex.Match</c> call so the bundle could
-/// drop the System.Text.RegularExpressions dependency entirely
-/// (~71 KB brotli, the assembly's only caller in the app).
-/// The behaviour-equivalence cases below cover the hashes the old
-/// regex would have matched, plus the malformed-input degradations.
+/// Hand-rolled instead of <c>Regex.Match</c> so the bundle doesn't
+/// need System.Text.RegularExpressions (~71 KB brotli; this would be
+/// its only caller in the app). The cases below cover the hashes a
+/// regex would match, plus the malformed-input degradations.
 /// </summary>
 public class UpdateCheckerParseTests
 {
@@ -81,9 +80,8 @@ public class UpdateCheckerParseTests
     public async Task First_Hash_Wins_When_File_Has_Multiple()
     {
         // Defensive: if a future build artefact accidentally embeds
-        // two `hash:` keys, the first-wins behaviour matches both
-        // the old regex (which returned the first match) and the
-        // new IndexOf-based scan.
+        // two `hash:` keys, the first one wins (same as a regex
+        // first-match would).
         const string payload = "{ hash: \"first1\", other: { hash: \"second2\" } }";
         await Assert.That(UpdateChecker.TryParseHash(payload)).IsEqualTo("first1");
     }

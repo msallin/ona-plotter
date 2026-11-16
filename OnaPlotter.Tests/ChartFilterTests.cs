@@ -101,8 +101,7 @@ public class ChartFilterTests
     [Test]
     public async Task Format_GermanLocale_StillEmitsDotDecimal()
     {
-        // Reproduce a regression we've burned on before: a German-
-        // locale boot can flip "double".ToString() to use ',' as the
+        // A German-locale boot can flip "double".ToString() to use ',' as the
         // decimal separator. CSS rejects "contrast(1,30)" and the
         // entire filter falls off the chart. Force invariant culture
         // by switching the thread + asserting the dot is still there.

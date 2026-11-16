@@ -7,9 +7,9 @@ namespace OnaPlotter.Services;
 /// persisted to <see cref="IKeyValueStore"/> on change.
 ///
 /// <para>Composed from the narrow settings interfaces in
-/// <c>Services/Settings/</c> (ARCH-003: ISP carve-out from the 43-
-/// property God Interface). Existing consumers can still inject
-/// <c>IAppSettings</c> for the full surface; new consumers should
+/// <c>Services/Settings/</c> (interface segregation, so no consumer
+/// depends on the whole 43-property surface by default). Consumers can
+/// still inject <c>IAppSettings</c> for the full surface; new ones should
 /// inject only the narrow interface they actually depend on so test
 /// doubles stay small and the change-amplification radius stays
 /// scoped.</para>

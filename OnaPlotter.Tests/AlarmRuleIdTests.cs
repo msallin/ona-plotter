@@ -83,7 +83,7 @@ public class AlarmRuleIdTests
     {
         var store = new ServerNotificationStore();
         store.Apply(path, "alert", "msg");
-        var rule = new ServerNotificationsAlarmRule(store);
+        var rule = new ServerNotificationsAlarmRule(store, NoopNotificationsApi.Instance, NoopPublishedAlarmTracker.Instance);
         var ctx = new AlarmEvaluationContext(new NavigationData(), [], new FakeSettings(),
             TestClock.FixedUtcNow, _ => false);
 

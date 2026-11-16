@@ -38,27 +38,27 @@ public sealed class SignalkVesselNamesSeeder
 
     /// <summary>
     /// Walk the vessels tree and apply each vessel's static leaves to
-    /// <see cref="AisStore"/>. Best-effort: a failure leaves names to
-    /// trickle in via live deltas instead.
+    /// <see cref="AisStore"/>. Best-effort: a failure (logged by
+    /// <see cref="ResourceHttp"/>) leaves names to trickle in via live
+    /// deltas instead.
     /// </summary>
     public async Task SeedAsync(CancellationToken ct)
     {
         try
         {
             var url = _baseUrl.Combine("/signalk/v1/api/vessels");
-            using var res = await _http.GetAsync(url, ct);
-            if (!res.IsSuccessStatusCode)
+            var result = await ResourceHttp.GetJsonAsync(_http, url, _logger, static root => root.Clone(), ct);
+            if (!result.Success)
             {
-                _logger.LogDebug("vessels endpoint {Url} returned {Status}", url, (int)res.StatusCode);
+                _logger.LogDebug("vessels endpoint {Url} failed: {Status} {Error}", url, result.StatusCode, result.Error);
                 return;
             }
 
-            using var stream = await res.Content.ReadAsStreamAsync(ct);
-            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
-            if (doc.RootElement.ValueKind != JsonValueKind.Object) return;
+            var root = result.Value;
+            if (root.ValueKind != JsonValueKind.Object) return;
 
             int seeded = 0;
-            foreach (var vesselProp in doc.RootElement.EnumerateObject())
+            foreach (var vesselProp in root.EnumerateObject())
             {
                 if (ct.IsCancellationRequested) break;
                 // Each property key is the short vessel id ("urn:mrn:imo:mmsi:...");
@@ -72,10 +72,6 @@ public sealed class SignalkVesselNamesSeeder
                 _logger.LogInformation("Seeded static data for {Count} vessels from REST snapshot", seeded);
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "REST vessel-snapshot seed failed (names will trickle in via deltas)");
-        }
     }
 
     /// <summary>

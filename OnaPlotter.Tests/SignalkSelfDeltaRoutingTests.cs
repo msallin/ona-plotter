@@ -51,7 +51,7 @@ public class SignalkSelfDeltaRoutingTests
         var notifs = new ServerNotificationStore();
         var client = new SignalkClient(
             baseUrl: new FakeBaseUrl(),
-            logger: NullLogger<SignalkClient>.Instance,
+            loggerFactory: NullLoggerFactory.Instance,
             data: new OnaPlotter.Models.NavigationData(time),
             track: track,
             ais: ais,

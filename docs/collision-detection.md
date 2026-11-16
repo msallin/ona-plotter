@@ -83,7 +83,7 @@ Settings → Alarms:
 
 All persisted to `localStorage` via `IAppSettings`; they take effect live —
 no reload needed. The classifier runs server-side
-(`Cpa.ClassifyThreat` inside `AisPushService.BuildSnapshot`); the JS layer
+(`Cpa.ClassifyThreat` inside `AisLayerController.BuildSnapshot`); the JS layer
 just reads the precomputed `cpaThreat` field on each vessel payload.
 
 ## How the math works (`OnaPlotter/Utilities/Cpa.cs`)
@@ -196,7 +196,7 @@ push, which happens at 3 Hz on a fast delta feed.
 | Moored auto-mute               | `OnaPlotter/Services/MooredVesselTracker.cs`              |
 | Alarm pipeline (C#)            | `OnaPlotter/Services/AlarmManager.cs` (`Evaluate`, `DismissAsync`, `SnoozeActiveAsync`, `SnoozeAsync`) |
 | CPA alarm rule                 | `OnaPlotter/Services/Alarms/CpaAlarmRule.cs`              |
-| Chip classifier (C#)           | `OnaPlotter/Services/Map/AisPushService.cs` (`ComputeVesselThreat`, `ThreatToWireString`) |
+| Chip classifier (C#)           | `OnaPlotter/Services/Map/AisLayerController.cs` (`ComputeVesselThreat`, `ThreatToWireString`) |
 | Audio (JS)                     | `OnaPlotter/wwwroot/js/platform/audioAlert.js`            |
 | Chip rendering + CPA lines     | `OnaPlotter/wwwroot/js/aisLayer.js`                       |
 | Distance rings (helm scaffold) | `OnaPlotter/wwwroot/js/aisLayer.js` (`setDistanceRings`)  |

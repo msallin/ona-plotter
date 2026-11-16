@@ -5,14 +5,14 @@ namespace OnaPlotter.Services.Settings;
 /// MainLayout, Settings page theme dialog). Includes the night-mode
 /// toggle since it's effectively a theme overlay.
 ///
-/// <para>Carved from <see cref="IAppSettings"/> as part of ARCH-003.
+/// <para>Narrow slice of <see cref="IAppSettings"/>.
 /// </para>
 /// </summary>
 public interface IThemeSettings
 {
     /// <summary>Red-shift overlay applied on top of the base theme.
-    /// One binary toggle - the previous four-step cycle (dusk / soft
-    /// / amber / red) was helm-flagged as confusing; helms wanting a
+    /// One binary toggle, since a multi-step cycle (dusk / soft /
+    /// amber / red) confuses helms; helms wanting a
     /// "dark intermediate without red shift" can use
     /// <see cref="Theme"/> = "dark" instead.</summary>
     bool NightMode { get; }
@@ -34,9 +34,9 @@ public interface IThemeSettings
     /// suppresses while the current cluster matches this value; the
     /// next cluster transition (sunrise / sunset) clears the override
     /// so auto-night resumes. Null when no override is active OR
-    /// when env.sun was unknown at toggle time. Replaces the
-    /// previous fixed 12-hour window which fought helms who wanted
-    /// their override to last the whole watch.</summary>
+    /// when env.sun was unknown at toggle time. Keyed to the sun
+    /// cluster rather than a fixed time window so the override lasts
+    /// the whole watch.</summary>
     string? LastManualNightOverrideSunCluster { get; }
 
     /// <summary>"system" (follow OS) / "light" / "dark". Independent

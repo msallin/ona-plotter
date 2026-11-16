@@ -82,8 +82,8 @@ public class MapKeyboardShortcutsTests
     [Test]
     public async Task HelpCard_ListsEveryShortcut()
     {
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<MapShortcutsOverlay>(p => p.Add(x => x.OnDismiss, () => { }));
+        using var ctx = new Bunit.BunitContext();
+        var cut = ctx.Render<MapShortcutsOverlay>(p => p.Add(x => x.OnDismiss, () => { }));
 
         var caps = cut.FindAll(".shortcuts-grid > kbd").Select(e => e.TextContent).ToList();
         var labels = cut.Markup;

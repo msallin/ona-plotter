@@ -7,7 +7,7 @@ namespace OnaPlotter.Services.Settings;
 /// this is overlay visibility + opacity + harbor mode + display
 /// density flags.
 ///
-/// <para>Carved from <see cref="IAppSettings"/> as part of ARCH-003.
+/// <para>Narrow slice of <see cref="IAppSettings"/>.
 /// </para>
 /// </summary>
 public interface IMapDisplaySettings
@@ -55,9 +55,8 @@ public interface IMapDisplaySettings
     /// local in-memory SOG-coloured trail AND the SignalK history
     /// polyline: the local trail is the "live cursor" that fills
     /// the window between server-track refetches, the server track
-    /// is the periodic catch-up. Helm-feedback consolidated the two
-    /// toggles into one because the local trail had no value on its
-    /// own (a perf optimisation to avoid hammering /history/values
+    /// is the periodic catch-up. One toggle covers both because the
+    /// local trail has no value on its own (a perf optimisation to avoid hammering /history/values
     /// every second). Defaults to true so a fresh helm gets the
     /// trail-of-record on the chart out of the box.</summary>
     bool ServerTrackVisible { get; }
@@ -155,10 +154,8 @@ public interface IMapDisplaySettings
 
     /// <summary>When true, the four corner HUD cards (top-left
     /// SOG/COG/Pos, top-right Wind, bottom-left Depth, bottom-right
-    /// Heading) are rendered on the map. Defaults to true so
-    /// existing installs see the same panels they always did; the
-    /// toggle was added in PR-B of the focus-group sweep so a helm
-    /// running an external instrument cluster (or doing a clean
+    /// Heading) are rendered on the map. Defaults to true so the
+    /// panels show out of the box; the toggle lets a helm running an external instrument cluster (or doing a clean
     /// chart screenshot) can declutter the corners without losing
     /// the autopilot / radar / route HUDs which have their own
     /// switches.</summary>

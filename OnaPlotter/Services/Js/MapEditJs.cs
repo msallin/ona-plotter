@@ -5,8 +5,8 @@ namespace OnaPlotter.Services.Js;
 /// <summary>
 /// <see cref="IMapEditJs"/> backed by an <see cref="IJSObjectReference"/>
 /// handle to the leafletInterop.js module. Centralises the
-/// JSDisconnected / ObjectDisposed swallow that every call site
-/// previously re-implemented. After <see cref="MarkDisposed"/> every
+/// JSDisconnected / ObjectDisposed swallow so call sites don't each
+/// re-implement it. After <see cref="MarkDisposed"/> every
 /// method becomes a silent no-op.
 /// </summary>
 public sealed class MapEditJs : IMapEditJs

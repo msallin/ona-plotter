@@ -36,13 +36,12 @@ describe('MarkerLayer API surface', () => {
         assert.equal(typeof ml.entries, 'function');
         assert.equal(typeof ml.setMap, 'function');
 
-        // `.size` is a getter (not a method) - equivalent to Map.prototype.size
-        // and what the originally-buggy `chartLayers.map.size` code wanted.
+        // `.size` is a getter (not a method) - equivalent to Map.prototype.size.
         assert.equal(typeof ml.size, 'number');
 
-        // `.items` is the backing store. Exposed so current code that
-        // reaches into it (outside this refactor) keeps working, but
-        // new callers should prefer the methods.
+        // `.items` is the backing store. Exposed so code that reaches
+        // into it keeps working, but new callers should prefer the
+        // methods.
         assert.deepEqual(ml.items, {});
     });
 

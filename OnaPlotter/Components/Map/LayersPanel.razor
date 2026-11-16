@@ -18,9 +18,9 @@
                     Message="Not connected to the SignalK server. Sections below show the last cached data; reconnect to refresh." />
     }
     @{
-        // Filter input threshold sums every list the filter now targets
+        // Filter input threshold sums every list the filter targets
         // (charts + routes + waypoints + notes + regions). Cutoff at
-        // 6 is still enough to want a search box; below that, scrolling
+        // 6 is enough to want a search box; below that, scrolling
         // the list is faster than typing.
         // Counts the lists the filter actually targets: charts,
         // routes, waypoints (bbox-filtered), notes (bbox-filtered),
@@ -97,8 +97,8 @@
     @* Single section for every "about my own boat" chart layer:
        ship-lines master, local trail, server-side ship track + its
        window / resolution / within-bounds controls. Consolidating
-       the previous Server-history section here saves the helm a
-       hunt across the panel for the right toggle. *@
+       them here saves the helm a hunt across the panel for the
+       right toggle. *@
     <OwnShipSection ShipLinesVisible="ShipLinesVisible"
                     OnToggleShipLines="OnToggleShipLines"
                     LaylinesVisible="LaylinesVisible"
@@ -174,7 +174,7 @@
                  OnToggleAtons="OnToggleAtonsVisible"
                  OnToggleAisLabels="OnToggleAisLabelsVisible" />
 
-    @* Import / Export GPX moved to the Settings page (Backup section).
+    @* Import / Export GPX lives on the Settings page (Backup section).
        The map's Layers panel is for "what shows on the chart"; data
        in / data out is a tooling concern that fits better on Settings
        alongside polar import, build stamp, and the developer tools. *@
@@ -194,8 +194,8 @@
     /// them to find the relevant one wins nobody anything.</summary>
     [Parameter, EditorRequired] public IReadOnlyList<SignalkWaypoint> FilteredWaypoints { get; set; } = [];
     /// <summary>Notes inside the current viewport. Same reasoning as
-    /// <see cref="FilteredWaypoints"/>: replaces the previous "Show"
-    /// global toggle, the bbox filter is the natural relevance cue.</summary>
+    /// <see cref="FilteredWaypoints"/>: the bbox filter is the natural
+    /// relevance cue, so there is no global "Show" toggle.</summary>
     [Parameter] public IReadOnlyList<SignalkNote> FilteredNotes { get; set; } = [];
     [Parameter] public IReadOnlyList<SignalkRegion> LoadedRegions { get; set; } = [];
     [Parameter] public IReadOnlyList<VesselListEntry> Vessels { get; set; } = [];

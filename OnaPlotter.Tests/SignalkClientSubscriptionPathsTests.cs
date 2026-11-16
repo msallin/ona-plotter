@@ -83,9 +83,9 @@ public class SignalkClientSubscriptionPathsTests
     [Test]
     public async Task SelfPaths_And_AisPaths_Are_Disjoint()
     {
-        // No overlap in the new model - Ais-tier paths don't appear
-        // in SelfPaths (which is SelfFast + SelfSlow). Previously the
-        // two sets overlapped and the receive loop had to strip.
+        // No overlap - Ais-tier paths don't appear in SelfPaths
+        // (which is SelfFast + SelfSlow), so the receive loop never
+        // has to strip.
         var overlap = SignalkClient.SelfPaths.Intersect(SignalkClient.AisPaths).ToArray();
         await Assert.That(overlap.Length).IsEqualTo(0);
     }
@@ -93,9 +93,9 @@ public class SignalkClientSubscriptionPathsTests
     [Test]
     public async Task SelfOnly_Tier_Keeps_Wind_Depth_Route_Autopilot()
     {
-        // Spot-check that the key self-only fields stayed in their
-        // expected tier. If this test fails the field moved to Ais
-        // or got dropped entirely.
+        // Spot-check that the key self-only fields sit in their
+        // expected tier. If this test fails the field is in the Ais
+        // tier or missing entirely.
         await Assert.That(SignalkClient.SelfPaths).Contains("environment.depth.belowTransducer");
         await Assert.That(SignalkClient.SelfPaths).Contains("environment.wind.speedApparent");
         await Assert.That(SignalkClient.SelfPaths).Contains("navigation.anchor.position");
@@ -200,9 +200,9 @@ public class SignalkClientSubscriptionPathsTests
     public async Task Legacy_V1_CoursePaths_NotSubscribed()
     {
         // The v1 navigation.courseGreatCircle.* and
-        // navigation.courseRhumbline.* subtrees were dropped in the
-        // tech-debt sweep (they duplicated the v2 surface above and
-        // SK Node Server has shipped v2 as the default for years).
+        // navigation.courseRhumbline.* subtrees are not subscribed
+        // (they duplicate the v2 surface above and SK Node Server
+        // has shipped v2 as the default for years).
         // Pinning the absence means a future subscribe-to-all-paths
         // auto-fix doesn't accidentally re-add them without anyone
         // noticing.

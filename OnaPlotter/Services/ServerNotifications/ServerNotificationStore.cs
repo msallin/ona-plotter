@@ -89,8 +89,8 @@ public sealed class ServerNotificationStore
     /// Returns false (and a default <paramref name="entry"/>) when the
     /// path is not armed. Avoids the <see cref="Active"/> snapshot
     /// allocation that <c>MobService.ReconcileMobPath</c> + the MOB
-    /// retry-loop's "is this path still active?" probe used to pay on
-    /// every notifications.mob.* mutation (synthetic apply, server WS
+    /// retry-loop's "is this path still active?" probe would otherwise
+    /// pay on every notifications.mob.* mutation (synthetic apply, server WS
     /// echo, clear, plus the reconcile re-firing OnPathChanged). Same
     /// dictionary the writers use; the contract is "the entry visible
     /// inside an OnPathChanged handler is the one just applied".</summary>
@@ -151,8 +151,7 @@ public sealed class ServerNotificationStore
         // but a buggy or compromised plugin could. Silencing an MOB
         // / fire / collision banner because of a rogue ack flag is
         // exactly the kind of safety failure the spec was designed to
-        // prevent. We trust the server's status block (Phase A flow)
-        // EXCEPT when state=emergency, where we keep the banner up
+        // prevent. We trust the server's status block EXCEPT when state=emergency, where we keep the banner up
         // regardless.
         if (status is { Acknowledged: true } && !IsEmergencyState(state))
         {

@@ -44,7 +44,7 @@ public class ResourceStoreTests
     {
         return new SignalkClient(
             baseUrl: new FakeBaseUrl(),
-            logger: NullLogger<SignalkClient>.Instance,
+            loggerFactory: NullLoggerFactory.Instance,
             data: new OnaPlotter.Models.NavigationData(),
             track: new TrackBuffer(),
             ais: new AisStore(),
@@ -308,7 +308,7 @@ public class ResourceStoreTests
     [Test]
     public async Task Routes_Snapshot_Is_Reused_Across_Reads_Until_Mutation()
     {
-        // PERF-001: the Routes / Waypoints / Notes / Regions snapshots
+        // The Routes / Waypoints / Notes / Regions snapshots
         // are cached and only rebuilt when the underlying dictionary
         // mutates. A handler that hits Routes twice in a row (e.g. a
         // HUD that reads Count and then iterates) gets the same list

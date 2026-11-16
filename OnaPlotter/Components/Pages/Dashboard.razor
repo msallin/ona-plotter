@@ -9,6 +9,7 @@
 @inject IPolarService Polar
 @inject OnaPlotter.Services.Settings.IMapDisplaySettings DisplaySettings
 @inject IJSRuntime JS
+@inject TimeProvider Time
 
 <PageTitle>Dashboard</PageTitle>
 
@@ -227,8 +228,8 @@
                    FROM" angle, not the "where it's going TO" angle like
                    COG. The convention is universal in sailing but worth
                    disambiguating in a tooltip rather than a stray small
-                   caption (the previous one read just "from" with no
-                   context, which raised "what is from?" reactions). *@
+                   caption (a bare "from" with no context raises "what is
+                   from?" reactions). *@
                 <h6 class="card-subtitle mb-1 text-muted"
                     title="True wind direction (the bearing the wind is coming FROM)">TWD</h6>
                 <p class="card-text display-6">@Format.Degrees(Data.WindDirectionTrue)<span class="dash-unit">&deg;</span></p>
@@ -246,10 +247,9 @@
                    cards' single display-6 line rather than inheriting
                    Bootstrap's default paragraph bottom-margin on the
                    first line. *@
-                @* display-6 (300) matches every other dashboard metric;
-                   metric-lg (600) used to render the lat / lon noticeably
-                   bolder than the rest of the grid - helm wanted it to
-                   look the same as SOG / depth / etc. *@
+                @* display-6 (300) matches every other dashboard metric so
+                   lat / lon look the same as SOG / depth / etc. rather
+                   than noticeably bolder than the rest of the grid. *@
                 <p class="card-text display-6 mb-0">@NauticalFormat.FormatLat(Data.Latitude)</p>
                 <p class="card-text display-6 mb-0">@NauticalFormat.FormatLon(Data.Longitude)</p>
             </div>
@@ -281,8 +281,8 @@
                     <div class="card-body text-center">
                         @* "Chart datum" is the proper term sailors recognise - the
                            reference depth on the chart against which both tide heights
-                           and depth soundings are stated. The previous "above datum"
-                           was technically correct but read as jargon ("what is datum?").
+                           and depth soundings are stated. "Above datum" is technically
+                           correct but reads as jargon ("what is datum?").
                            Tooltip on the small caption explains the underlying datum
                            convention for non-sailors. *@
                         <h6 class="card-subtitle mb-1 text-muted">Height now</h6>
@@ -297,7 +297,7 @@
                 </div>
             </div>
         }
-        @if (Data.TideTimeHigh is DateTime th && th > DateTime.UtcNow)
+        @if (Data.TideTimeHigh is DateTime th && th > Time.GetUtcNow().UtcDateTime)
         {
             <div class="col-md-4 col-sm-6">
                 <div class="card">
@@ -317,7 +317,7 @@
                 </div>
             </div>
         }
-        @if (Data.TideTimeLow is DateTime tl && tl > DateTime.UtcNow)
+        @if (Data.TideTimeLow is DateTime tl && tl > Time.GetUtcNow().UtcDateTime)
         {
             <div class="col-md-4 col-sm-6">
                 <div class="card">
@@ -403,7 +403,7 @@
                 <div class="card">
                     <div class="card-body text-center">
                         <h6 class="card-subtitle mb-1 text-muted">ETA</h6>
-                        <p class="card-text display-6">@Format.Eta(Data.CourseNextPointTimeToGo)</p>
+                        <p class="card-text display-6">@Format.Eta(Data.CourseNextPointTimeToGo, Time.GetLocalNow())</p>
                     </div>
                 </div>
             </div>
@@ -521,9 +521,9 @@
             || Data.TideTimeHigh is not null
             || Data.TideTimeLow is not null);
 
-    private static string FormatDashInterval(DateTime futureUtc)
+    private string FormatDashInterval(DateTime futureUtc)
     {
-        var span = futureUtc - DateTime.UtcNow;
+        var span = futureUtc - Time.GetUtcNow().UtcDateTime;
         if (span.TotalSeconds <= 0) return "now";
         if (span.TotalMinutes < 60) return $"in {(int)span.TotalMinutes}m";
         int hours = (int)span.TotalHours;

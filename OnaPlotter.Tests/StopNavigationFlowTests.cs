@@ -8,10 +8,8 @@ namespace OnaPlotter.Tests;
 /// active-route popup - and the Stop Navigation context-menu entry -
 /// share via Map.razor.StopNavigation. The pure helper is the testable
 /// surface; Map.razor's job is to drive the visual side-effects.
-///
-/// Acts on review finding TEST-003 (DeactivateActiveRoute had no C#
-/// test; the production "tap Deactivate -> server clears the course"
-/// path was unverified).
+/// These tests verify the production "tap Deactivate -> server clears
+/// the course" path.
 /// </summary>
 public class StopNavigationFlowTests
 {

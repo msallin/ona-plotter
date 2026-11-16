@@ -5,25 +5,25 @@ namespace OnaPlotter.Tests.Components;
 
 /// <summary>
 /// bUnit tests for MiscSection. Section bundles the "Rain radar"
-/// (RainViewer) toggle with the now-attached opacity slider. Tests
+/// (RainViewer) toggle with its attached opacity slider. Tests
 /// pin:
 ///   - opacity slider only appears when the radar checkbox is on
 ///     (a slider for an inactive overlay reads as broken)
-///   - the slider's preview vs commit split (helm-asked PERF-002:
-///     drag fires preview, release fires commit)
+///   - the slider's preview vs commit split (drag fires preview,
+///     release fires commit)
 ///   - parse + clamp on the slider input value
 ///   - slider value attribute matches the parameter
 /// </summary>
 public class MiscSectionTests
 {
     private static IRenderedComponent<MiscSection> RenderExpanded(
-        Bunit.TestContext ctx,
+        Bunit.BunitContext ctx,
         bool weatherVisible = false,
         int opacityPercent = 50,
         Action<int>? onPreview = null,
         Action<int>? onCommit = null)
     {
-        var cut = ctx.RenderComponent<MiscSection>(p =>
+        var cut = ctx.Render<MiscSection>(p =>
         {
             p.Add(x => x.WeatherVisible, weatherVisible);
             p.Add(x => x.WeatherOpacityPercent, opacityPercent);
@@ -39,7 +39,7 @@ public class MiscSectionTests
     [Test]
     public async Task OpacityRow_HiddenWhen_WeatherDisabled()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderExpanded(ctx, weatherVisible: false);
         await Assert.That(cut.FindAll(".weather-opacity-row").Count).IsEqualTo(0);
     }
@@ -47,7 +47,7 @@ public class MiscSectionTests
     [Test]
     public async Task OpacityRow_VisibleWhen_WeatherEnabled()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderExpanded(ctx, weatherVisible: true);
         await Assert.That(cut.FindAll(".weather-opacity-row").Count).IsEqualTo(1);
     }
@@ -55,7 +55,7 @@ public class MiscSectionTests
     [Test]
     public async Task OpacitySlider_InitialValue_MatchesParameter()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderExpanded(ctx, weatherVisible: true, opacityPercent: 35);
         var input = cut.Find(".weather-opacity-slider");
         await Assert.That(input.GetAttribute("value")).IsEqualTo("35");
@@ -64,17 +64,17 @@ public class MiscSectionTests
     [Test]
     public async Task OpacitySlider_ShowsPercentLabel()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderExpanded(ctx, weatherVisible: true, opacityPercent: 70);
         await Assert.That(cut.Find(".weather-opacity-value").TextContent).IsEqualTo("70%");
     }
 
-    // === preview vs commit split (PERF-002) ===
+    // === preview vs commit split ===
 
     [Test]
     public async Task OnInput_FiresPreview_NotCommit()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         int previewCalls = 0, commitCalls = 0;
         int previewLast = -1;
         var cut = RenderExpanded(ctx, weatherVisible: true,
@@ -91,7 +91,7 @@ public class MiscSectionTests
     [Test]
     public async Task OnChange_FiresCommit_NotPreview()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         int previewCalls = 0, commitCalls = 0;
         int commitLast = -1;
         var cut = RenderExpanded(ctx, weatherVisible: true,
@@ -110,7 +110,7 @@ public class MiscSectionTests
     [Test]
     public async Task OnInput_BelowFloor_ClampsTo5()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         int got = -1;
         var cut = RenderExpanded(ctx, weatherVisible: true,
             onPreview: v => got = v);
@@ -121,7 +121,7 @@ public class MiscSectionTests
     [Test]
     public async Task OnInput_AboveCeiling_ClampsTo95()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         int got = -1;
         var cut = RenderExpanded(ctx, weatherVisible: true,
             onPreview: v => got = v);
@@ -135,7 +135,7 @@ public class MiscSectionTests
         // TryParse returns false for "banana" -> early-return path.
         // Without this guard a malformed touchscreen event would
         // produce a NaN downstream of the slider.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         int previewCalls = 0;
         var cut = RenderExpanded(ctx, weatherVisible: true,
             onPreview: _ => previewCalls++);
@@ -146,7 +146,7 @@ public class MiscSectionTests
     [Test]
     public async Task OnInput_EmptyString_NoCallback()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         int previewCalls = 0;
         var cut = RenderExpanded(ctx, weatherVisible: true,
             onPreview: _ => previewCalls++);
@@ -157,7 +157,7 @@ public class MiscSectionTests
     [Test]
     public async Task OnInput_InRange_PassesThrough()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         int got = -1;
         var cut = RenderExpanded(ctx, weatherVisible: true,
             onPreview: v => got = v);

@@ -94,7 +94,7 @@ public partial class Map
         // (fresh route: empty + suggested name; in-place edit: the
         // saved route's waypoints + name). If nothing changed, cancel
         // bails silently - "I have to confirm even though I made no
-        // changes" was a real helm-feedback gripe and led to either
+        // changes" is a real helm gripe and leads to either
         // muscle-memory tap-throughs or paranoid "did I touch
         // anything?" double-takes.
         int wpCount = routeEditCoords?.Length ?? 0;
@@ -117,8 +117,8 @@ public partial class Map
             // Quieted: 2 s instead of the default 4 s. Confirmation
             // already happened via the Discard / Keep-editing modal,
             // so this toast is just a "yep, gone" acknowledgement,
-            // not a warning. Helm-feedback: longer dwell felt like
-            // an apology. Suppressed entirely when nothing was
+            // not a warning; a longer dwell reads like an apology.
+            // Suppressed entirely when nothing was
             // discarded (helm cancelled an untouched edit) - the
             // toast in that case would announce work that didn't
             // exist.
@@ -182,15 +182,11 @@ public partial class Map
         return false;
     }
 
-    // UndoLastWaypoint() and the corresponding "Undo" button on the
-    // route-edit panel were dropped on helm request: in the current
-    // implementation the per-waypoint remove (× on the list rows) and
-    // the marker-drag-to-reposition gestures cover the same UX, so the
-    // Undo button was redundant chrome. The JS-side
-    // undoLastEditWaypoint export stays for now in case a future
-    // gesture (e.g. swipe-back) wants to call it - it's a few lines
-    // and removing it now would force a follow-up commit if the
-    // gesture lands later.
+    // No "Undo" button on the route-edit panel: the per-waypoint
+    // remove (× on the list rows) and the marker-drag-to-reposition
+    // gestures cover the same UX, so it would be redundant chrome. The
+    // JS-side undoLastEditWaypoint export is kept for a possible
+    // gesture (e.g. swipe-back) - it's only a few lines.
 
     /// <summary>App-start prompt: when a route draft survived the
     /// previous session (save failed, accidental refresh, etc.),
@@ -395,9 +391,8 @@ public partial class Map
     {
         if (_editJs is null) return;
         // Fetch the live edit coords; derive stats (count + total NM)
-        // here in C#. Earlier code called a sibling JS getEditRouteStats
-        // that ran the same haversine sum - that round-trip is gone
-        // and the math now lives in one place per the project rule.
+        // here in C# so the haversine math lives in one place per the
+        // project rule, with no extra JS round-trip.
         var coords = await _editJs.GetEditRouteCoordsAsync();
         bool dirty = false;
         if (coords is not null)
@@ -413,24 +408,15 @@ public partial class Map
         {
             routeEditCoords = coords;
             dirty = true;
-            // Draft persistence used to fire on every coords change in
-            // this poll (sub-second). That was wasteful AND surfaced a
-            // restore prompt for edits the helm never tried to save.
-            // Persist now happens once at the start of SaveRouteCoreInner
-            // (so a failed API call leaves the work on disk) and is
-            // cleared on success / cancel. Tap-and-walk-away leaves no
-            // draft.
+            // No draft persistence in this sub-second poll: it would be
+            // wasteful AND surface a restore prompt for edits the helm
+            // never tried to save. Persist happens once at the start of
+            // SaveRouteCoreInner (so a failed API call leaves the work
+            // on disk) and is cleared on success / cancel.
+            // Tap-and-walk-away leaves no draft.
         }
         if (dirty) await InvokeAsync(StateHasChanged);
     }
-
-    // PersistRouteDraftAsync used to live here as a per-poll-tick
-    // localStorage write. Removed when the persistence trigger moved
-    // to the save-attempt path (see SaveRouteCoreInner) so an edit
-    // that the helm builds and abandons doesn't leave a draft for the
-    // next page-load to ask about. Inlining the save into
-    // SaveRouteCoreInner kept the surface area small enough that a
-    // dedicated helper wasn't pulling its weight.
 
     private async Task RemoveRouteWaypoint(int index)
     {
@@ -524,7 +510,7 @@ public partial class Map
         {
             if (coords is null || coords.Length < 2)
             {
-                // Save button is now disabled in this state, but belt-and-braces
+                // Save button is disabled in this state, but belt-and-braces
                 // in case a race gets us here anyway (keyboard shortcut, JS
                 // interop lag). Toast so the helm knows WHY nothing saved.
                 if (coords is not null)
@@ -683,9 +669,9 @@ public partial class Map
         finally
         {
             // Tear down the edit-mode state regardless of how the save
-            // unwound. Previously a JS exception above left the route-
+            // unwound. Otherwise a JS exception above leaves the route-
             // edit overlay + poll timer + nav-guard installed, and the
-            // user's next interaction landed on a ghost edit session.
+            // user's next interaction lands on a ghost edit session.
             routeEditMode = false;
             routeEditId = null;
             routeEditOriginalName = null;

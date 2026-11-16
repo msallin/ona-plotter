@@ -179,10 +179,9 @@ public class WaypointCourseApiTests
     public async Task CourseApi_AdvanceActiveRoute_PutsNextPointEndpoint()
     {
         // SignalK v2 Course API: PUT /activeRoute/nextPoint with body
-        // {"value": 1} advances one waypoint. The older empty-body
-        // form is NOT spec-compliant; this pins the correct shape so
-        // a drift back to {} doesn't regress auto-advance on strict
-        // servers.
+        // {"value": 1} advances one waypoint. An empty-body form is
+        // NOT spec-compliant; this pins the correct shape so a drift
+        // to {} doesn't regress auto-advance on strict servers.
         string? capturedUrl = null;
         string? capturedBody = null;
         HttpMethod? capturedMethod = null;

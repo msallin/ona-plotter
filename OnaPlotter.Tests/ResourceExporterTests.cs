@@ -120,7 +120,7 @@ public class ResourceExporterTests
         // with title in <name> and description in <desc>. Common
         // GPX-aware tools preserve both fields on round-trip;
         // pinning the tag mapping here so a future "use <cmt>
-        // instead of <desc>" PR doesn't break that quietly.
+        // instead of <desc>" change doesn't break that quietly.
         var n = new SignalkNote
         {
             Title = "Anchorage Notes",
@@ -245,11 +245,11 @@ public class ResourceExporterTests
     [Test]
     public async Task TripGpx_DefaultOptions_DoesNotDeclareTrackPointExtensionNs()
     {
-        // Bare export (no caller-supplied options) keeps the existing
+        // Bare export (no caller-supplied options) keeps the plain
         // backward-compatible shape: no gpxtpx namespace declaration,
-        // no per-trkpt <extensions> wrapper. A consumer reading the
-        // previous-version GPX would see byte-identical output for
-        // the same TrackPoint stream.
+        // no per-trkpt <extensions> wrapper, so consumers that expect
+        // plain GPX get byte-identical output for the same
+        // TrackPoint stream.
         var t0 = new DateTime(2026, 4, 30, 12, 0, 0, DateTimeKind.Utc);
         var pts = new[]
         {

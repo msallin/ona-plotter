@@ -186,8 +186,8 @@ public class MapEditJsTests
         await Assert.ThrowsAsync<JSException>(() => sut.StartRouteEditAsync());
     }
 
-    // GetEditRouteStatsAsync was removed: stats (count + total NM) are
-    // derived in C# from getEditRouteCoords + RouteProgress
+    // Route-edit stats (count + total NM) are derived in C# from
+    // getEditRouteCoords + RouteProgress
     // .TotalDistanceMeters. The route-edit-stats poll behaviour is
     // exercised end-to-end through the in-page UpdateRouteStats path
     // and the existing GetEditRouteCoordsAsync test below.

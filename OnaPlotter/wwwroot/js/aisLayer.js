@@ -8,7 +8,7 @@
 //
 // Every decision (colour role, opacity, label visibility, overlay mode,
 // titles, popup numbers, trail deltas) is made C#-side in
-// AisPushService and arrives on the payload; this module applies it.
+// AisLayerController and arrives on the payload; this module applies it.
 // Updates are versioned: a full snapshot (baseSeq -1) replaces the
 // state, a delta applies on top of the sequence it names. A delta for
 // a base this module doesn't hold is refused (return false) and C#
@@ -17,6 +17,7 @@
 import { rangeRingLabel } from './format.js';
 import { esc } from './popupHelpers.js';
 import { makeBoatSvg, makeRadarSvg } from './boatIcons.js';
+import { toLayoutPoint, viewportSize } from './mapRotation.js';
 
 let mapRef = null;
 let colors = null;
@@ -122,29 +123,63 @@ class VesselLayers {
 const vessels = new Map();
 
 // COG-vector tip dots, one polyline per colour holding every tip of
-// that colour as a dot (a near-zero-length part with round caps): a
-// circle marker per vessel doubled the vector-layer count, and each
-// vector layer is its own path element to lay out and paint.
-const tipLayers = new Map();       // colour -> L.polyline
+// that colour as a dot (a two-point part at the tip with round caps):
+// a circle marker per vessel would double the vector-layer count, and
+// each vector layer is its own path element to lay out and paint.
+const tipLayers = new Map();       // colour -> TipDotLine
 const dirtyTipColors = new Set();
-// Longitude nudge giving each dot part a non-zero length, so Leaflet
-// and the canvas renderer don't drop it; ~1 cm, never visible.
-const TIP_DOT_EPS_DEG = 1e-7;
+// Pixel offset given to the second point of each dot part after
+// projection. Leaflet rounds projected points to whole pixels, so both
+// points of a dot land on the same pixel, and the canvas renderer
+// (preferCanvas on slow clients) prunes zero-length segments before
+// stroking: no cap, no dot. A hundredth of a pixel is a real segment
+// to canvas and SVG alike and invisible as length.
+const TIP_DOT_NUDGE_PX = 0.01;
+
+/**
+ * True for a projected dot part whose two points coincide.
+ *
+ * Example: [{x:150,y:150},{x:150,y:150}] -> true;
+ *          [{x:150,y:150},{x:151,y:150}] -> false
+ */
+export function isCollapsedDot(ring) {
+    return ring.length === 2 && ring[0].x === ring[1].x && ring[0].y === ring[1].y;
+}
+
+// Polyline whose collapsed two-point parts get TIP_DOT_NUDGE_PX after
+// every projection (zoom, reset), so the round caps always draw.
+// Created on first use: L is a browser global and the pure helpers in
+// this module also run under node:test.
+let TipDotLine = null;
+function createTipDotLine(parts, options) {
+    if (!TipDotLine) {
+        TipDotLine = L.Polyline.extend({
+            _project() {
+                L.Polyline.prototype._project.call(this);
+                for (const ring of this._rings) {
+                    if (isCollapsedDot(ring)) ring[1] = ring[1].add(L.point(TIP_DOT_NUDGE_PX, 0));
+                }
+            },
+        });
+    }
+    return new TipDotLine(parts, options);
+}
 
 function markTipDirty(color) {
     dirtyTipColors.add(color);
 }
 
 /**
- * Tip-dot parts for the vessels drawing a tip in `color`.
+ * Tip-dot parts for the vessels drawing a tip in `color`: each tip as a
+ * two-point part on itself (TipDotLine gives it length on screen).
  *
  * Example: tips [{color:'#a', end:[54,11]}, {color:'#b', end:[55,12]}], '#a'
- *       -> [[[54, 11], [54, 11.0000001]]]
+ *       -> [[[54, 11], [54, 11]]]
  */
 export function tipDotParts(tips, color) {
     const parts = [];
     for (const t of tips) {
-        if (t.color === color) parts.push([t.end, [t.end[0], t.end[1] + TIP_DOT_EPS_DEG]]);
+        if (t.color === color) parts.push([t.end, t.end]);
     }
     return parts;
 }
@@ -166,9 +201,9 @@ function flushVectorTips() {
             layer.setLatLngs(parts);
         } else {
             // Tip: "the boat is here at +N minutes" without the helm
-            // extrapolating the dashes. smoothFactor 0 so Leaflet keeps
-            // the near-zero-length parts.
-            layer = L.polyline(parts, {
+            // extrapolating the dashes. smoothFactor 0 so Leaflet's
+            // simplification keeps the two-point parts.
+            layer = createTipDotLine(parts, {
                 color, weight: 5, lineCap: 'round', smoothFactor: 0,
                 interactive: false, pane: 'aisCogVectors',
             }).addTo(mapRef);
@@ -677,7 +712,7 @@ export function buildAisPopupHtml(rec) {
 // --- main update ---
 
 /**
- * Applies an AIS update from AisPushService (full snapshot or delta).
+ * Applies an AIS update from AisLayerController (full snapshot or delta).
  * Returns false when the update can't be applied, so C# resends a full
  * snapshot.
  */
@@ -854,8 +889,8 @@ function bindMarker(rec, marker) {
         }
         popup.options.autoPan = false;
         const cp = mapRef.latLngToContainerPoint(marker.getLatLng());
-        const size = mapRef.getSize();
-        popup.options.offset = cp.y < size.y * 0.3 ? L.point(0, 240) : L.point(0, 7);
+        const onScreen = toLayoutPoint(cp.x, cp.y);
+        popup.options.offset = onScreen.y < viewportSize().y * 0.3 ? L.point(0, 240) : L.point(0, 7);
     });
     marker.on('popupopen', () => {
         if (rec.v) marker.setPopupContent(buildAisPopupHtml(rec));

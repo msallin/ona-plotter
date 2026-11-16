@@ -14,8 +14,8 @@
 
 @* Hide when there are no radars at all OR every radar is "off"
    (the status the SK plugin reports when the array is powered
-   down). Helm-feedback: the card on a quiescent boat just sat
-   there empty-and-greyed; it's visual chrome only when at least
+   down). On a quiescent boat the card would just sit there
+   empty-and-greyed; it's visual chrome only when at least
    one radar is in standby / preparing / transmit. The Layers ->
    HUDs section toggle ("Radar card") still gates the card; this
    is the secondary "but only when there's something to control"
@@ -90,11 +90,10 @@
 
     @* Power toggle. One button per radar, label flips with state:
         * Transmitting -> "Standby" (instant tap)
-        * Standby / off -> "Transmit" (also instant tap; helm asked
-          for the hold-to-engage gate to come off because the radar
-          power request goes through the SK plugin which has its
-          own warmup state, so a stray tap doesn't put the array
-          on the air immediately) *@
+        * Standby / off -> "Transmit" (also instant tap, no
+          hold-to-engage gate: the radar power request goes through
+          the SK plugin which has its own warmup state, so a stray
+          tap doesn't put the array on the air immediately) *@
     <div class="ap-modes radar-hud-power">
         @if (IsTransmitting(radar))
         {
@@ -119,9 +118,9 @@
 
     /// <summary>Fires when the helm taps Standby or Transmit. Map.razor
     /// handles by calling <c>RadarApi.SetControlAsync(radarId, "power", ...)</c>.
-    /// Both buttons are now plain clicks - the SK radar plugin owns
-    /// the warmup state machine, so the previous 600 ms hold-to-engage
-    /// gate on Transmit was redundant safety theatre.</summary>
+    /// Both buttons are plain clicks - the SK radar plugin owns the
+    /// warmup state machine, so a hold-to-engage gate on Transmit
+    /// would be redundant safety theatre.</summary>
     [Parameter] public EventCallback<(string radarId, RadarPower power)> OnSetPower { get; set; }
 
     /// <summary>Fires when the user steps range up or down. Map.razor

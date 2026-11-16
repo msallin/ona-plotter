@@ -27,18 +27,15 @@
 // Module-level scratch + sentinel hoisted to the top so ESLint's
 // no-use-before-define is satisfied. Both are referenced inside
 // function bodies that fire only at runtime, after this module has
-// finished evaluating; the previous "declare-where-it-feels-natural"
-// layout was static-analysis-noisy without buying any runtime
-// safety. _scratchReader stays null until the first decode call
-// `??=` initialises it - the comment that used to live next to
-// the declaration explained why a let-then-init pattern was used:
-// eager `new Reader(...)` here would TDZ-trip the class declaration
-// further down in the file.
+// finished evaluating. _scratchReader stays null until the first
+// decode call `??=` initialises it; a let-then-init pattern is used
+// because an eager `new Reader(...)` here would TDZ-trip the class
+// declaration further down in the file.
 let _scratchReader = null;
 const EMPTY_BYTES = new Uint8Array(0);
 
 // Spoke object pool. Decoded Spoke literals are hot-allocated -
-// a typical recreational radar emits ~1k spokes/sec, each previously
+// a typical recreational radar emits ~1k spokes/sec, each otherwise
 // a fresh `{ angle, bearing, range, data, lat, lon }` literal at decode
 // time. The pool keeps a high-water-mark array of pre-shaped
 // objects and decodeSpokeInto resets fields in place so V8's

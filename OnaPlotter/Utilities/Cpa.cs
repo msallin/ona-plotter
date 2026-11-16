@@ -21,19 +21,18 @@ public static class Cpa
     /// returns null when CPA is in the past).</description></item>
     /// <item><description><b>CurrentDistanceNm</b> - separation
     /// between own and target RIGHT NOW, nautical miles. Free
-    /// byproduct of the equirectangular projection inside Compute -
-    /// the consumers (CpaAlarmRule, AisPushService.BuildSnapshot)
-    /// previously each ran their own GeoMath.HaversineMeters call,
-    /// so on a 200-vessel push at 3 Hz that was ~1200 redundant
-    /// haversines/sec across both pipelines. Embedding it here
-    /// drops both consumers to a single read.</description></item>
+    /// byproduct of the equirectangular projection inside Compute, so
+    /// the consumers (CpaAlarmRule, AisLayerController.BuildSnapshot)
+    /// read it instead of each running GeoMath.HaversineMeters (on a
+    /// 200-vessel push at 3 Hz that would be ~1200 redundant
+    /// haversines/sec across both pipelines).</description></item>
     /// </list>
     /// </summary>
     public readonly record struct Result(double CpaNm, double TcpaMin, double CurrentDistanceNm);
 
     /// <summary>
     /// Pre-computed own-vessel state for the per-target loop in
-    /// <see cref="CpaAlarmRule"/> / <see cref="OnaPlotter.Services.Map.AisPushService"/>
+    /// <see cref="CpaAlarmRule"/> / <see cref="OnaPlotter.Services.Map.AisLayerController"/>
     /// / Map.razor's CPA chip pass. The own-ship sin/cos of COG don't
     /// vary across the loop, so hoisting the trig out of the inner
     /// call avoids ~2 trig ops per AIS target per tick (200 vessels
@@ -73,7 +72,7 @@ public static class Cpa
     /// Hoists the own-ship sin/cos out of the per-target loop.
     /// Behaviour matches the all-args
     /// <see cref="Compute(double, double, double?, double?, double, double, double?, double?)"/>
-    /// overload exactly; the latter is now a thin wrapper that
+    /// overload exactly; the latter is a thin wrapper that
     /// pre-computes via <see cref="PrecomputeOwn"/> and dispatches here.
     /// </summary>
     public static Result? Compute(
@@ -240,8 +239,8 @@ public static class Cpa
     ///
     /// <para>No current-distance gate: the awareness band is wide
     /// enough (1.0 nm) that a vessel 4 nm away converging fast is
-    /// genuinely something the helm wants to see, which the previous
-    /// 2× guard-zone gate would have suppressed.</para>
+    /// genuinely something the helm wants to see, which a 2× guard-zone
+    /// distance gate would suppress.</para>
     ///
     /// <para>Buddies are exempted by the caller passing
     /// <paramref name="isBuddy"/> = true so a friend sailing close

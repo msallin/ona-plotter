@@ -262,9 +262,9 @@ public class ResourceTypeCacheTests
     [Test]
     public async Task Apply_Without_Equality_Comparer_Always_Fires_Changed()
     {
-        // Backward-compat: callers that don't pass a comparer (the old
-        // signature) get the original "fire Changed on every upsert"
-        // behaviour. Tests + non-resource consumers should still work.
+        // Callers that don't pass a comparer get "fire Changed on
+        // every upsert" behaviour. Tests + non-resource consumers
+        // rely on it.
         var cache = NewCache();
         cache.Apply("a", new Entry("a", "Alpha"));
 

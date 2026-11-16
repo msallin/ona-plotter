@@ -27,8 +27,11 @@ public interface IMapOverlaysJs
     /// shows in its bottom-right corner while the layer is on the map.
     /// SK chart-server tiles ship empty ("" - the SK server doesn't
     /// preach about the chart's source); the built-in OSM / OpenSeaMap
-    /// layers ship the ODbL / CC-BY-SA-required credit + link string.</para></summary>
-    Task AddChartLayerAsync(string id, string tileUrl, int minZoom, int maxZoom, double opacity, double[]? bounds, int upscaleLevels, string attribution);
+    /// layers ship the ODbL / CC-BY-SA-required credit + link string.</para>
+    /// <para><paramref name="overlay"/> (<see cref="OnaPlotter.Models.SignalkChart.IsOverlay"/>)
+    /// puts the layer in the chart-overlay pane above the weather radar;
+    /// base charts stay in the tile pane below it.</para></summary>
+    Task AddChartLayerAsync(string id, string tileUrl, int minZoom, int maxZoom, double opacity, double[]? bounds, int upscaleLevels, string attribution, bool overlay);
 
     /// <summary>Remove a previously-added chart tile overlay.</summary>
     Task RemoveChartLayerAsync(string id);

@@ -196,10 +196,9 @@
                                        "Export" / "Share" buttons in the
                                        Actions column stop propagation so
                                        a tap on them doesn't ALSO open the
-                                       detail. Replaces the previous "click
-                                       row -> fly to map" behaviour; the
-                                       Open button now carries that intent
-                                       explicitly so the row click stays
+                                       detail. The Open button carries the
+                                       "fly to map" intent explicitly so
+                                       the row click stays
                                        reserved for "tell me more about
                                        this trip". *@
                                     <tr class="history-trip-row" @onclick="@(() => OpenTripDetail(idx))"
@@ -489,8 +488,8 @@
     /// without a fresh JS roundtrip every render.</summary>
     private double[]? viewportBounds;
 
-    /// <summary>Surface the current scrub timestamp instead of the
-    /// previous "Point N / total" placeholder. Helms reading the
+    /// <summary>Surface the current scrub timestamp rather than a
+    /// "Point N / total" placeholder. Helms reading the
     /// playback line want to know when something happened, not which
     /// sample number it was. Local time because the helm is reading
     /// the time on the helm, not in UTC.</summary>
@@ -512,7 +511,7 @@
     {
         // Restore the helm's last-picked inputs from the singleton
         // page-state cache so navigating away + back finds the page
-        // exactly where they left it (focus-group request 2026-04).
+        // exactly where they left it.
         // We ONLY restore inputs; the loaded geometry refetches via
         // LoadTrack so the helm sees fresh data on return rather
         // than a stale cache.

@@ -70,11 +70,10 @@ public sealed class ToastService : IToastService
     public void Success(string message) => Show(message, ToastLevel.Success);
     public void Warning(string message) => Show(message, ToastLevel.Warning);
     public void Error(string message) => Show(message, ToastLevel.Error, durationSec: 6);
-    /// <summary>Info-level toast convenience helper. Previously
-    /// several call sites wrote <c>Toasts.Show(msg, ToastLevel.Info)</c>
-    /// inline; this method collapses them to <c>Toasts.Info(msg)</c>
-    /// for symmetry with Success / Warning / Error. Default duration
-    /// matches Show's default.</summary>
+    /// <summary>Info-level toast convenience helper, shorthand for
+    /// <c>Toasts.Show(msg, ToastLevel.Info)</c> and symmetric with
+    /// Success / Warning / Error. Default duration matches Show's
+    /// default.</summary>
     public void Info(string message) => Show(message, ToastLevel.Info);
 
     /// <summary>Adds a toast with an action button (e.g. "Undo" after a
@@ -167,9 +166,9 @@ public sealed class ToastService : IToastService
     /// that a refresh happened). If the original timer fires while
     /// the refreshed expiry is still in the future, we MUST NOT
     /// remove the toast - the helm sees the latest occurrence's
-    /// dwell time, not the first occurrence's. The previous version
-    /// (id-only RemoveAll) silently defeated the dedup-refresh in
-    /// exactly the flaky-transport scenario the feature exists for.
+    /// dwell time, not the first occurrence's. An id-only RemoveAll
+    /// would silently defeat the dedup-refresh in exactly the
+    /// flaky-transport scenario the feature exists for.
     /// </para></summary>
     private void ScheduleAutoDismiss(Guid id, int durationSec)
     {

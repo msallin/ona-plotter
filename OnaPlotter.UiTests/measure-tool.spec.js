@@ -1,11 +1,10 @@
 // Measure-tool guard.
 //
-// Pins the behaviour added under the "Vessel -> point measurement" item
-// in Plotter TODO: the Measure tool now supports a vessel-anchored
-// point that tracks own-boat as it moves, and the
+// Pins vessel -> point measurement: the Measure tool supports a
+// vessel-anchored point that tracks own-boat as it moves, and the
 // "Measure to here" entry in the long-press / right-click context menu
 // drops a fresh two-point measurement (vessel + clicked spot) without
-// the helm needing to know the old undocumented double-click gesture.
+// the helm needing to know an undocumented gesture.
 //
 // Tests at the JS-interop layer (the same dynamic-import pattern as
 // osm-attribution.spec.js) so we exercise the actual measureFromVesselTo
@@ -80,8 +79,7 @@ test.describe('Measure tool', () => {
                 lineStroke: line ? line.getAttribute('stroke') : null,
             };
         });
-        // The unified colour is #e2e8f0 (slate-200, the same hue the old
-        // vessel-to-point bearing line used). The browser normalises
+        // The unified colour is #e2e8f0 (slate-200). The browser normalises
         // hex to rgb() in computed style, so check both the fixed dot's
         // background, the vessel-anchored dot's border, and the SVG
         // segment line's stroke (which keeps the literal hex).

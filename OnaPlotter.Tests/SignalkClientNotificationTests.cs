@@ -34,7 +34,7 @@ public class SignalkClientNotificationTests
         var store = new OnaPlotter.Services.ServerNotifications.ServerNotificationStore();
         var c = new SignalkClient(
             baseUrl: new FakeBaseUrl(),
-            logger: NullLogger<SignalkClient>.Instance,
+            loggerFactory: NullLoggerFactory.Instance,
             data: new OnaPlotter.Models.NavigationData(),
             track: new TrackBuffer(),
             ais: new AisStore(),
@@ -184,9 +184,9 @@ public class SignalkClientNotificationTests
     public async Task Perpendicular_ObjectWithoutState_FailsSafeArmed()
     {
         // Some older plugin builds emit the notification envelope without
-        // an explicit state property when a rule fires. Missing state was
-        // previously silently dropped (armed=false); now it fails safe
-        // as armed so the alarm actually gets through.
+        // an explicit state property when a rule fires. Missing state
+        // must fail safe as armed (not be silently dropped as
+        // armed=false) so the alarm actually gets through.
         var c = NewClient();
         string payload = $@"{{
           ""context"":""vessels.urn:mrn:imo:mmsi:261006533"",

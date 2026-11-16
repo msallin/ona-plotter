@@ -21,9 +21,8 @@ public static class WeatherOpacity
     public const double MinFraction = 0.05;
     /// <summary>Upper bound as a fraction (95 %).</summary>
     public const double MaxFraction = 0.95;
-    /// <summary>Default fraction (50 %) - matches the previous
-    /// baked-in value before the slider shipped, so an existing
-    /// install without a stored value keeps the same look.</summary>
+    /// <summary>Default fraction (50 %), used when no value is
+    /// stored.</summary>
     public const double DefaultFraction = 0.5;
 
     /// <summary>Lower bound as a slider percent (5).</summary>

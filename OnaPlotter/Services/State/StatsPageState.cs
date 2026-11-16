@@ -14,8 +14,8 @@ namespace OnaPlotter.Services.State;
 /// flag) so the page renders identically to where the helm left it.
 /// </para>
 /// <para>
-/// Helm-feedback 2026-04: "When navigating away from history or
-/// stats, do not throw away but keep the last values."
+/// Helms expect navigating away from history or stats to keep the
+/// last values rather than throw them away.
 /// </para>
 /// </summary>
 public sealed class StatsPageState

@@ -1,20 +1,17 @@
 // Course line overlay drawn on every position update when the helm is
 // navigating an active course. Two layers + a destination affordance:
 //   * bearing line (boat -> next WP, dashed)
-//   * leg line (last reached WP -> next WP, kept null in current
-//     build; helm reported the original "where I started" stroke as
-//     visual noise so it's torn down on every redraw rather than
-//     populated)
+//   * leg line (last reached WP -> next WP, kept null: a "where I
+//     started" stroke is visual noise for the helm, so it's torn down
+//     on every redraw rather than populated)
 //   * pulse marker + helm-configured arrival-radius ring at the
 //     destination
 //
-// The XTE perpendicular tick was previously rendered here too -
-// dropped per helm feedback. The bar painted silently from the boat
-// to the side of the active leg, used the same red as CPA + MOB
-// overlays, and helms reading the chart asked "what's the fat red
-// line?" because there was no AIS target / X / pin at the end. The
-// XTE classifier (Utilities/Xte.cs), the alarm rule and the HUD
-// pill all stay - only the chart-overlay bar is gone.
+// No XTE perpendicular tick on the chart: a bar painted from the boat
+// to the side of the active leg, in the same red as CPA + MOB
+// overlays, reads as "what's the fat red line?" because there is no
+// AIS target / X / pin at its end. XTE is surfaced by the classifier
+// (Utilities/Xte.cs), the alarm rule and the HUD pill instead.
 
 let mapRef = null;
 let colors = null;
@@ -69,10 +66,9 @@ export function init(map, deps) {
 export function setCourseLine(selfLat, selfLon, wpLat, wpLon, arrivalRadiusMeters) {
     if (!mapRef) return;
 
-    // Tear down any leftover leg line from a previous build that
-    // still emitted it. courseLineLeg stays declared at module scope
-    // so dispose() can null it; this just guarantees the layer is
-    // gone if some older state left it behind.
+    // Tear down any leftover leg line. courseLineLeg stays declared at
+    // module scope so dispose() can null it; this just guarantees the
+    // layer is gone if some stale state left it behind.
     if (courseLineLeg) {
         mapRef.removeLayer(courseLineLeg);
         courseLineLeg = null;

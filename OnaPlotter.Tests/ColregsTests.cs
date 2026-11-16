@@ -143,9 +143,9 @@ public class ColregsTests
     public async Task OwnDrifting_TargetUnderway_Indeterminate()
     {
         // Drifting own-boat (SOG 0.05 kn) being approached head-on by a
-        // vessel at 5 kn. The earlier rule returned HeadOn / GiveWay,
-        // implying the drifter could manoeuvre out of the way. Honest
-        // answer is Indeterminate: COLREGS assumes both vessels have
+        // vessel at 5 kn. HeadOn / GiveWay would imply the drifter
+        // could manoeuvre out of the way. Honest answer is
+        // Indeterminate: COLREGS assumes both vessels have
         // steerage.
         var r = Run(tgtLatNm: 0.5, tgtLonNm: 0, tgtCogDeg: 180,
             ownSogKn: 0.05, tgtSogKn: 5);
@@ -191,10 +191,10 @@ public class ColregsTests
     public async Task ShortLabel_Returns_Null_For_Indeterminate()
     {
         // Pin the null sentinel: callers (CpaAlarmRule) gate the comma-
-        // separated banner suffix on `is not null`. An earlier empty-
-        // string return rendered "vessel: CPA 0.42nm T -5' - , Give way"
-        // when geometry was indeterminate but Rule 18 still resolved a
-        // role. Helm reported the trailing "- ," as obviously broken.
+        // separated banner suffix on `is not null`. An empty-string
+        // return would render "vessel: CPA 0.42nm T -5' - , Give way"
+        // when geometry is indeterminate but Rule 18 still resolves a
+        // role; the trailing "- ," reads as obviously broken.
         await Assert.That(Colregs.ShortLabel(Colregs.Category.Indeterminate)).IsNull();
     }
 

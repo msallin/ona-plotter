@@ -84,8 +84,8 @@ console.log(`stamp-cache-name: CACHE_NAME = ona-plotter-${stamp} in ${swPath}`);
  *     hash without poisoning the cache silently).
  *
  * The hash deliberately EXCLUDES:
- *   * The build timestamp / commit hash - those are the values
- *     that made the previous stamp churn unnecessarily.
+ *   * The build timestamp / commit hash - including them would make
+ *     the stamp churn on every build even when the shell is unchanged.
  *   * The CACHE_NAME value itself in the SW source. We replace
  *     it with a fixed sentinel before hashing so re-stamping an
  *     already-stamped file is idempotent (otherwise the SW

@@ -7,11 +7,10 @@ namespace OnaPlotter.Tests;
 /// <summary>
 /// Pins the cross-plotter publish path declared by each rule's
 /// <see cref="IAlarmRule.GetPublishPath"/> override. Centralises the
-/// "what path does this rule emit on?" coverage that used to live on
-/// AlarmPublisher.TryMapToPath before ARCH-002 moved the mapping onto
-/// the rules themselves. Each rule owns its own SK path; renaming a
-/// rule's Title no longer breaks publishing because the publisher
-/// dispatches off (rule, alarm), not (alarm.Title -> some lookup).
+/// "what path does this rule emit on?" coverage. Each rule owns its
+/// own SK path; renaming a rule's Title does not break publishing
+/// because the publisher dispatches off (rule, alarm), not
+/// (alarm.Title -> some lookup).
 /// </summary>
 public class AlarmRulePublishPathTests
 {
@@ -149,7 +148,8 @@ public class AlarmRulePublishPathTests
         // braces in case a future refactor lets a server-emitted
         // alarm reach the publisher's pass-1 loop.
         IAlarmRule rule = new ServerNotificationsAlarmRule(
-            new OnaPlotter.Services.ServerNotifications.ServerNotificationStore());
+            new OnaPlotter.Services.ServerNotifications.ServerNotificationStore(),
+            NoopNotificationsApi.Instance, NoopPublishedAlarmTracker.Instance);
         var info = new AlarmInfo(AlarmRuleId.ServerNotification, "ANCHOR", "dragging",
             AlarmSeverity.Danger,
             TargetKey: "notifications.navigation.anchor");

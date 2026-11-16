@@ -30,6 +30,14 @@ public sealed class AtonStore
     private DateTime _lastPruneTime;
     private int _version;
     private int _snapshotVersion = -1;
+    private readonly TimeProvider _time;
+
+    public AtonStore() : this(TimeProvider.System) { }
+
+    public AtonStore(TimeProvider time)
+    {
+        _time = time;
+    }
 
     /// <summary>Fired when the store's contents change (apply to existing
     /// or new AtoN, prune sweep). UI subscribers re-render the marker
@@ -41,7 +49,7 @@ public sealed class AtonStore
     /// changes so <see cref="GetAtons"/> rebuilds its snapshot lazily.</summary>
     public void Apply(string context, string path, DeltaValue value)
     {
-        var aton = _atons.GetOrAdd(context, ctx => new Aton(ctx));
+        var aton = _atons.GetOrAdd(context, ctx => new Aton(ctx, _time));
         if (aton.Apply(path, value))
         {
             Interlocked.Increment(ref _version);
@@ -54,7 +62,7 @@ public sealed class AtonStore
     /// invalidates the cache).</summary>
     public Aton[] GetAtons()
     {
-        var now = DateTime.UtcNow;
+        var now = _time.GetUtcNow().UtcDateTime;
         if (now - _lastPruneTime > PruneInterval)
         {
             _lastPruneTime = now;

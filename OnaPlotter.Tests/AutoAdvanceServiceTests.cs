@@ -64,7 +64,7 @@ public class AutoAdvanceServiceTests
         var settings = new FakeSettings { AutoAdvanceWaypoints = true };
         var signalk = new SignalkClient(
             baseUrl: new OnaPlotter.Tests.Services.Resources.FakeBaseUrl(),
-            logger: NullLogger<SignalkClient>.Instance,
+            loggerFactory: NullLoggerFactory.Instance,
             data: new OnaPlotter.Models.NavigationData(),
             track: new TrackBuffer(),
             ais: new AisStore(),

@@ -12,6 +12,7 @@
 
 import { MarkerLayer } from './markerLayer.js';
 import { esc, wireDeleteConfirm } from './popupHelpers.js';
+import { fitPadding } from './mapRotation.js';
 
 const regionLayers = new MarkerLayer();
 let mapRef = null;
@@ -264,7 +265,7 @@ export function focusRegion(id, firstRing) {
     if (!layer || !mapRef) return;
     if (Array.isArray(firstRing) && firstRing.length > 0) {
         const bounds = L.latLngBounds(firstRing);
-        mapRef.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
+        mapRef.fitBounds(bounds, { padding: fitPadding(40), maxZoom: 14 });
     }
     // Open popup on the first polygon in the group.
     layer.eachLayer(l => { if (l.openPopup) l.openPopup(); return false; });

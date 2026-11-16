@@ -3,9 +3,9 @@ using OnaPlotter.Models;
 namespace OnaPlotter.Utilities;
 
 /// <summary>
-/// Synthesises the OpenStreetMap + OpenSeaMap chart descriptors that
-/// were previously hardcoded as Leaflet base layers in
-/// <c>leafletInterop.js</c>'s <c>initMap</c>. They flow through the
+/// Synthesises the OpenStreetMap + OpenSeaMap chart descriptors
+/// instead of hardcoding them as Leaflet base layers in
+/// <c>leafletInterop.js</c>. They flow through the
 /// regular chart pipeline (<c>ChartApi.GetAllAsync</c> →
 /// <c>ChartLayerController.ToggleAsync</c> →
 /// <c>IMapOverlaysJs.AddChartLayerAsync</c>) so the helm gets the
@@ -36,8 +36,7 @@ public static class BuiltInCharts
     /// <see cref="OsmIdentifier"/>.</summary>
     public const string OpenSeaMapIdentifier = "openseamap";
 
-    /// <summary>The two synthetic charts that replace the previous
-    /// hardcoded base layers. Returned as an immutable read-only list
+    /// <summary>The two synthetic basemap / seamark charts. Returned as an immutable read-only list
     /// so callers can foreach without surprising a downstream
     /// modification.</summary>
     public static IReadOnlyList<SignalkChart> All { get; } =
@@ -78,8 +77,7 @@ public static class BuiltInCharts
             // Trusted (same rationale as the OSM entry above).
             IsTrustedAttribution = true,
             // 0.8 opacity so the seamark glyphs blend over whatever
-            // basemap (OSM / SignalK chart) is below. Mirrors the
-            // value the previous hardcoded seaBaseLayer used.
+            // basemap (OSM / SignalK chart) is below.
             Opacity = 0.8,
         },
     ];

@@ -1,12 +1,13 @@
 using Bunit;
+using Microsoft.Extensions.DependencyInjection;
 using OnaPlotter.Components.Map.Hud;
 
 namespace OnaPlotter.Tests.Components;
 
 /// <summary>
-/// Component tests for HudRouteCard. The perf-B refactor extracted
-/// this card out of MapHud so only route-related changes re-render
-/// it; these tests pin the snapshot-equality contract and make sure
+/// Component tests for HudRouteCard. The card is separate from
+/// MapHud so only route-related changes re-render it; these tests
+/// pin the snapshot-equality contract and make sure
 /// the rendered markup still covers the field matrix (visible vs
 /// hidden, WP progress on vs off, route total row appearing only
 /// when the server supplies the fields).
@@ -31,8 +32,9 @@ public class HudRouteCardTests
     [Test]
     public async Task NotVisible_RendersNothing()
     {
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<HudRouteCard>(p => p
+        using var ctx = new Bunit.BunitContext();
+        ctx.Services.AddSingleton(TimeProvider.System);
+        var cut = ctx.Render<HudRouteCard>(p => p
             .Add(x => x.Snapshot, Snap(visible: false)));
         await Assert.That(cut.FindAll(".route-panel").Count).IsEqualTo(0);
     }
@@ -40,8 +42,9 @@ public class HudRouteCardTests
     [Test]
     public async Task Visible_RendersDtwBrgAlways()
     {
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<HudRouteCard>(p => p
+        using var ctx = new Bunit.BunitContext();
+        ctx.Services.AddSingleton(TimeProvider.System);
+        var cut = ctx.Render<HudRouteCard>(p => p
             .Add(x => x.Snapshot, Snap()));
         await Assert.That(cut.Markup).Contains("DTW");
         await Assert.That(cut.Markup).Contains("BRG");
@@ -50,8 +53,9 @@ public class HudRouteCardTests
     [Test]
     public async Task WpProgress_Shown_InBigHud_WhenBothIndexAndTotalPresent()
     {
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<HudRouteCard>(p => p
+        using var ctx = new Bunit.BunitContext();
+        ctx.Services.AddSingleton(TimeProvider.System);
+        var cut = ctx.Render<HudRouteCard>(p => p
             .Add(x => x.Snapshot, Snap(pointIndex: 2, pointTotal: 7))
             .Add(x => x.BigHud, true));
         // pointIndex is 0-based from SK so the label shows idx+1. Only
@@ -66,8 +70,9 @@ public class HudRouteCardTests
         // Small HUD (BigHud=false, the default) drops the WP chip.
         // The prev/next step buttons are still rendered so the helm
         // can advance / step back without going to Big HUD first.
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<HudRouteCard>(p => p
+        using var ctx = new Bunit.BunitContext();
+        ctx.Services.AddSingleton(TimeProvider.System);
+        var cut = ctx.Render<HudRouteCard>(p => p
             .Add(x => x.Snapshot, Snap(pointIndex: 2, pointTotal: 7)));
         await Assert.That(cut.Markup).DoesNotContain("WP 3 of 7");
         // Prev/next buttons still present.
@@ -80,8 +85,9 @@ public class HudRouteCardTests
     {
         // Degrades cleanly on older SK servers that publish pointTotal
         // but not pointIndex, or vice versa. Don't render half-info.
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<HudRouteCard>(p => p
+        using var ctx = new Bunit.BunitContext();
+        ctx.Services.AddSingleton(TimeProvider.System);
+        var cut = ctx.Render<HudRouteCard>(p => p
             .Add(x => x.Snapshot, Snap(pointIndex: 1, pointTotal: null))
             .Add(x => x.BigHud, true));
         await Assert.That(cut.Markup).DoesNotContain("WP");
@@ -90,8 +96,9 @@ public class HudRouteCardTests
     [Test]
     public async Task RouteTotalRow_ShownWhenEitherFieldPresent()
     {
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<HudRouteCard>(p => p
+        using var ctx = new Bunit.BunitContext();
+        ctx.Services.AddSingleton(TimeProvider.System);
+        var cut = ctx.Render<HudRouteCard>(p => p
             .Add(x => x.Snapshot, Snap(routeDist: 15_000, routeTtg: null)));
         await Assert.That(cut.Markup).Contains("Route total");
     }
@@ -103,8 +110,9 @@ public class HudRouteCardTests
         // navigation.course.arrivalCircle for this leg. Hint
         // surfaces the missing-data state so the helm doesn't
         // wonder why the chart has no ring.
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<HudRouteCard>(p => p
+        using var ctx = new Bunit.BunitContext();
+        ctx.Services.AddSingleton(TimeProvider.System);
+        var cut = ctx.Render<HudRouteCard>(p => p
             .Add(x => x.Snapshot, Snap(radius: 0)));
         await Assert.That(cut.Markup).Contains("No arrival circle published");
     }
@@ -112,8 +120,9 @@ public class HudRouteCardTests
     [Test]
     public async Task NoArrivalCircleHint_HiddenWhenRadiusPositive()
     {
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<HudRouteCard>(p => p
+        using var ctx = new Bunit.BunitContext();
+        ctx.Services.AddSingleton(TimeProvider.System);
+        var cut = ctx.Render<HudRouteCard>(p => p
             .Add(x => x.Snapshot, Snap(radius: 50)));
         await Assert.That(cut.Markup).DoesNotContain("No arrival circle published");
     }
@@ -140,13 +149,13 @@ public class HudRouteCardTests
     [Test]
     public async Task Metrics_Render_On_Horizontal_Row()
     {
-        // The card was redesigned from a 2-col grid into a single
-        // horizontal flex row (DTW / BRG / VMG / TTG / ETA / XTE)
-        // so it eats landscape width instead of helm-screen height.
-        // Pin the markup class so a drift back to the old grid
-        // layout breaks this test.
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<HudRouteCard>(p => p
+        // The card is a single horizontal flex row (DTW / BRG / VMG /
+        // TTG / ETA / XTE) rather than a 2-col grid, so it eats
+        // landscape width instead of helm-screen height. Pin the
+        // markup class so a drift to a grid layout breaks this test.
+        using var ctx = new Bunit.BunitContext();
+        ctx.Services.AddSingleton(TimeProvider.System);
+        var cut = ctx.Render<HudRouteCard>(p => p
             .Add(x => x.Snapshot, Snap()));
         await Assert.That(cut.FindAll(".route-info-row").Count).IsEqualTo(1);
         await Assert.That(cut.FindAll(".route-info-grid").Count).IsEqualTo(0);
@@ -158,8 +167,9 @@ public class HudRouteCardTests
         // Stop Navigation lives on the control bar (MapControls) now,
         // not on the HUD card. Guard against a re-introduction that
         // would eat vertical space on the helm screen.
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<HudRouteCard>(p => p
+        using var ctx = new Bunit.BunitContext();
+        ctx.Services.AddSingleton(TimeProvider.System);
+        var cut = ctx.Render<HudRouteCard>(p => p
             .Add(x => x.Snapshot, Snap()));
         await Assert.That(cut.FindAll(".route-stop-btn").Count).IsEqualTo(0);
         await Assert.That(cut.Markup).DoesNotContain("Stop Navigation");

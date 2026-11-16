@@ -8,7 +8,7 @@ namespace OnaPlotter.Services;
 /// once at startup from <c>navigator</c> and stay fixed for the
 /// session, so they live in their own service rather than IAppSettings.
 ///
-/// <para>The detection moved from JS to C# so any decision based on
+/// <para>Detection runs on the C# side so any decision based on
 /// the flag (which Leaflet renderer to use, whether to push AIS
 /// during a pan) sits on the C# side where the rest of the rendering
 /// and alarm logic lives. JS just receives the resolved boolean.</para>

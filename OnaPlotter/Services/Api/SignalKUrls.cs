@@ -43,12 +43,9 @@ public static class SignalKUrls
     public const string HistoryValuesPath = "/signalk/v2/api/history/values";
 
     // Course paths MUST include /vessels/self/ per the SignalK v2
-    // Course API spec. Earlier these omitted the prefix and the
-    // server returned 404 on every call - Set Destination, Set
-    // Active Route, Advance Next Point, Clear. Auto-advance
-    // looked broken because even when the notification edge fired,
-    // CourseApi.AdvanceActiveRouteAsync hit a 404 and the server
-    // never actually flipped legs. Same prefix the Autopilot
+    // Course API spec. Without the prefix the server returns 404 on
+    // every call (Set Destination, Set Active Route, Advance Next
+    // Point, Clear), so auto-advance never flips legs. Same prefix the Autopilot
     // paths already use (AutopilotStatePath, etc.).
     public const string CoursePath = "/signalk/v2/api/vessels/self/navigation/course";
     public const string CourseDestinationPath = "/signalk/v2/api/vessels/self/navigation/course/destination";

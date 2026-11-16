@@ -72,10 +72,10 @@ function buildWaypointPopupHtml(id, name, lat, lon, createdAtIso) {
     // Marker icon stays distinct (circle vs folded-page) so the
     // at-a-glance "navigable target vs annotation" cue survives.
     //
-    // No "Focus" button: helm field-feedback was that tapping the
-    // marker already centred enough of the map for the popup to
-    // show the surrounding chart, so a separate Focus button was
-    // visual noise. The layers-panel still has Focus as an explicit
+    // No "Focus" button: tapping the marker already centres enough
+    // of the map for the popup to show the surrounding chart, so a
+    // separate Focus button is visual noise. The layers-panel has
+    // Focus as an explicit
     // affordance; the popup keeps the four actions a helm actually
     // wants on a single tap.
     return `
@@ -157,9 +157,8 @@ let _selfLat = 0, _selfLon = 0;
 
 // T+ counter ticks every 10 s. Single shared interval, started on
 // first active-MOB add and stopped on last remove. 10 s gives a
-// near-live readout without flooding the redraw loop; helm field-
-// feedback was that 30 s felt sluggish during the active rescue
-// window.
+// near-live readout without flooding the redraw loop; 30 s feels
+// sluggish during the active rescue window.
 let _mobTickHandle = null;
 
 function ensureMobTick() {
@@ -281,7 +280,7 @@ function buildActiveMobOverlays(id, lat, lon, createdAtIso, marker) {
     };
     // Alarm-radius circle: 50 m red ring around the casualty. Visual
     // anchor for "the helm should manoeuvre back to within this
-    // radius"; matches the legacy mobLayer geometry.
+    // radius".
     overlay.circle = L.circle([lat, lon], {
         radius: 50, color: colors.mob, fillColor: colors.mob,
         fillOpacity: 0.15, weight: 2,
@@ -302,9 +301,8 @@ function buildActiveMobOverlays(id, lat, lon, createdAtIso, marker) {
         .setLatLng([(_selfLat + lat) / 2, (_selfLon + lon) / 2])
         .setContent('MOB')
         .addTo(mapRef);
-    // At-pin label: time-of-drop + T+ elapsed + lat / lon. Helm-
-    // feedback wanted this pinned to the chart (not in a toast at
-    // the corner) so they can read the casualty fix straight off
+    // At-pin label: time-of-drop + T+ elapsed + lat / lon. Pinned to
+    // the chart (not in a toast at the corner) so the helm can read the casualty fix straight off
     // the map while talking on the VHF mic. T+ ticks live via the
     // shared 10 s interval below.
     overlay.pinLabel = L.tooltip({
@@ -490,7 +488,7 @@ function wireWaypointInteractions(target, id, lat, lon, name, createdAtIso, isMo
             const ll = ev.latlng || target.getLatLng();
             // A click ON a marker is unambiguous: the helm tapped a
             // specific waypoint. Edit-mode dispatch follows the
-            // historical priority (route -> polygon -> measure); the
+            // standard priority (route -> polygon -> measure); the
             // measure-first override only applies to empty-map clicks
             // (see leafletInterop.js::map.on('click')) where intent
             // is "I clicked a free spot, what mode am I in?".
@@ -501,10 +499,9 @@ function wireWaypointInteractions(target, id, lat, lon, name, createdAtIso, isMo
         }
     });
     target.on('popupopen', (ev) => {
-        // No .waypoint-focus-btn binding - the button was removed
-        // per helm field-feedback (see buildPopupHtml). The
-        // C# WaypointFocus JSInvokable stays for the layers-panel
-        // path; it just isn't wired from the popup any more.
+        // No .waypoint-focus-btn binding - the popup has no Focus
+        // button (see buildPopupHtml). The C# WaypointFocus
+        // JSInvokable serves the layers-panel path only.
         wireSimpleClick(ev.popup, '.waypoint-go-btn', 'WaypointGoTo', id);
         wireSimpleClick(ev.popup, '.waypoint-share-btn', 'WaypointShare', id);
         if (!isMob) {

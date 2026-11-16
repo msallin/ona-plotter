@@ -118,8 +118,8 @@ public class NavigationDataFuzzTests
     [Test]
     public async Task ActiveRoutePointIndex_RoundTripArtefact_RoundsUp()
     {
-        // The case the FUNC-004 finding raised: a server publishing
-        // 2.999999 (floating-point round-trip) MUST land as 3, not 2.
+        // A server publishing 2.999999 (floating-point round-trip)
+        // MUST land as 3, not 2.
         var nav = new NavigationData();
         nav.Apply("navigation.course.activeRoute.pointIndex", 2.999999);
         await Assert.That(nav.ActiveRoutePointIndex).IsEqualTo(3);
@@ -128,7 +128,7 @@ public class NavigationDataFuzzTests
     [Test]
     public async Task ActiveRoutePointIndex_NaN_LeavesUnknown()
     {
-        // NaN must NOT cast to 0 (which used to dim the route's
+        // NaN must NOT cast to 0 (which would dim the route's
         // already-passed history mid-passage). Treat as "unknown".
         var nav = new NavigationData();
         nav.Apply("navigation.course.activeRoute.pointIndex", 5.0);

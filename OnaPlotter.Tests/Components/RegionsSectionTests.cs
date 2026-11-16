@@ -33,9 +33,9 @@ public class RegionsSectionTests
     /// <summary>Builds a bUnit TestContext with a FakeConfirmationService
     /// registered so RegionsSection can inject it; returns both so tests
     /// that exercise Delete can flip AutoConfirm.</summary>
-    private static (Bunit.TestContext ctx, FakeConfirmationService confirm) Context()
+    private static (Bunit.BunitContext ctx, FakeConfirmationService confirm) Context()
     {
-        var ctx = new Bunit.TestContext();
+        var ctx = new Bunit.BunitContext();
         var confirm = new FakeConfirmationService();
         ctx.Services.AddSingleton<IConfirmationService>(confirm);
         return (ctx, confirm);
@@ -51,7 +51,7 @@ public class RegionsSectionTests
         var (ctx, _) = Context();
         using (ctx)
         {
-            var cut = ctx.RenderComponent<RegionsSection>(p => p
+            var cut = ctx.Render<RegionsSection>(p => p
                 .Add(x => x.Regions, Array.Empty<SignalkRegion>()));
             await Assert.That(cut.Markup).DoesNotContain("Regions");
         }
@@ -63,7 +63,7 @@ public class RegionsSectionTests
         var (ctx, _) = Context();
         using (ctx)
         {
-            var cut = ctx.RenderComponent<RegionsSection>(p => p
+            var cut = ctx.Render<RegionsSection>(p => p
                 .Add(x => x.Regions, new[]
                 {
                     Region("r1", "Anchorage"),
@@ -84,7 +84,7 @@ public class RegionsSectionTests
         var (ctx, _) = Context();
         using (ctx)
         {
-            var cut = ctx.RenderComponent<RegionsSection>(p => p
+            var cut = ctx.Render<RegionsSection>(p => p
                 .Add(x => x.Regions, new[] { Region("r1", "Anchorage") })
                 .Add(x => x.OnFocus, EventCallback.Factory.Create<SignalkRegion>(
                     this, r => focused = r)));
@@ -109,7 +109,7 @@ public class RegionsSectionTests
         confirm.AutoConfirm = false; // don't fire OnDelete for this test
         using (ctx)
         {
-            var cut = ctx.RenderComponent<RegionsSection>(p => p
+            var cut = ctx.Render<RegionsSection>(p => p
                 .Add(x => x.Regions, new[] { Region("r1", "Anchorage") }));
             Expand(cut);
 
@@ -129,7 +129,7 @@ public class RegionsSectionTests
         confirm.AutoConfirm = false;
         using (ctx)
         {
-            var cut = ctx.RenderComponent<RegionsSection>(p => p
+            var cut = ctx.Render<RegionsSection>(p => p
                 .Add(x => x.Regions, new[] { Region("r-without-name", name: "") }));
             Expand(cut);
 
@@ -152,7 +152,7 @@ public class RegionsSectionTests
             var region = new SignalkRegion { Id = "", Name = "" };
             region.OuterRings = new[] { new[] { new[] { 47.4, 8.5 }, new[] { 47.5, 8.5 }, new[] { 47.5, 8.6 } } };
 
-            var cut = ctx.RenderComponent<RegionsSection>(p => p
+            var cut = ctx.Render<RegionsSection>(p => p
                 .Add(x => x.Regions, new[] { region }));
             Expand(cut);
 
@@ -169,7 +169,7 @@ public class RegionsSectionTests
         var (ctx, _) = Context();
         using (ctx)
         {
-            var cut = ctx.RenderComponent<RegionsSection>(p => p
+            var cut = ctx.Render<RegionsSection>(p => p
                 .Add(x => x.Regions, new[] { Region("r1", "Anchorage") })
                 .Add(x => x.Visible, true)
                 .Add(x => x.OnToggleVisible, EventCallback.Factory.Create<bool>(

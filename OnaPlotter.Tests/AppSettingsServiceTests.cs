@@ -14,8 +14,8 @@ public class AppSettingsServiceTests
         await Assert.That(svc.MapOrientation).IsEqualTo("north");
         await Assert.That(svc.FollowBoat).IsTrue();
         await Assert.That(svc.LaylinesVisible).IsFalse();
-        // Defaults retuned 2026-05 to fewer false-positives shapes
-        // (3 -> 2 m depth, 15 -> 30 deg wind shift). Tests pin the
+        // Defaults favour fewer false positives (2 m depth, 30 deg
+        // wind shift). Tests pin the
         // current contract so an accidental mismatch between the
         // declared field default and the InitializeAsync fallback
         // surfaces here.
@@ -274,7 +274,7 @@ public class AppSettingsServiceTests
         // Pin the LOAD direction (the SetCpaAlarmNmAsync test above
         // already pins the SAVE direction). A user on de-CH / fr-FR
         // running an older buggy build might have a "0,5" in
-        // localStorage; the current loader uses InvariantCulture and
+        // localStorage; the loader uses InvariantCulture and
         // must fall back to the default rather than parse a comma as
         // a thousands separator and produce a nonsense threshold.
         // The legacy keys (cpaAlarmThreshold, guardZoneLookaheadMinutes)
@@ -300,12 +300,12 @@ public class AppSettingsServiceTests
     [Test]
     public async Task LastManualNightToggleUtc_RoundTripsFromIsoString()
     {
-        // Regression test for the ConflictingDateTimeRoundtripStyles
-        // ArgumentException that crashed boot the moment the user had
-        // tapped Night mode at least once before. The old parser
-        // combined RoundtripKind | AssumeUniversal which the runtime
-        // rejects - the fix uses RoundtripKind alone and forces Utc
-        // when the parsed Kind is Unspecified. This test pins both
+        // Guards against a ConflictingDateTimeRoundtripStyles
+        // ArgumentException crashing boot once the user has tapped
+        // Night mode at least once. RoundtripKind | AssumeUniversal
+        // is rejected by the runtime, so the parser uses RoundtripKind
+        // alone and forces Utc when the parsed Kind is Unspecified.
+        // This test pins both
         // behaviours: a normal "o"-format Z-suffixed string and a
         // legacy stored value with no kind information must both
         // load without throwing and resolve to UTC.
@@ -359,7 +359,7 @@ public class AppSettingsServiceTests
     [Test]
     public async Task LastManualNightToggleUtc_LegacyUnspecifiedTreatedAsUtc()
     {
-        // Hand-edited / pre-fix localStorage values may lack a kind
+        // Hand-edited / older localStorage values may lack a kind
         // suffix. The loader should treat those as UTC rather than
         // shifting them by the browser's TZ offset (which is what
         // ToUniversalTime would otherwise do for an Unspecified
@@ -728,14 +728,14 @@ public class AppSettingsServiceTests
     [Test]
     public async Task ChartOrder_Append_Does_Not_Wipe_Existing()
     {
-        // Regression guard for the reorder-silently-fails bug:
+        // Guards against reorder silently failing:
         //   Settings.ChartOrder.Append(x) returns an IEnumerable<string>
-        //   that references _chartOrder. SetChartOrderAsync used to
-        //   .Clear() _chartOrder before iterating, so the enumerator
-        //   saw an empty source and yielded only the newly-appended id.
-        //   Net effect: every ToggleChart(true) reset ChartOrder to
+        //   that references _chartOrder. If SetChartOrderAsync
+        //   .Clear()s _chartOrder before iterating, the enumerator
+        //   sees an empty source and yields only the newly-appended id.
+        //   Net effect: every ToggleChart(true) resets ChartOrder to
         //   just the last-toggled chart, then subsequent reorders
-        //   couldn't find neighbouring ids and the swap silently failed.
+        //   can't find neighbouring ids and the swap silently fails.
         // This test passes Settings.ChartOrder.Append(x) straight to
         // SetChartOrderAsync - exactly the pattern Map.ToggleChart
         // uses - and asserts the accumulated list is preserved.
@@ -1261,7 +1261,7 @@ public class AppSettingsServiceTests
         await Assert.That(svc2.DeadmanNightMinutes).IsEqualTo(20);
     }
 
-    // --- ServerSideApproachAlarms (PR #225) ---------------------------
+    // --- ServerSideApproachAlarms -------------------------------------
     //
     // Default ON; the SK course-provider plugin is the single source of
     // truth for arrival cues so two plotters on the same server agree
@@ -1275,8 +1275,8 @@ public class AppSettingsServiceTests
     public async Task ServerSideApproachAlarms_DefaultsTrue()
     {
         // Pin the prod default. FakeSettings mirrors this default;
-        // changing one without the other invites the silent test/prod
-        // divergence the polarity flip in PR #225 closed.
+        // changing one without the other invites a silent test/prod
+        // divergence.
         var svc = new AppSettingsService(new InMemoryKv());
         await svc.InitializeAsync();
         await Assert.That(svc.ServerSideApproachAlarms).IsTrue();
@@ -1724,8 +1724,8 @@ public class AppSettingsServiceTests
     [Test]
     public async Task ChartUpscaleEnabled_ExplicitFalse_StaysFalse()
     {
-        // Helms who explicitly opted out (before the default flipped
-        // to true) keep their choice on next load. Pin so a future
+        // Helms who explicitly opted out keep their choice on next
+        // load, even though the default is true. Pin so a future
         // refactor can't silently re-enable overzoom for someone who
         // turned it off.
         var kv = new InMemoryKv();
@@ -1748,9 +1748,9 @@ public class AppSettingsServiceTests
     {
         // LoadBool returns false for any stored value that isn't the
         // exact literal "true" (and only falls back to the default
-        // when the key is absent). The asymmetry matters under the
-        // PR #160 default-on flip: corruption-path helms land in
-        // upscale-off rather than the new default. Pinned across the
+        // when the key is absent). The asymmetry matters because the
+        // default is on: corruption-path helms land in upscale-off
+        // rather than the default. Pinned across the
         // boundary cases a future "loosen LoadBool" change would
         // most plausibly hit - a switch to OrdinalIgnoreCase, a
         // .Trim(), or bool.TryParse - so the asymmetry is visible

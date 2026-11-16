@@ -2,9 +2,15 @@
  * Course-up / head-up rotation for the chart map.
  *
  * The map container is rotated with a CSS transform (rotate(-deg) about
- * its centre). Leaflet itself knows nothing about the rotation, so every
- * place where it turns a screen position into a map position has to be
- * corrected here:
+ * its centre). It sits inside an unrotated, overflow-clipped viewport
+ * (its parent element). While rotation is enabled the container is
+ * oversized to the viewport diagonal and centred on it (see
+ * overscanFor), so the rotated chart still covers the screen corners;
+ * Leaflet's control corners (attribution) and the range-scale chip are
+ * moved into the viewport so they stay upright and on screen. Leaflet
+ * itself knows nothing about the rotation, so every place where it
+ * turns a screen position into a map position has to be corrected
+ * here:
  *   * map.mouseEventToContainerPoint: taps, clicks, context menu, wheel
  *     and pinch pivots, canvas hit-testing (all route through it).
  *   * L.Draggable: map drag-pan and marker drags (anchor move handle,
@@ -25,6 +31,13 @@
  * Coordinates: screen y points down, so a positive angle is clockwise,
  * matching CSS rotate(). The container is rotated by -deg, so a vector
  * on screen maps back to the container frame by rotating it by +deg.
+ *
+ * The angle lives in one registered custom property, --map-rot, on the
+ * container (app.css declares it with @property and transitions it).
+ * The container's own rotate() and every counter-rotation (AIS labels,
+ * tooltips, popups) read that one animated value, so they turn in
+ * lockstep through an orientation change instead of labels snapping
+ * upright while the chart is still turning.
  */
 
 /** Wraps an angle delta into (-180, 180]. */
@@ -76,13 +89,52 @@ export function containerPointToLayoutPoint(x, y, width, height, deg) {
     return { x: width / 2 + v.x, y: height / 2 + v.y };
 }
 
+/**
+ * Per-side growth that makes a container centred on a width x height
+ * viewport cover it at any rotation: each half-extent must reach the
+ * viewport's half-diagonal. Whole pixels per side keep the container
+ * centred on the viewport without sub-pixel tile offsets.
+ *
+ * Example: 390 x 844 phone -> diagonal 929.7, so x 270, y 43
+ * (container 930 x 930).
+ */
+export function overscanFor(width, height) {
+    if (!(width > 0) || !(height > 0)) return { x: 0, y: 0 };
+    const half = Math.hypot(width, height) / 2;
+    return {
+        x: Math.max(0, Math.ceil(half - width / 2)),
+        y: Math.max(0, Math.ceil(half - height / 2)),
+    };
+}
+
 // Rotation state of the one map that can rotate (the chart page).
 let rotatedMap = null;
 let rotationDeg = 0;
 let installed = false;
+// Oversize state: whether course-up / head-up is on, and the growth
+// per side currently applied to the container.
+let overscanEnabled = false;
+let overscan = { x: 0, y: 0 };
+let viewportObserver = null;
 
 function activeContainer() {
     return rotatedMap ? rotatedMap.getContainer() : null;
+}
+
+/**
+ * The unrotated element around the map container. Hosts everything that
+ * must stay upright and inside the visible screen (Leaflet's control
+ * corners, the range-scale chip).
+ */
+export function unrotatedLayer() {
+    const c = activeContainer();
+    return c ? c.parentElement : null;
+}
+
+/** Visible map size: the viewport, not the oversized container. */
+export function viewportSize() {
+    const vp = unrotatedLayer();
+    return vp ? { x: vp.clientWidth, y: vp.clientHeight } : { x: 0, y: 0 };
 }
 
 function belongsToRotatedMap(map) {
@@ -90,8 +142,9 @@ function belongsToRotatedMap(map) {
 }
 
 // Inline transform suffix that counter-rotates an overlay. Reads the
-// angle from --map-rot on the container so a rotation change restyles
-// every open tooltip / popup without touching each element.
+// angle from --map-rot on the container so a rotation change (and its
+// transition) restyles every open tooltip / popup without touching
+// each element.
 const COUNTER_ROTATE = ' rotate(var(--map-rot, 0deg))';
 
 function appendCounterRotation(el, origin) {
@@ -174,24 +227,92 @@ export function installRotationSupport(L) {
 
 /**
  * Makes `map` the rotatable map: pointer positions are un-rotated from
- * here on. Resets any rotation left over from a previous map.
+ * here on, and Leaflet's control corners move to the unrotated parent
+ * so they never turn with the chart or sit in the oversized margin.
+ * Resets any rotation left over from a previous map.
  */
 export function attachRotation(map) {
     rotatedMap = map;
     rotationDeg = 0;
+    overscanEnabled = false;
+    overscan = { x: 0, y: 0 };
     const original = map.mouseEventToContainerPoint;
     map.mouseEventToContainerPoint = function (e) {
         if (rotationDeg % 360 === 0) return original.call(this, e);
         return toContainerPoint(e.clientX, e.clientY);
     };
-    writeRotation(0);
+    const layer = unrotatedLayer();
+    // Leaflet removes the control container with DomUtil.remove (parent
+    // agnostic) on map.remove(), so re-parenting it is safe.
+    if (layer && map._controlContainer) layer.appendChild(map._controlContainer);
+    if (layer && typeof ResizeObserver !== 'undefined') {
+        viewportObserver = new ResizeObserver(() => applyOverscan());
+        viewportObserver.observe(layer);
+    }
+    clearRotation();
+    writeOverscan();
 }
 
 /** Forgets the map and clears every rotation trace it left behind. */
 export function detachRotation() {
-    if (rotatedMap) writeRotation(0);
+    if (viewportObserver) { viewportObserver.disconnect(); viewportObserver = null; }
+    if (rotatedMap) {
+        clearRotation();
+        overscan = { x: 0, y: 0 };
+        writeOverscan();
+    }
     rotatedMap = null;
     rotationDeg = 0;
+    overscanEnabled = false;
+}
+
+/**
+ * Turns the oversized container on (course-up / head-up) or off (north
+ * up). North up keeps the container at viewport size so it loads no
+ * tiles nobody can see.
+ */
+export function setOverscanEnabled(enabled) {
+    overscanEnabled = !!enabled;
+    applyOverscan();
+}
+
+/** Current growth per side in px (zero while north up). */
+export function getOverscan() {
+    return overscan;
+}
+
+/**
+ * fitBounds padding that fits into the visible viewport rather than the
+ * oversized container: `px` on every side plus the growth per side.
+ */
+export function fitPadding(px) {
+    return [px + overscan.x, px + overscan.y];
+}
+
+// Recomputes the growth for the current viewport and resizes the map
+// when it changed. invalidateSize with pan keeps the geographic centre
+// at the container centre, and the container grows symmetrically
+// about the viewport centre, so the chart does not jump on screen.
+function applyOverscan() {
+    if (!rotatedMap) return;
+    const vp = viewportSize();
+    const next = overscanEnabled ? overscanFor(vp.x, vp.y) : { x: 0, y: 0 };
+    if (next.x === overscan.x && next.y === overscan.y) return;
+    overscan = next;
+    writeOverscan();
+    rotatedMap.invalidateSize({ pan: true, animate: false });
+}
+
+function writeOverscan() {
+    const container = activeContainer();
+    if (!container) return;
+    if (overscan.x === 0 && overscan.y === 0) {
+        container.style.removeProperty('--map-overscan-x');
+        container.style.removeProperty('--map-overscan-y');
+        return;
+    }
+    container.style.setProperty('--map-overscan-x', `${overscan.x}px`);
+    container.style.setProperty('--map-overscan-y', `${overscan.y}px`);
 }
 
 /** Current continuous rotation in degrees (map heading up). */
@@ -207,28 +328,31 @@ export function getRotationDeg() {
 export function setRotation(headingDeg, minStepDeg = 0) {
     if (!rotatedMap) return false;
     const next = unwrapRotation(rotationDeg, headingDeg);
-    if (Math.abs(next - rotationDeg) < minStepDeg) return false;
+    // An unchanged angle writes nothing, so a north-up session never
+    // puts a transform on the container.
+    if (next === rotationDeg || Math.abs(next - rotationDeg) < minStepDeg) return false;
     rotationDeg = next;
     writeRotation(next);
     return true;
 }
 
+// Writes the angle. Once rotated, the transform stays on the container
+// even back at north (--map-rot 0deg, or a full turn): clearing it while
+// --map-rot is still transitioning would snap the chart upright under
+// labels that are still turning. Only attach / detach clear it.
 function writeRotation(deg) {
     const container = activeContainer();
     if (!container) return;
-    // A full turn is still north up; keep the accumulated angle so the
-    // next transition starts from where the previous one ended.
-    const rotated = Math.abs(normalizeDeltaDeg(deg)) > 1e-9;
-    if (!rotated && deg === 0) {
-        container.style.transform = '';
-        container.style.removeProperty('--map-rot');
-        delete container.dataset.mapRotated;
-        return;
-    }
     container.style.transformOrigin = 'center center';
-    container.style.transform = `rotate(${-deg}deg)`;
+    container.style.transform = 'rotate(calc(-1 * var(--map-rot, 0deg)))';
     container.style.setProperty('--map-rot', `${deg}deg`);
-    container.dataset.mapRotated = rotated ? '1' : '0';
+}
+
+function clearRotation() {
+    const container = activeContainer();
+    if (!container) return;
+    container.style.transform = '';
+    container.style.removeProperty('--map-rot');
 }
 
 /** Client coordinates -> container point of the rotatable map. */
@@ -239,11 +363,18 @@ export function toContainerPoint(clientX, clientY) {
     return L.point(p.x, p.y);
 }
 
-/** Container point -> point on screen within the container's layout box. */
+/**
+ * Container point -> point on screen within the viewport (the
+ * unrotated parent), which is what an absolutely positioned sibling of
+ * the map such as the context menu needs.
+ */
 export function toLayoutPoint(x, y) {
     const c = activeContainer();
-    if (!c || rotationDeg % 360 === 0) return { x, y };
-    return containerPointToLayoutPoint(x, y, c.offsetWidth, c.offsetHeight, rotationDeg);
+    if (!c) return { x, y };
+    const p = rotationDeg % 360 === 0
+        ? { x, y }
+        : containerPointToLayoutPoint(x, y, c.offsetWidth, c.offsetHeight, rotationDeg);
+    return { x: p.x - overscan.x, y: p.y - overscan.y };
 }
 
 /** Screen vector -> container-frame vector (pans, follow offset). */

@@ -39,8 +39,8 @@ public class ToastServiceTests
     [Test]
     public async Task Show_DedupRefreshSurvivesOriginalAutoDismissTick()
     {
-        // Regression for the "stale-timer kills refreshed toast" race
-        // (review SKEP-001 / PARA-004). Sequence:
+        // Guards against the "stale-timer kills refreshed toast" race.
+        // Sequence:
         //   t=0   Show with durationSec=1 -> timer scheduled at t=1
         //   t=0.6 Show same payload -> dedup-refreshes ExpiresAt to t=1.6
         //   t=1   ORIGINAL timer fires; if it removes by Id only, the
@@ -149,10 +149,10 @@ public class ToastServiceTests
         await Assert.That(toast.Message)
             .DoesNotContain("internal-server-only details")
             .Because("ex.Message must NEVER leak into the helm-facing toast");
-        // The "check browser console" tail used to live in the toast
-        // text. Dropped because it was useless for tablet helms (no
-        // DevTools) and unnecessary for desktop devs (the relay POSTs
-        // the trace to the SK server log via errorRelayBoot.js).
+        // No "check browser console" tail in the toast text: it is
+        // useless for tablet helms (no DevTools) and unnecessary for
+        // desktop devs (the relay POSTs the trace to the SK server
+        // log via errorRelayBoot.js).
         await Assert.That(toast.Message)
             .DoesNotContain("browser console")
             .Because("dev-channel logging is via Console.Error + the SK relay; toast stays helm-facing only");

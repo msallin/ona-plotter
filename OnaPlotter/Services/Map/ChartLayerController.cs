@@ -118,7 +118,7 @@ public sealed class ChartLayerController
                 // entries (0.8 default) carry through cleanly.
                 await _overlaysJs.AddChartLayerAsync(
                     chart.Identifier, tileUrl, safeMin, safeMax,
-                    chart.Opacity, chart.Bounds, upscale, safeAttribution);
+                    chart.Opacity, chart.Bounds, upscale, safeAttribution, chart.IsOverlay);
             }
             catch (Microsoft.JSInterop.JSException ex)
             {
@@ -201,9 +201,8 @@ public sealed class ChartLayerController
 
         // Defensive: ensure EVERY currently-enabled chart is
         // represented in the order list before we reorder. Without
-        // this, a stale storage state (e.g. from the pre-fix
-        // SetChartOrderAsync bug that wiped ChartOrder to just the
-        // last-toggled chart) can leave a neighbour missing, so the
+        // this, a stale stored ChartOrder that lists only some of the
+        // enabled charts can leave a neighbour missing, so the
         // bounds check `swapWith >= order.Count` returns and the
         // user sees nothing happen.
         foreach (var enabledId in _enabled)

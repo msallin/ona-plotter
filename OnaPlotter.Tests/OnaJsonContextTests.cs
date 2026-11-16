@@ -11,9 +11,8 @@ namespace OnaPlotter.Tests;
 /// (indented helm-facing GeoJSON exports + share blobs). The cases
 /// here cover round-trip, case-insensitive deserialisation, wire-
 /// shape conformance with downstream specs (SignalK subscribe
-/// envelopes), and the null-elision contract that share blobs
-/// inherit from the previous per-call <c>DefaultIgnoreCondition</c>
-/// option. We don't compare byte-for-byte against reflection
+/// envelopes), and the null-elision contract share blobs rely on
+/// (null properties are omitted). We don't compare byte-for-byte against reflection
 /// output - property ordering is an implementation detail - but
 /// every type round-trips and every documented contract holds.
 /// </summary>
@@ -44,10 +43,8 @@ public class OnaJsonContextTests
     [Test]
     public async Task LoginStatus_CaseInsensitive_Matches_Earlier_Reflection_Behaviour()
     {
-        // The pre-source-gen call site set
-        // PropertyNameCaseInsensitive=true. A server that capitalises
-        // "Status" / "AuthenticationRequired" used to parse fine; the
-        // source-gen context preserves that via
+        // A server that capitalises "Status" / "AuthenticationRequired"
+        // must still parse; the source-gen context handles that via
         // [JsonSourceGenerationOptions(PropertyNameCaseInsensitive=true)].
         const string json = """
             {"Status":"loggedIn","Username":"admin",
@@ -112,8 +109,8 @@ public class OnaJsonContextTests
     {
         // Pin the on-the-wire shape: keys "context" / "subscribe", and
         // each subscribe row carries "path" / "period" / "policy".
-        // The earlier anon-type Serialize emitted exactly this shape;
-        // the named-record migration must not drift.
+        // SignalK servers expect exactly this shape; the named records
+        // must not drift from it.
         var request = new SignalkSubscribeRequest(
             "vessels.self",
             new[]
@@ -164,8 +161,7 @@ public class OnaJsonContextTests
     public async Task GeoJsonShareWaypointFeature_Elides_Null_Properties()
     {
         // Share blobs use [JsonIgnore(Condition=WhenWritingNull)] on
-        // both Name and CreatedAt; the previous reflection serializer
-        // achieved the same via DefaultIgnoreCondition. Pin: when both
+        // both Name and CreatedAt. Pin: when both
         // are null, the properties bag is "{}". When one is set, only
         // that one is present.
         var feature = new GeoJsonShareWaypointFeature(

@@ -66,7 +66,7 @@ public class CpaTests
     public async Task ParallelSameSpeed_ReturnsNull()
     {
         // Two boats cruising abreast at the same SOG + COG never close. Returning
-        // a bogus TCPA=0 (the earlier behaviour) would trip CpaAlarmRule the
+        // a bogus TCPA=0 would trip CpaAlarmRule the
         // instant their current separation was inside the alarm radius - false
         // alarm on classic convoy formation. Null is the correct "no closing
         // event".
@@ -128,11 +128,10 @@ public class CpaTests
         }
     }
 
-    // PrecomputeOwn pins (m6 from the PR-264 follow-up review) -
-    // the helper is the gate to the per-target loop and the null-
-    // on-non-finite contract is what callers rely on to skip the
-    // hot path entirely. Coverage was previously only via the all-
-    // args Compute wrapper.
+    // PrecomputeOwn pins - the helper is the gate to the per-target
+    // loop and the null-on-non-finite contract is what callers rely
+    // on to skip the hot path entirely. Pinned directly, not only
+    // through the all-args Compute wrapper.
 
     [Test]
     public async Task PrecomputeOwn_NullOnNullCogOrSog()
@@ -174,8 +173,8 @@ public class CpaTests
         await Assert.That(Math.Abs(east.Value.Vy)).IsLessThan(1e-9);
     }
 
-    // CurrentDistanceNm pin (M1 from the PR-264 follow-up review):
-    // the field is consumed by both CpaAlarmRule and AisPushService
+    // CurrentDistanceNm pin:
+    // the field is consumed by both CpaAlarmRule and AisLayerController
     // as the threat-band gate input, so the value must agree with a
     // haversine reference within projection tolerance (a few percent
     // at sub-100 nm separations - the regime collision-avoidance

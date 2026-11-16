@@ -1,18 +1,15 @@
 // Route popup guards.
 //
-// Two TODO items pinned here:
+// Two behaviours pinned here:
 //
-// 1) Two-step delete confirm shows "Really?" (was "Really delete?").
-//    The longer string changed the button width on first tap, which
-//    bumped the surrounding popup layout under the helm's finger.
-//    Pinning the new label so a future cleanup pass can't quietly
-//    revert to the wider variant.
+// 1) Two-step delete confirm shows "Really?". A longer string such as
+//    "Really delete?" changes the button width on first tap, which
+//    bumps the surrounding popup layout under the helm's finger.
 //
 // 2) Tapping the active-route polyline opens a popup with Deactivate
-//    / Edit / Delete. Pre-fix the active overlay had no popup at all
-//    - the helm could only deactivate from the bottom-bar Stop button
-//    or the right-click context menu, both far from the polyline they
-//    were already pointing at.
+//    / Edit / Delete. Without it the helm could only deactivate from
+//    the bottom-bar Stop button or the right-click context menu, both
+//    far from the polyline they are already pointing at.
 //
 // Both items exercise the Leaflet popup wiring directly via
 // addRoute / setActiveRoute, so the spec doesn't need a SignalK

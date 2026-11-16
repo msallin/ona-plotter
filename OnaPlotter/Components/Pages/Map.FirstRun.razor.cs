@@ -24,11 +24,11 @@ public partial class Map
 {
     // .v1 suffix to match the convention spelled out in
     // AppSettingsService.InitializeAsync ("any new key MUST follow
-    // <camelCaseName>.vN"). The earlier unversioned key
-    // "hints.mapLongPress.dismissed" is ignored on load so existing
-    // helms see the coachmark once more after upgrade - acceptable
-    // for a one-shot tutorial; bumps the version every revision so
-    // future copy changes can re-trigger without a schema migration.
+    // <camelCaseName>.vN"). The unversioned key
+    // "hints.mapLongPress.dismissed" is ignored on load, so helms who
+    // dismissed under it see the coachmark once more - acceptable
+    // for a one-shot tutorial; bump the version every revision so
+    // copy changes can re-trigger without a schema migration.
     private const string TouchCoachmarkKey = "hints.mapLongPress.v1.dismissed";
     private bool touchCoachmarkVisible;
     private System.Threading.Timer? touchCoachmarkTimer;
@@ -41,16 +41,16 @@ public partial class Map
     /// <summary>
     /// Surface the welcome card AT INIT time, before the long
     /// chain of REST seeds + JS interop init in OnAfterRenderAsync
-    /// runs. Earlier the card waited until after those completed,
-    /// which meant any "Couldn't reach SignalK" toast painted on
-    /// top of the welcome card during the same tick - helms saw
-    /// the card half-covered by the error and tapped Got It without
-    /// reading. Pushing this into OnInitializedAsync lets the card
-    /// land first and the toasts queue under it.
+    /// runs. Waiting until after those complete would let any
+    /// "Couldn't reach SignalK" toast paint on top of the welcome
+    /// card during the same tick - helms see the card half-covered
+    /// by the error and tap Got It without reading. Running in
+    /// OnInitializedAsync lets the card land first and the toasts
+    /// queue under it.
     ///
-    /// The OnAfterRenderAsync gate that previously called this
-    /// helper now just reads the existing <see cref="welcomeVisible"/>
-    /// to decide whether to chain the touch coachmark.
+    /// The OnAfterRenderAsync gate just reads the existing
+    /// <see cref="welcomeVisible"/> to decide whether to chain the
+    /// touch coachmark.
     /// </summary>
     protected override async Task OnInitializedAsync()
     {
@@ -68,8 +68,8 @@ public partial class Map
     /// <summary>
     /// Pure helper: returns true iff the URI carries an explicit
     /// <c>welcome=1</c> query parameter (parsed, not substring-matched).
-    /// Earlier code used <c>Contains("welcome=1")</c> which over-matched
-    /// on URLs like <c>/map?other=welcome=1abc</c> - realistic when
+    /// A substring check like <c>Contains("welcome=1")</c> would
+    /// over-match on URLs like <c>/map?other=welcome=1abc</c> - realistic when
     /// a chart link or a forwarded URL accumulates query keys. The
     /// parsed approach also gates on the value being literal "1" so
     /// <c>?welcome=true</c> or <c>?welcome=yes</c> doesn't trigger.

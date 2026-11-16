@@ -15,10 +15,10 @@ public class MapControlsTests
 {
     // MapControls' own parameter defaults cover the happy cruise case; the
     // test helper just forwards the optional configure callback.
-    private static IRenderedComponent<MapControls> Render(Bunit.TestContext ctx,
+    private static IRenderedComponent<MapControls> Render(Bunit.BunitContext ctx,
         Action<ComponentParameterCollectionBuilder<MapControls>>? configure = null)
     {
-        return ctx.RenderComponent<MapControls>(p => configure?.Invoke(p));
+        return ctx.Render<MapControls>(p => configure?.Invoke(p));
     }
 
     /// <summary>Simulates the Map.razor parent that owns MoreMenuOpen
@@ -33,17 +33,17 @@ public class MapControlsTests
         public EventCallback Toggle => EventCallback.Factory.Create(this, () =>
         {
             Open = !Open;
-            Cut.SetParametersAndRender(p => p.Add(x => x.MoreMenuOpen, Open));
+            Cut.Render(p => p.Add(x => x.MoreMenuOpen, Open));
         });
     }
 
     private static IRenderedComponent<MapControls> RenderWithMoreController(
-        Bunit.TestContext ctx,
+        Bunit.BunitContext ctx,
         out MoreMenuController controller,
         Action<ComponentParameterCollectionBuilder<MapControls>>? extra = null)
     {
         var c = new MoreMenuController();
-        var cut = ctx.RenderComponent<MapControls>(p =>
+        var cut = ctx.Render<MapControls>(p =>
         {
             p.Add(x => x.MoreMenuOpen, false);
             p.Add(x => x.OnToggleMore, c.Toggle);
@@ -60,21 +60,20 @@ public class MapControlsTests
         // Dot badge class = .ctrl-btn-dot. Tests each of the contained
         // toggles individually because a regression could easily drop
         // one from AnyMoreItemActive. Measure is intentionally NOT in
-        // this list any more - it's a permanent bar button on every
+        // this list - it's a permanent bar button on every
         // viewport, and its bar slot already shows the active state, so
         // a More dot for Measure would be redundant + misleading.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
 
         var night = Render(ctx, p => p.Add(x => x.NightMode, true));
         await Assert.That(night.Find(".ctrl-more-wrap > button").ClassList).Contains("ctrl-btn-dot");
 
-        // Laylines used to be a More-menu toggle; folded into the
-        // Layers panel "Show ship lines" master so it no longer
-        // affects the More dot. The dedicated Harbor-mode dot test
-        // below covers that surface.
+        // Laylines live under the Layers panel "Show ship lines"
+        // master, so they don't affect the More dot. The dedicated
+        // Harbor-mode dot test below covers that surface.
 
         // Measure on by itself must NOT light the dot (its bar button
-        // shows the state directly now).
+        // shows the state directly).
         var meas = Render(ctx, p => p.Add(x => x.MeasureActive, true));
         await Assert.That(meas.Find(".ctrl-more-wrap > button").ClassList.Contains("ctrl-btn-dot")).IsFalse();
 
@@ -90,9 +89,9 @@ public class MapControlsTests
         // what's actually inside the menu (Legend / Night / Orient
         // / Harbor). Active toggles get summarised in parens;
         // Measure is excluded because it lives on the bar
-        // permanently. Laylines used to be in the catalogue; it
-        // moved to the Layers panel "Own ship" section.
-        using var ctx = new Bunit.TestContext();
+        // permanently. Laylines are not in the catalogue; they live in
+        // the Layers panel "Own ship" section.
+        using var ctx = new Bunit.BunitContext();
 
         var off = Render(ctx);
         await Assert.That(off.Find(".ctrl-more-wrap > button").GetAttribute("title"))
@@ -118,7 +117,7 @@ public class MapControlsTests
         // forgotten Harbor mode is the worst-case (alarms suppressed
         // riding into open water). The More dot must signal it from
         // the bar without opening the menu.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var harbor = Render(ctx, p => p.Add(x => x.HarborMode, true));
         await Assert.That(harbor.Find(".ctrl-more-wrap > button").ClassList).Contains("ctrl-btn-dot");
         await Assert.That(harbor.Find(".ctrl-more-wrap > button").GetAttribute("title"))
@@ -128,7 +127,7 @@ public class MapControlsTests
     [Test]
     public async Task More_Menu_Opens_On_Click_And_Backdrop_Dismisses()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderWithMoreController(ctx, out _);
 
         // Closed initially: no menu, no backdrop.
@@ -150,7 +149,7 @@ public class MapControlsTests
         // Picking a menu item should invoke the callback AND close the
         // menu. Otherwise the user sees two navigation clicks worth of
         // state change for one tap.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         int fired = 0;
         var cut = RenderWithMoreController(ctx, out _, p => p
             .Add(x => x.OnToggleNight, EventCallback.Factory.Create(this, () => fired++)));
@@ -179,7 +178,7 @@ public class MapControlsTests
         // Accessibility contract: the toggle must tell screen readers
         // this is a menu and whether it's open. Keyboard-only users
         // on a 21" helm need this to navigate.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderWithMoreController(ctx, out _);
 
         var btn = cut.Find(".ctrl-more-wrap > button");
@@ -194,7 +193,7 @@ public class MapControlsTests
     [Test]
     public async Task Race_Button_Hidden_In_Cruise_Mode()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = Render(ctx, p => p.Add(x => x.SailingMode, "cruise"));
         // Exactly no button with the "Race" label.
         await Assert.That(cut.FindAll("button").Any(b => b.TextContent.Contains("Race"))).IsFalse();
@@ -209,7 +208,7 @@ public class MapControlsTests
         // Look at the title attribute rather than visible text because
         // the visible label switches to the countdown (RaceTimerLabel)
         // when the timer is live.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = Render(ctx, p => p
             .Add(x => x.SailingMode, "cruise")
             .Add(x => x.RaceTimerActive, true));
@@ -221,13 +220,13 @@ public class MapControlsTests
     [Test]
     public async Task Fab_Menu_Opens_Inside_Wrap_So_It_Anchors_To_Add_Button()
     {
-        // The Add flyout used to render at the Map.razor level with
-        // position: fixed / left: 12px, which landed it below More instead
-        // of above Add. Moving the menu inside a .ctrl-more-wrap around
-        // the Add button makes position: absolute anchor to Add itself.
+        // Rendered at the Map.razor level with position: fixed /
+        // left: 12px, the Add flyout lands below More instead of above
+        // Add. Inside a .ctrl-more-wrap around the Add button,
+        // position: absolute anchors to Add itself.
         // Regression guard: when FabMenuOpen, the menu markup exists as a
         // descendant of a .ctrl-more-wrap (not a standalone sibling).
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = Render(ctx, p => p.Add(x => x.FabMenuOpen, true));
 
         // Two .ctrl-more-wrap divs exist (More, Add); at least one of
@@ -244,7 +243,7 @@ public class MapControlsTests
         // Route moved into the Add flyout, so the Add button itself is
         // the bar-level indicator that a route edit is in progress.
         // The user needs that visual cue even when the flyout is closed.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = Render(ctx, p => p.Add(x => x.RouteEditMode, true));
 
         // Find the bar-level Add button (not a menu item - the menu is
@@ -259,9 +258,8 @@ public class MapControlsTests
     public async Task Route_Menu_Item_Disabled_During_Edit()
     {
         // Tapping "Route" while already editing would double-start the
-        // flow. The item must render but be disabled, consistent with
-        // the old button behaviour.
-        using var ctx = new Bunit.TestContext();
+        // flow. The item must render but be disabled.
+        using var ctx = new Bunit.BunitContext();
         var cut = Render(ctx, p => p
             .Add(x => x.FabMenuOpen, true)
             .Add(x => x.RouteEditMode, true));
@@ -277,9 +275,9 @@ public class MapControlsTests
     [Test]
     public async Task Stop_Button_FirstClick_ArmsConfirmState_DoesNotInvoke()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         int invokes = 0;
-        var cut = ctx.RenderComponent<MapControls>(p => p
+        var cut = ctx.Render<MapControls>(p => p
             .Add(x => x.RouteNavigating, true)
             .Add(x => x.OnStopNavigation,
                 EventCallback.Factory.Create(this, () => invokes++)));
@@ -298,9 +296,9 @@ public class MapControlsTests
     [Test]
     public async Task Stop_Button_SecondClick_InvokesOnStopNavigation()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         int invokes = 0;
-        var cut = ctx.RenderComponent<MapControls>(p => p
+        var cut = ctx.Render<MapControls>(p => p
             .Add(x => x.RouteNavigating, true)
             .Add(x => x.OnStopNavigation,
                 EventCallback.Factory.Create(this, () => invokes++)));
@@ -322,12 +320,12 @@ public class MapControlsTests
     {
         // The Map page re-renders for HUD / AIS / dialog changes; the
         // control bar must not repaint when none of its inputs moved.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = Render(ctx, p => p.Add(x => x.Follow, true));
         int before = cut.RenderCount;
 
-        cut.SetParametersAndRender(p => p.Add(x => x.Follow, true));
-        cut.SetParametersAndRender(p => p.Add(x => x.OnToggleFollow, () => { }));
+        cut.Render(p => p.Add(x => x.Follow, true));
+        cut.Render(p => p.Add(x => x.OnToggleFollow, () => { }));
 
         await Assert.That(cut.RenderCount).IsEqualTo(before);
     }
@@ -335,11 +333,11 @@ public class MapControlsTests
     [Test]
     public async Task ChangedParameter_Rerenders()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = Render(ctx, p => p.Add(x => x.RouteNavigating, false));
         int before = cut.RenderCount;
 
-        cut.SetParametersAndRender(p => p.Add(x => x.RouteNavigating, true));
+        cut.Render(p => p.Add(x => x.RouteNavigating, true));
 
         await Assert.That(cut.RenderCount).IsEqualTo(before + 1);
     }
@@ -349,7 +347,7 @@ public class MapControlsTests
     {
         // Internal two-step confirm state is part of the snapshot, so
         // arming "Raise anchor" repaints the button.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = Render(ctx, p => p.Add(x => x.AnchorActive, true));
         int before = cut.RenderCount;
 

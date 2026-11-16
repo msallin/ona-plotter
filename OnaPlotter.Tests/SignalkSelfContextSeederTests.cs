@@ -141,18 +141,21 @@ public class SignalkSelfContextSeederTests
     public async Task SeedAsync_TransportException_LogsButDoesNotThrow()
     {
         // A misconfigured server / dead network / TLS failure must not
-        // crash the receive loop. The seeder swallows + logs at Warning.
+        // crash the receive loop. ResourceHttp logs it at Warning
+        // through the injected logger and the seed returns.
         var calls = new List<string?>();
+        var logger = new RecordingLogger<SignalkSelfContextSeeder>();
         var seeder = new SignalkSelfContextSeeder(
             new HttpClient(new StubHandler(new HttpRequestException("boom"))),
             new FakeBaseUrl(),
-            NullLogger<SignalkSelfContextSeeder>.Instance,
+            logger,
             setSelfContext: raw => calls.Add(raw));
 
         await seeder.SeedAsync(CancellationToken.None);
 
-        // Callback never fires when the transport throws; the test
-        // exists to assert the absence of an unhandled exception.
         await Assert.That(calls).IsEmpty();
+        await Assert.That(logger.Entries.Any(e =>
+            e.Level == Microsoft.Extensions.Logging.LogLevel.Warning
+            && e.Message.Contains("/signalk/v1/api/self"))).IsTrue();
     }
 }

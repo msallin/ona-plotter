@@ -5,12 +5,11 @@ namespace OnaPlotter.Tests;
 
 /// <summary>
 /// Guard against <see cref="FakeSettings"/> falling out of sync with
-/// <see cref="IAppSettings"/>. Over the project's lifetime every new
-/// user preference (NightModeAuto, ShowAutopilotHud, RadarServerUrl,
-/// etc.) added a property + a setter to the interface, and the fix
-/// for the resulting test-compile breakage was always "copy the new
-/// member into FakeSettings". That works for the first new property;
-/// by the third it's a mechanical chore every author forgets once.
+/// <see cref="IAppSettings"/>. Every new user preference
+/// (NightModeAuto, ShowAutopilotHud, RadarServerUrl, etc.) adds a
+/// property + a setter to the interface, and the fix for the
+/// resulting test-compile breakage is "copy the new member into
+/// FakeSettings" - a mechanical chore every author forgets once.
 ///
 /// Reflection check: every public instance member on IAppSettings
 /// (property getter + Set*Async method) must be realised by

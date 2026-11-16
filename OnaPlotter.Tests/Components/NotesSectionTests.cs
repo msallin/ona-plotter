@@ -8,9 +8,9 @@ using OnaPlotter.Services;
 namespace OnaPlotter.Tests.Components;
 
 /// <summary>
-/// bUnit coverage for the Notes section in the Layers panel. After
-/// the bbox-filter rework the section no longer hosts a global
-/// "Show" toggle; relevance is driven by the parent's bbox-filtered
+/// bUnit coverage for the Notes section in the Layers panel. The
+/// section hosts no global "Show" toggle; relevance is driven by
+/// the parent's bbox-filtered
 /// list. The row buttons (Focus / Go / Edit / Delete) all flow into
 /// EventCallbacks the Map page wires up. Tests pin the wiring + the
 /// IConfirmationService-driven Edit and Delete confirmation flows.
@@ -35,9 +35,9 @@ public class NotesSectionTests
     /// section's @inject resolves. Mirrors WaypointsSectionTests'
     /// Context helper so a future change to either section's
     /// confirmation flow doesn't drift between the two.</summary>
-    private static (Bunit.TestContext ctx, FakeConfirmationService confirm) Context()
+    private static (Bunit.BunitContext ctx, FakeConfirmationService confirm) Context()
     {
-        var ctx = new Bunit.TestContext();
+        var ctx = new Bunit.BunitContext();
         var confirm = new FakeConfirmationService();
         ctx.Services.AddSingleton<IConfirmationService>(confirm);
         return (ctx, confirm);
@@ -54,7 +54,7 @@ public class NotesSectionTests
     {
         var (ctx, _) = Context();
         using var _ctx = ctx;
-        var cut = ctx.RenderComponent<NotesSection>(p => p
+        var cut = ctx.Render<NotesSection>(p => p
             .Add(x => x.Notes, Array.Empty<SignalkNote>()));
 
         // The SectionHeader markup includes the word "Notes"; with 0
@@ -67,7 +67,7 @@ public class NotesSectionTests
     {
         var (ctx, _) = Context();
         using var _ctx = ctx;
-        var cut = ctx.RenderComponent<NotesSection>(p => p
+        var cut = ctx.Render<NotesSection>(p => p
             .Add(x => x.Notes, new[] { Note("n1", "Kelp patch"), Note("n2", "Reef") }));
         Expand(cut);
 
@@ -82,7 +82,7 @@ public class NotesSectionTests
     {
         var (ctx, _) = Context();
         using var _ctx = ctx;
-        var cut = ctx.RenderComponent<NotesSection>(p => p
+        var cut = ctx.Render<NotesSection>(p => p
             .Add(x => x.Notes, new[] { Note("n1", "") }));
         Expand(cut);
 
@@ -95,7 +95,7 @@ public class NotesSectionTests
         var (ctx, _) = Context();
         using var _ctx = ctx;
         var longDesc = new string('x', 80);
-        var cut = ctx.RenderComponent<NotesSection>(p => p
+        var cut = ctx.Render<NotesSection>(p => p
             .Add(x => x.Notes, new[] { Note("n1", "Title", desc: longDesc) }));
         Expand(cut);
 
@@ -111,7 +111,7 @@ public class NotesSectionTests
         SignalkNote? focused = null;
         var (ctx, _) = Context();
         using var _ctx = ctx;
-        var cut = ctx.RenderComponent<NotesSection>(p => p
+        var cut = ctx.Render<NotesSection>(p => p
             .Add(x => x.Notes, new[] { Note("n1", "Kelp") })
             .Add(x => x.OnFocus, EventCallback.Factory.Create<SignalkNote>(
                 this, n => focused = n)));
@@ -140,7 +140,7 @@ public class NotesSectionTests
         SignalkNote? navigated = null;
         var (ctx, _) = Context();
         using var _ctx = ctx;
-        var cut = ctx.RenderComponent<NotesSection>(p => p
+        var cut = ctx.Render<NotesSection>(p => p
             .Add(x => x.Notes, new[] { Note("n1", "Reef") })
             .Add(x => x.OnNavigate, EventCallback.Factory.Create<SignalkNote>(
                 this, n => navigated = n)));
@@ -155,16 +155,15 @@ public class NotesSectionTests
     [Test]
     public async Task EditButton_Click_Fires_OnEdit_WithNote()
     {
-        // Replaces the older PromptAsync-based EditButton tests:
-        // the layers-panel Edit button no longer surfaces a prompt;
-        // it raises OnEdit which the parent wires to open the
-        // create-dialog pre-filled with title + description. This
-        // test pins the new contract so a future drift back to a
-        // prompt-based flow surfaces here first.
+        // The layers-panel Edit button surfaces no prompt; it raises
+        // OnEdit which the parent wires to open the create-dialog
+        // pre-filled with title + description. This test pins that
+        // contract so a drift to a prompt-based flow surfaces here
+        // first.
         SignalkNote? captured = null;
         var (ctx, _) = Context();
         using var _ctx = ctx;
-        var cut = ctx.RenderComponent<NotesSection>(p => p
+        var cut = ctx.Render<NotesSection>(p => p
             .Add(x => x.Notes, new[] { Note("n1", "Kelp") })
             .Add(x => x.OnEdit, EventCallback.Factory.Create<SignalkNote>(
                 this, n => captured = n)));
@@ -184,7 +183,7 @@ public class NotesSectionTests
         var (ctx, confirm) = Context();
         using var _ctx = ctx;
         confirm.AutoConfirm = true;
-        var cut = ctx.RenderComponent<NotesSection>(p => p
+        var cut = ctx.Render<NotesSection>(p => p
             .Add(x => x.Notes, new[] { Note("n1", "Kelp") })
             .Add(x => x.OnDelete, EventCallback.Factory.Create<SignalkNote>(
                 this, n => deleted = n)));
@@ -204,7 +203,7 @@ public class NotesSectionTests
         var (ctx, confirm) = Context();
         using var _ctx = ctx;
         confirm.AutoConfirm = false;
-        var cut = ctx.RenderComponent<NotesSection>(p => p
+        var cut = ctx.Render<NotesSection>(p => p
             .Add(x => x.Notes, new[] { Note("n1", "Kelp") })
             .Add(x => x.OnDelete, EventCallback.Factory.Create<SignalkNote>(
                 this, n => deleted = n)));

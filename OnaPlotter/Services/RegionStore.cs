@@ -13,15 +13,13 @@ namespace OnaPlotter.Services;
 /// <para><b>Auto-sync from <see cref="ResourceStore"/></b>: when a
 /// <see cref="ResourceStore"/> is injected at construction, this store
 /// subscribes to its region change / remove / reload events and
-/// updates <see cref="_regions"/> automatically. The legacy
-/// <see cref="SetRegions"/> path stays for transitional callers (e.g.
-/// Map.razor mirroring on local CRUD), but a future cleanup can drop
-/// the manual mirror entirely. The subscription means
+/// updates <see cref="_regions"/> automatically. <see cref="SetRegions"/>
+/// stays for callers that mirror directly (e.g. Map.razor on local
+/// CRUD). The subscription means
 /// <see cref="OnaPlotter.Services.Alarms.HazardousRegionAlarmRule"/>
-/// sees the latest regions even when Map.razor is unmounted - the
-/// previous shape (mirror only from Map.razor) silently broke the
-/// alarm pipeline whenever the helm was on Settings / Wind / etc.
-/// during a remote region edit.</para>
+/// sees the latest regions even when Map.razor is unmounted; mirroring
+/// only from Map.razor would silently break the alarm pipeline whenever
+/// the helm is on Settings / Wind / etc. during a remote region edit.</para>
 /// </summary>
 public sealed class RegionStore : IRegionStore, IAsyncDisposable
 {

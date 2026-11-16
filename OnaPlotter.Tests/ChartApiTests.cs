@@ -165,12 +165,10 @@ public class ChartApiTests
     [Test]
     public async Task GetAllAsync_Http_Error_FallsBackToBuiltInsOnly()
     {
-        // SK server unreachable / 5xx: ChartApi previously surfaced
-        // the HttpRequestException so Map.razor's SafeLoad could
-        // toast the failure. Now we swallow + return the built-ins
-        // because the helm needs a basemap MORE on a degraded server,
-        // not less. SafeLoad's "couldn't load charts" toast moves
-        // implicitly into the dev-console (Console.Error) so the
+        // SK server unreachable / 5xx: ChartApi swallows the error and
+        // returns the built-ins rather than surfacing it, because the
+        // helm needs a basemap MORE on a degraded server, not less.
+        // The failure goes to the dev-console (Console.Error) so the
         // helm's experience is "Layers panel has basemaps + nothing
         // SK-derived" rather than "completely empty Layers panel".
         var http = ApiTestHelpers.MockClient(_ =>

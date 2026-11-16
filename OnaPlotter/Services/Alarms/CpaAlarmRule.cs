@@ -43,7 +43,7 @@ public sealed class CpaAlarmRule : IAlarmRule
     /// <summary>Effective alarm-tier CPA distance (nautical miles) for
     /// THIS tick. Wraps <see cref="Cpa.EffectiveCpaRadiusNm"/> so the
     /// alarm rule + the chart-side chip classifier
-    /// (<c>AisPushService</c>) agree on the number.
+    /// (<c>AisLayerController</c>) agree on the number.
     /// <para>
     /// The user-configured <see cref="IAlarmThresholds.CpaAlarmNm"/>
     /// is the underway value (default 0.1 nm). When the boat is
@@ -70,8 +70,7 @@ public sealed class CpaAlarmRule : IAlarmRule
             ctx.Data.AnchorActive,
             ctx.Data.AnchorMaxRadius);
 
-    /// <summary>Mirrors the publisher's previous private helper. Strips
-    /// the <c>vessels.</c> prefix from a SK context and replaces every
+    /// <summary>Strips the <c>vessels.</c> prefix from a SK context and replaces every
     /// non-path-safe character with '_' so the resulting suffix can't
     /// extend the path hierarchy (an AIS URN with a stray '.' would
     /// otherwise let an attacker collide with another notification).
@@ -196,7 +195,7 @@ public sealed class CpaAlarmRule : IAlarmRule
             if (cpa is null) continue;
 
             // Single source of truth with the chart-overlay classifier
-            // (AisPushService.BuildSnapshot). The audible alarm fires
+            // (AisLayerController.BuildSnapshot). The audible alarm fires
             // ONLY on Threat.Alarm; awareness-tier hits paint the
             // chart but stay silent so a developing crossing situation
             // is visible without nagging the cockpit.

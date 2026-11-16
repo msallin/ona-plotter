@@ -48,7 +48,7 @@ public class MultiInstancePlotterTests
     /// <see cref="INotificationsApi"/> - the latter routes acks +
     /// publish + clear through the shared <see cref="FakeServer"/>.
     /// <para>
-    /// Phase B additions: <see cref="PublishedAlarmTracker"/> +
+    /// <see cref="PublishedAlarmTracker"/> +
     /// <see cref="AlarmPublisher"/> are wired automatically. The bridge
     /// rule consults the tracker so this plotter's own publication
     /// echoes don't double-banner. The publisher subscribes to
@@ -105,7 +105,7 @@ public class MultiInstancePlotterTests
         }
     }
 
-    /// <summary>Trivial client-side rule used by the Phase B tests to
+    /// <summary>Trivial client-side rule used by the publish-flow tests to
     /// script when local alarms fire. Mirrors the test stub in
     /// AlarmManagerTests but keeps the multi-instance fixture self-
     /// contained so the file can be read top-to-bottom.</summary>
@@ -293,9 +293,9 @@ public class MultiInstancePlotterTests
     }
 
     /// <summary>Routes per-plotter API calls back to the shared
-    /// <see cref="FakeServer"/>. Phase A wired Acknowledge; Phase B
-    /// wires Raise + Clear so AlarmPublisher's POSTs become real
-    /// state changes on the canonical server view.</summary>
+    /// <see cref="FakeServer"/>. Acknowledge, Raise and Clear are all
+    /// wired so AlarmPublisher's POSTs become real state changes on
+    /// the canonical server view.</summary>
     private sealed class ServerBackedApi : INotificationsApi
     {
         private readonly FakeServer _server;
@@ -352,8 +352,7 @@ public class MultiInstancePlotterTests
         // Helm at the chart table dismisses an anchor alarm; helm at
         // the cockpit's plotter sees the banner clear automatically on
         // the next tick (no separate dismiss needed). Without the v2
-        // delta echo, both helms have to dismiss separately, which is
-        // the bug v2 was designed to fix.
+        // delta echo, both helms would have to dismiss separately.
         var server = new FakeServer();
         var a = new Plotter("PlotterA", server);
         var b = new Plotter("PlotterB", server);
@@ -679,7 +678,7 @@ public class MultiInstancePlotterTests
     }
 
     // -----------------------------------------------------------------
-    // Phase B: AlarmPublisher cross-plotter publish flow.
+    // AlarmPublisher cross-plotter publish flow.
     // PlotterA evaluates a local rule (CPA/SHALLOW/...) -> publishes to
     // server -> server fans delta -> PlotterB sees a banner via the
     // bridge rule.
@@ -699,7 +698,7 @@ public class MultiInstancePlotterTests
     [Test]
     public async Task LocalAlarmOnA_AppearsAsBannerOnB()
     {
-        // Headline Phase B test: a SHALLOW alarm fires on PlotterA's
+        // Headline publish-flow test: a SHALLOW alarm fires on PlotterA's
         // local rule. AlarmPublisher posts /notifications. Server fans
         // the delta. PlotterB's bridge rule emits an AlarmInfo. PlotterB's
         // banner shows the alarm without B's helm needing to do anything.
@@ -729,8 +728,8 @@ public class MultiInstancePlotterTests
         await Assert.That(b.Manager.ActiveAlarms[0].Title).IsEqualTo("DEPTH");
         await Assert.That(b.Manager.ActiveAlarms[0].Message).IsEqualTo("Depth 1.8m < 3.0m");
         // B's banner also carries the server's acknowledger so B's
-        // helm can ack-clear cross-plotter via the existing Phase A
-        // dismiss path.
+        // helm can ack-clear cross-plotter via the regular dismiss
+        // path.
         var bAck = b.Manager.ActiveAlarms[0].Acknowledger
             as SignalKNotificationAcknowledger;
         await Assert.That(bAck).IsNotNull();
@@ -914,7 +913,7 @@ public class MultiInstancePlotterTests
     [Test]
     public async Task ServerEmittedAlarm_NotRepublishedByOriginPlotter()
     {
-        // Phase A's bridge rule emits AlarmInfo with NotificationId
+        // The bridge rule emits AlarmInfo with NotificationId
         // for server-emitted alarms. The publisher must NOT republish
         // those (loop hazard). Verify by raising a server notification
         // directly and counting RaiseCallCount: it should remain at 0.

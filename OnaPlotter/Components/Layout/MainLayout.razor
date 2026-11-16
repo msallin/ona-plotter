@@ -22,7 +22,12 @@
     </div>
 
     <main id="main-content">
-        <div class="top-row px-4">
+        @* data-status-chips + topbar-search-active feed the phone-width
+           priority rules in app.css: the zoom pair yields its seat when
+           the status chips (Retry / Update / Not logged in) or the
+           expanded search need the width. *@
+        <div class="top-row px-4 @(_searchExpanded && IsMapRoute ? "topbar-search-active" : "")"
+             data-status-chips="@StatusChipCount">
             <span class="connection-status @ConnectionClass" title="@ConnectionTooltip">
                 <span class="connection-dot @DotClass"></span>
                 @* Phone-only: the dot already conveys the state (green
@@ -126,9 +131,10 @@
             {
                 <button class="update-available-chip"
                         @onclick="ReloadForUpdate"
-                        title="A new OnaPlotter bundle is on the server. Tap to reload.">
+                        title="A new OnaPlotter bundle is on the server. Tap to reload."
+                        aria-label="Update available - reload">
                     <span aria-hidden="true">↻</span>
-                    Update available
+                    <span class="topbar-chip-label">Update available</span>
                 </button>
             }
 
@@ -153,9 +159,10 @@
             {
                 <a class="auth-warning-chip"
                    href="@SkAdminLoginUrl.Build(SkBaseUrl.BaseUrl, Nav.Uri)"
-                   title="Not signed in to the SK server: saves and edits will fail. Tap to sign in; you'll land back on this page.">
+                   title="Not signed in to the SK server: saves and edits will fail. Tap to sign in; you'll land back on this page."
+                   aria-label="Not logged in - sign in">
                     <span aria-hidden="true">⚠</span>
-                    Not logged in
+                    <span class="topbar-chip-label">Not logged in</span>
                 </a>
             }
 
@@ -169,7 +176,8 @@
                search-pin via the leaflet JS module. *@
             @if (IsMapRoute)
             {
-                <SearchBox OnPicked="HandlePlacePicked" OnCleared="HandlePlaceCleared" />
+                <SearchBox OnPicked="HandlePlacePicked" OnCleared="HandlePlaceCleared"
+                           OnExpandedChanged="HandleSearchExpandedChanged" />
             }
 
             @* Zoom in / out. Only rendered when the Map page is
@@ -181,12 +189,12 @@
                sit flush. *@
             @if (IsMapRoute)
             {
-                <button class="btn btn-sm btn-outline-secondary topbar-icon-btn"
+                <button class="btn btn-sm btn-outline-secondary topbar-icon-btn topbar-zoom-btn"
                         @onclick="ZoomInAsync"
                         title="Zoom in" aria-label="Zoom in">
                     @((MarkupString)OnaPlotter.Utilities.Icons.Small.Plus)
                 </button>
-                <button class="btn btn-sm btn-outline-secondary topbar-icon-btn"
+                <button class="btn btn-sm btn-outline-secondary topbar-icon-btn topbar-zoom-btn"
                         @onclick="ZoomOutAsync"
                         title="Zoom out" aria-label="Zoom out">
                     @((MarkupString)OnaPlotter.Utilities.Icons.Small.Minus)
@@ -201,7 +209,7 @@
                the zoom cluster isn't rendered (non-map pages); on
                the map page the zoom-in button carries the auto-margin
                and Night sits flush with the rest. *@
-            <button class="btn btn-sm btn-outline-secondary topbar-icon-btn @(IsMapRoute ? "" : "ms-auto")"
+            <button class="btn btn-sm btn-outline-secondary topbar-icon-btn topbar-night-btn @(IsMapRoute ? "" : "ms-auto")"
                     @onclick="ToggleNightMode"
                     title="@(Settings.NightMode ? "Night mode on - tap to disable" : "Night mode")"
                     aria-label="@(Settings.NightMode ? "Disable night mode" : "Enable night mode")">
@@ -976,6 +984,43 @@
         catch (JSDisconnectedException) { }
     }
 
+    /// <summary>Phone-width place search is expanded over the topbar's
+    /// secondary icon buttons. Only honoured on the Map route, where the
+    /// SearchBox is mounted.</summary>
+    private bool _searchExpanded;
+
+    private void HandleSearchExpandedChanged(bool expanded) => _searchExpanded = expanded;
+
+    /// <summary>Number of conditional status chips in the topbar
+    /// (Retry, Update available, Not logged in). Drives the phone-width
+    /// priority rules in app.css that drop the zoom pair when the chips
+    /// need its width.</summary>
+    private int StatusChipCount =>
+        (SignalkClient.IsConnected ? 0 : 1)
+        + (Updates.IsUpdateAvailable ? 1 : 0)
+        + (_loginStatus is { ShouldShowLoginWarning: true } ? 1 : 0);
+
+    /// <summary>Sidebar state the DOM last rendered with; null until the
+    /// first render. A change means the content column changed width.</summary>
+    private bool? _renderedSidebarCollapsed;
+
+    /// <summary>Leaflet 1.9 re-measures its container only on a window
+    /// <c>resize</c> event. A sidebar toggle changes the content width
+    /// without resizing the window, so the chart would keep its stale
+    /// size (blank strip or clipped tiles) until the next real resize.
+    /// A synthetic window resize lets every mounted map (Map, History)
+    /// re-measure once; Leaflet coalesces it into one invalidateSize on
+    /// the next animation frame, after the single layout change.</summary>
+    private async Task DispatchWindowResizeAsync()
+    {
+        try
+        {
+            await using var resizeEvent = await JS.InvokeConstructorAsync("Event", "resize");
+            await JS.InvokeVoidAsync("dispatchEvent", resizeEvent);
+        }
+        catch (JSDisconnectedException) { }
+    }
+
     private void HandleLocationChanged(object? sender,
         Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
     {
@@ -1024,6 +1069,15 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        // Latch before awaiting so a render that lands mid-dispatch
+        // doesn't fire a second resize for the same toggle.
+        var previousSidebar = _renderedSidebarCollapsed;
+        _renderedSidebarCollapsed = Settings.SidebarCollapsed;
+        if (previousSidebar is { } previous && previous != Settings.SidebarCollapsed)
+        {
+            await DispatchWindowResizeAsync();
+        }
+
         // Push initial focus into the alarm-log panel when it opens so
         // an external keyboard's first Tab cycles within the dialog,
         // not into the chart underneath. The latch resets on close so

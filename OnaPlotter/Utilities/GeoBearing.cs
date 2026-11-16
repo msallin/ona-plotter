@@ -5,9 +5,9 @@ namespace OnaPlotter.Utilities;
 /// canonical formulation (Aviation Formulary V1.46) using atan2 over
 /// the spherical-trig identity. Result is in radians, normalised to
 /// <c>[0, 2pi)</c> clockwise from true north - the same convention
-/// SignalK uses for <c>navigation.anchor.bearingTrue</c>, so callers
-/// that previously consumed that path can swap to this helper without
-/// re-deriving the unit / sign convention.
+/// SignalK uses for <c>navigation.anchor.bearingTrue</c>, so it is a
+/// drop-in for that path without re-deriving the unit / sign
+/// convention.
 ///
 /// <para>The anchor HUD card uses this to draw the "where is my
 /// anchor" needle without depending on the SignalK plugin to compute

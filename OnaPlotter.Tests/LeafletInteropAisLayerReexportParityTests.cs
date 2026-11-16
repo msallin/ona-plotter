@@ -56,7 +56,7 @@ public class LeafletInteropAisLayerReexportParityTests
         {
             "init", "dispose", "setBoatPosition", "setFollow",
             "unpackLatLonPairs", "applyTrailUpdate", "acceptsUpdate", "toneColor",
-            "tipDotParts", "cpaChipCompact", "buildAisPopupHtml",
+            "tipDotParts", "isCollapsedDot", "cpaChipCompact", "buildAisPopupHtml",
         };
 
         await Assert.That(aisLayerExports.Count)

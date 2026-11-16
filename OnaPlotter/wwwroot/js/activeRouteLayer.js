@@ -94,7 +94,7 @@ export function setActiveRoute(coords, wpIdx, routeId, routeName, totalNm) {
     // a stale data tick that fired between EditRoute clearing the
     // overlay and the suppression flag landing) would otherwise
     // re-establish the active polyline on top of the edit polyline,
-    // exactly the visual mess this whole flag was added to prevent.
+    // exactly the visual mess this flag exists to prevent.
     //
     // Defensive log: if the flag stays "true" because a JS-side error
     // tore the C# disposal path apart (setActiveOverlayHidden(false)
@@ -178,7 +178,7 @@ export function setActiveRoute(coords, wpIdx, routeId, routeName, totalNm) {
                 if (!ll) return;
                 // A click ON the active-route polyline is unambiguous:
                 // the helm tapped this specific route. Edit-mode
-                // dispatch follows the historical priority (route ->
+                // dispatch follows the standard priority (route ->
                 // polygon -> measure); the measure-first override only
                 // applies to empty-map clicks (see
                 // leafletInterop.js::map.on('click')).

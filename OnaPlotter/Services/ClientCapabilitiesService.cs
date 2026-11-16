@@ -6,10 +6,8 @@ namespace OnaPlotter.Services;
 /// <summary>
 /// JS-interop-backed implementation of <see cref="IClientCapabilities"/>.
 /// Reads <c>navigator.hardwareConcurrency</c> + <c>navigator.userAgent</c>
-/// once per bootstrap. The heuristic mirrors the previous in-JS
-/// detection in <c>leafletInterop.js::initMap</c> so the Map page's
-/// behaviour doesn't change with the move; the difference is just
-/// that the decision now sits on the C# side.
+/// once per bootstrap and decides on the C# side, so the Map page's
+/// rendering choices and the rest of the C# logic share one answer.
 /// </summary>
 public sealed class ClientCapabilitiesService : IClientCapabilities
 {

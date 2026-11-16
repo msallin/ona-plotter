@@ -195,7 +195,7 @@ public class MobServiceTests
     [Test]
     public async Task RaiseAsync_With_Null_Message_Uses_Default_Banner_Copy()
     {
-        // TEST-010: the default-message branch was previously untested.
+        // Covers the null half of the default-message branch.
         using var f = NewFixture();
         f.Api.SuspendRaise = true;
 
@@ -208,7 +208,7 @@ public class MobServiceTests
     [Test]
     public async Task RaiseAsync_With_Whitespace_Message_Falls_Back_To_Default()
     {
-        // TEST-010: covers the IsNullOrWhiteSpace half of the
+        // Covers the IsNullOrWhiteSpace half of the
         // default-message branch.
         using var f = NewFixture();
         f.Api.SuspendRaise = true;
@@ -222,7 +222,7 @@ public class MobServiceTests
     [Test]
     public async Task RaiseAsync_With_Null_Position_Stores_Entry_Without_Coords()
     {
-        // TEST-014: the SK MOB notification value's position block
+        // The SK MOB notification value's position block
         // is allowed to be null (no GPS at trigger time). Pin that
         // the service handles it without throwing.
         using var f = NewFixture();
@@ -347,8 +347,8 @@ public class MobServiceTests
     [Test]
     public async Task RaiseAsync_With_5Arg_Ctor_Stores_Notification_Without_Throw()
     {
-        // Legacy ctor compat (5-arg, no waypoint API): existing
-        // callers / older test ctors must not regress when the
+        // 5-arg ctor compat (no waypoint API): callers / test ctors
+        // that omit it must not regress when the
         // optional waypoint dep is absent. Notification side must
         // still operate normally - the test name reflects what's
         // observable here (5-arg ctor + notification storage),
@@ -391,7 +391,7 @@ public class MobServiceTests
     [Test]
     public async Task RaiseAsync_Failed_Waypoint_Create_Surfaces_Toast_Warning()
     {
-        // OPS-002: the helm has no chart-pin signal beyond the toast,
+        // The helm has no chart-pin signal beyond the toast,
         // so a failed waypoint POST that only logs and dissolves into
         // the WASM console is invisible. Pin that the toast delegate
         // is invoked with a helm-readable message.
@@ -488,7 +488,7 @@ public class MobServiceTests
         // CreateGate parks the PUT so we can observe the cache mid-
         // flight - a successful PUT would also seed the cache via the
         // WS echo, but the failing-PUT path is the one helm cares
-        // about and the one that previously dropped the marker.
+        // about and the one that risks dropping the marker.
         var (f, waypoints, reader) = NewFixtureWithWaypointsAndReader();
         using (f)
         {
@@ -696,7 +696,7 @@ public class MobServiceTests
     [Test]
     public async Task RaiseAsync_With_Distinct_ServerId_Updates_Mob_Waypoint_AlarmId()
     {
-        // TEST-002: cross-plotter correlation contract. After the
+        // Cross-plotter correlation contract. After the
         // notification REST returns a serverId different from the
         // localId, the paired waypoint's mobAlarmId must be rewritten
         // so OTHER plotters seeing notifications.mob.<serverId> can
@@ -737,7 +737,7 @@ public class MobServiceTests
     [Test]
     public async Task RaiseAsync_Survives_UpdateMobAlarmId_Throw()
     {
-        // TEST-007: a transient PUT failure on the mobAlarmId update
+        // A transient PUT failure on the mobAlarmId update
         // must NOT crash the retry loop. The notification side has
         // already succeeded; the cross-plotter correlation is a nice-
         // to-have, not a precondition for the helm-side alarm clearing.
@@ -763,7 +763,7 @@ public class MobServiceTests
     [Test]
     public async Task ClearAsync_Flips_Mob_Waypoint_To_Inactive_Without_Deleting()
     {
-        // TEST-001 (BLOCKER from the safety contract): cleared MOBs
+        // Safety contract: cleared MOBs
         // MUST NOT be deleted - they stay on the chart as a permanent
         // history. A regression that swapped the deactivate PUT for
         // a DELETE would silently erase casualty fixes from the chart
@@ -802,7 +802,7 @@ public class MobServiceTests
     [Test]
     public async Task ClearAsync_Survives_Put_Throw_On_Deactivate()
     {
-        // TEST-007: deactivate PUT failure must NOT abort the
+        // Deactivate PUT failure must NOT abort the
         // notification-side clear. Helm-critical: a stuck PUT cannot
         // keep the audible alarm armed; ClearAsync still returns
         // success and the alarm pipeline still tears down. The clear-
@@ -832,7 +832,7 @@ public class MobServiceTests
     [Test]
     public async Task ClearAsync_From_ResourceCache_Falls_Back_To_Scan_By_MobAlarmId()
     {
-        // TEST-003: post-reload clear path. The pending entry has
+        // Post-reload clear path. The pending entry has
         // been retired (previous session) and only the resource cache
         // survived. FindMobWaypoint's tier-3 scan walks the cache by
         // MobAlarmId. A regression here (typo in IsMob guard, wrong
@@ -892,7 +892,7 @@ public class MobServiceTests
     [Test]
     public async Task ClearAsync_During_Waypoint_Create_Doesnt_Stamp_Stale_State()
     {
-        // TEST-006: helm clears MOB before the waypoint POST returns.
+        // Helm clears MOB before the waypoint POST returns.
         // The CTS threaded into CreateMobWaypointAsync via live.Cts
         // unwinds the gated FakeWaypointApi.CreateAsync cleanly when
         // ClearAsync's CancelAndDropPending fires - no leaked Task
@@ -989,16 +989,15 @@ public class MobServiceTests
     [Test]
     public async Task ServerEcho_Arriving_Before_ServerId_Recorded_Still_Removes_Local_Synthetic()
     {
-        // Race regression: in the field the helm saw TWO banners on
-        // the local plotter (local synthetic + server twin).
-        // Cause: the SK server's WS push of notifications.mob.<serverId>
-        // can arrive at the SignalkClient BEFORE the REST POST reply
-        // returns to MobService. ReconcileMobPath then ran with
-        // pending.ServerId == null, missed the match, and the local
-        // synthetic stayed armed alongside the server twin.
-        // Fix: after MobService records ServerId, it probes the store
-        // for the server-twin path and tears the synthetic down if
-        // the WS echo already landed.
+        // Race guard: the helm must not see TWO banners on the local
+        // plotter (local synthetic + server twin). The SK server's WS
+        // push of notifications.mob.<serverId> can arrive at the
+        // SignalkClient BEFORE the REST POST reply returns to
+        // MobService, so ReconcileMobPath runs with
+        // pending.ServerId == null and misses the match. After
+        // MobService records ServerId, it probes the store for the
+        // server-twin path and tears the synthetic down if the WS
+        // echo already landed.
         using var f = NewFixture();
         f.Api.SuspendRaise = true;
         f.Api.NextServerId = "race-srv";
@@ -1168,7 +1167,7 @@ public class MobServiceTests
     [Test]
     public async Task InitializeAsync_Replays_With_Saved_AttemptCount_Backoff()
     {
-        // TEST-009: persisted AttemptCount=2 means "iteration 2 just
+        // Persisted AttemptCount=2 means "iteration 2 just
         // failed"; the next iteration's wait must therefore match
         // what iteration 3 would wait (idx = attempt - 1 = 1 -> 2s),
         // not the initial 1s. Pin the contract: a reload mid-retry
@@ -1203,7 +1202,7 @@ public class MobServiceTests
     [Test]
     public async Task InitializeAsync_With_Corrupt_Persisted_Json_Starts_Empty()
     {
-        // TEST-013: a corrupt localStorage value falls back to "no
+        // A corrupt localStorage value falls back to "no
         // pending" instead of crashing on the first persist.
         using var f = NewFixture();
         await f.Kv.SetAsync("mob.pendingRaise.v1", "{not valid json");
@@ -1284,7 +1283,7 @@ public class MobServiceTests
     [Test]
     public async Task InitializeAsync_Skips_Non_Emergency_Entries()
     {
-        // TEST-011: the state-filter ("any state=emergency") is
+        // The state-filter ("any state=emergency") is
         // coarse but documented. Pin that a low-battery alarm
         // returned by the list endpoint does NOT enter the MOB
         // pipeline.
@@ -1337,7 +1336,7 @@ public class MobServiceTests
     [Test]
     public async Task InitializeAsync_Skips_Entries_With_Empty_Id()
     {
-        // TEST-011: an emergency entry with no canonical id can't
+        // An emergency entry with no canonical id can't
         // produce a "notifications.mob." path; skip rather than
         // synthesise a path-with-empty-suffix.
         using var f = NewFixture();
@@ -1383,10 +1382,9 @@ public class MobServiceTests
     {
         // Safety scenario: helm reloads OnaPlotter while a MOB is
         // active on another plotter and lands on a non-Map page
-        // (Wind, Settings, History). Previous wiring routed the
-        // recovery through Map.razor's HandleConnectionChanged so
-        // the helm only saw the banner once they navigated to
-        // /map. After the refactor MobService owns its own
+        // (Wind, Settings, History). If recovery hangs off a page's
+        // connection handler, the helm only sees the banner once
+        // they navigate to /map. MobService owns its own
         // OnConnectionChanged subscription so the GET /notifications
         // fires regardless of which page mounted.
         var (f, signalk) = NewFixtureWithSignalk();
@@ -1533,7 +1531,7 @@ public class MobServiceTests
     [Test]
     public async Task ClearAsync_On_Pending_Local_Raise_Cancels_Retry_And_Skips_Post()
     {
-        // SKEP-001 regression: clearing a pending offline MOB must
+        // Clearing a pending offline MOB must
         // cancel its retry loop so a subsequent successful POST
         // doesn't resurrect the MOB via the WS echo. Also skips the
         // REST POST (no serverId yet -> would 404).
@@ -1597,13 +1595,13 @@ public class MobServiceTests
     }
 
     // ------------------------------------------------------------
-    // Dispose contract (TEST-007)
+    // Dispose contract
     // ------------------------------------------------------------
 
     [Test]
     public async Task Dispose_Cancels_Pending_Retry_Loops()
     {
-        // TEST-007: leaks of Task.Run are silent in tests; pin that
+        // Leaks of Task.Run are silent in tests; pin that
         // dispose actually cancels.
         using var f = NewFixture();
         f.Api.FailRaiseCount = 1000;   // never succeed
@@ -1635,7 +1633,7 @@ public class MobServiceTests
     [Test]
     public async Task Dispose_Unsubscribes_From_Store_OnPathChanged()
     {
-        // TEST-007: a disposed service should not respond to store
+        // A disposed service should not respond to store
         // events. Asserts no exception + no resurrection of state.
         using var f = NewFixture();
         f.Service.Dispose();

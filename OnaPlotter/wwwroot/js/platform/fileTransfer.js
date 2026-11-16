@@ -3,7 +3,7 @@
 // Settings page doesn't have to pull in the whole leafletInterop
 // module for one download helper.
 //
-// leafletInterop.js still has its own copy because the Map page
+// leafletInterop.js keeps its own copy because the Map page
 // uses it from a context where the leaflet module is already
 // loaded; deduping the two copies is a future refactor.
 

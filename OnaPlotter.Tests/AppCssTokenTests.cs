@@ -26,8 +26,9 @@ public class AppCssTokenTests
     private static readonly string CssPath = Path.Combine(WebRoot, "wwwroot", "css", "app.css");
 
     // Tokens defined outside app.css: Bootstrap's --bs-* palette, and
-    // --map-rot, which leafletInterop.js writes on <html> for course-up.
-    private static readonly Regex ExternallyDefined = new(@"^--(bs-|map-rot$)", RegexOptions.Compiled);
+    // the course-up properties mapRotation.js writes inline on the map
+    // container (--map-rot, --map-overscan-x / -y).
+    private static readonly Regex ExternallyDefined = new(@"^--(bs-|map-rot$|map-overscan-[xy]$)", RegexOptions.Compiled);
 
     // "/* ... */" comments, including multi-line ones.
     private static readonly Regex Comment = new(@"/\*.*?\*/", RegexOptions.Singleline | RegexOptions.Compiled);

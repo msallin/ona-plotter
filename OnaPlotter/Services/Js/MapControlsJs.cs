@@ -7,7 +7,7 @@ namespace OnaPlotter.Services.Js;
 /// <see cref="IMapControlsJs"/> backed by an
 /// <see cref="IJSObjectReference"/> handle to the leafletInterop.js
 /// module. Centralises the JSDisconnected / ObjectDisposed swallow
-/// that every call site previously re-implemented. After
+/// so call sites don't each re-implement it. After
 /// <see cref="MarkDisposed"/> every method becomes a silent no-op.
 /// </summary>
 public sealed class MapControlsJs : IMapControlsJs

@@ -110,7 +110,7 @@ public class RouteProgressTests
         // Probe near the second point (across the dateline). The naive
         // dx will be ~360° large because we don't unwrap longitude;
         // this test pins the *current* behaviour so a later "fix it"
-        // PR is a deliberate change rather than an accidental regression.
+        // is a deliberate change rather than an accidental regression.
         // For typical sub-NM progress lookups this never fires.
         int got = RouteProgress.FindClosestWaypointIndex(coords, 0.0, -179.99);
         await Assert.That(got).IsEqualTo(1);
@@ -188,7 +188,7 @@ public class RouteProgressTests
     [Test]
     public async Task ResolveLegIndex_ServerPointIndex_Wins_Over_LatLon_Match()
     {
-        // The fix for "every reload resets to WP 1": the SK course
+        // Guards against "every reload resets to WP 1": the SK course
         // engine is the source of truth for the active leg. The
         // lat/lon match exists only as a fallback for older servers
         // - if the server tells us pointIndex=2, we use 2 even when

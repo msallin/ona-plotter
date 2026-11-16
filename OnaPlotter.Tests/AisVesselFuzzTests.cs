@@ -146,12 +146,11 @@ public class AisVesselFuzzTests
     [Test]
     public async Task Buddy_StringValue_DoesNotFlipFlag()
     {
-        // Pre-spoof-fix this test pinned that a plugin emitting
-        // buddy as the string "true" wasn't treated as truthy. The
-        // wire-side path is now dropped entirely (any value on the
-        // 'buddy' path is ignored), so this test still passes but
-        // for the broader reason - see Buddy_WireSide_*Delta tests
-        // below for the explicit pin.
+        // A plugin emitting buddy as the string "true" must not be
+        // treated as truthy. Any value on the wire-side 'buddy' path
+        // is ignored (spoof protection), so this holds for the broader
+        // reason - see Buddy_WireSide_*Delta tests below for the
+        // explicit pin.
         var v = new AisVessel("vessels.urn:mrn:imo:mmsi:121");
         v.Apply("buddy", J("true"));
         await Assert.That(v.IsBuddy).IsFalse();

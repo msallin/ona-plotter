@@ -6,7 +6,7 @@ using OnaPlotter.Services.Api;
 namespace OnaPlotter.Tests;
 
 /// <summary>
-/// Pins the cross-plotter publish flow added in Phase B. Tests use a
+/// Pins the cross-plotter publish flow. Tests use a
 /// fake <see cref="INotificationsApi"/> + a stub
 /// <see cref="IAlarmManager"/> rather than driving the full alarm
 /// pipeline so the assertions focus on the publisher's behaviour
@@ -27,8 +27,8 @@ public class AlarmPublisherTests
         private List<AlarmInfo> _active = [];
         // Optional rule pairing for AllActiveEntries. Defaults to a
         // title-based mapping that mirrors the production rules'
-        // GetPublishPath overrides so existing publisher tests assert
-        // the same paths they did pre-ARCH-002. Tests that need
+        // GetPublishPath overrides so publisher tests assert the
+        // production paths. Tests that need
         // null-path or different paths can override via RuleFor.
         private Func<AlarmInfo, IAlarmRule> _ruleFor = DefaultRuleFor;
 
@@ -65,7 +65,7 @@ public class AlarmPublisherTests
         public AlarmInfo? ActiveAlarm => _active.Count > 0 ? _active[0] : null;
         public IReadOnlyList<AlarmInfo> ActiveAlarms => _active;
         // Stub uses the same list for both: pile-up beyond
-        // MaxActiveAlarms is exercised by the OPS-003 regression test
+        // MaxActiveAlarms is exercised by the pile-up test
         // which inserts 4+ alarms and asserts the publisher reads from
         // the uncapped collection.
         public IReadOnlyList<AlarmInfo> AllActiveAlarms => _active;
@@ -199,10 +199,9 @@ public class AlarmPublisherTests
     // alarm un-publishable.
     // -----------------------------------------------------------------
 
-    // Path-mapping was previously a centralised switch on
-    // AlarmPublisher.TryMapToPath. After ARCH-002 each rule owns its
-    // own GetPublishPath; the per-rule unit coverage moved to
-    // AlarmRulePublishPathTests.cs. These tests stay focused on the
+    // Each rule owns its own GetPublishPath; the per-rule unit
+    // coverage lives in AlarmRulePublishPathTests.cs. These tests
+    // stay focused on the
     // publisher's diff/raise/clear behaviour given a rule that returns
     // some path.
 
@@ -480,9 +479,9 @@ public class AlarmPublisherTests
         var raiseTcs = new TaskCompletionSource<ApiResult<string>>(
             TaskCreationOptions.RunContinuationsAsynchronously);
         api.AsyncRaiseHandler = (_, _) => raiseTcs.Task;
-        // Signal that fires when ClearAsync runs for our late id;
-        // replaces a polling loop that previously slept up to a second
-        // checking the Cleared list every 10 ms.
+        // Signal that fires when ClearAsync runs for our late id, so
+        // the test awaits the event rather than polling the Cleared
+        // list.
         var lateClearSeen = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
         api.OnCleared += id => { if (id == "late-id") lateClearSeen.TrySetResult(); };

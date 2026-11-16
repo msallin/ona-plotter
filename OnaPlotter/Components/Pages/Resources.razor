@@ -51,10 +51,9 @@
         @* Action cluster: Import + (Cancel during import) + Refresh
            wrapped in a single flex group so they read as one
            "data-management toolbar" instead of the title floating
-           between them. Helm-flagged: the previous layout used
-           justify-content: space-between on three siblings, which
-           pushed Import to the centre and Refresh to the far right
-           with a wide gap between them. *@
+           between them. justify-content: space-between on three
+           siblings would push Import to the centre and Refresh to the
+           far right with a wide gap between them. *@
         <div class="d-flex align-items-start gap-2 flex-wrap">
             @* Page-level Import. Auto-detects GPX (XML) or GeoJSON (JSON)
                on the way in and routes each feature to its matching API:
@@ -62,8 +61,7 @@
                waypoint, Polygon / MultiPolygon -> region, GPX rte ->
                route, GPX wpt -> waypoint. Per-row Export already lives
                on every row above; the matching Import rounds the data-
-               management flow into one place. Replaces the Settings
-               Backup section (focus-group field report 2026-04). *@
+               management flow into one place. *@
             <label class="btn btn-outline-primary @(importing ? "disabled" : "")"
                    style="white-space:nowrap;"
                    title="Drop in a GPX or GeoJSON file - format auto-detected">
@@ -381,14 +379,14 @@
         try { _importCts?.Cancel(); }
         catch (ObjectDisposedException) { /* already finishing */ }
     }
-    /// <summary>Filesystem cap on the import payload. 8 MB matches
-    /// what GpxService used to allow; a typical season's GPX or
-    /// GeoJSON dump is under 1 MB.</summary>
+    /// <summary>Filesystem cap on the import payload. A typical
+    /// season's GPX or GeoJSON dump is under 1 MB, so 8 MB leaves
+    /// ample headroom.</summary>
     private const long MaxImportBytes = 8 * 1024 * 1024;
 
     // Lazy-loaded JS helper for blob-download. Disposed in
     // DisposeAsync so the IJSObjectReference doesn't outlive the
-    // page; same pattern as Settings.razor's GPX export. _exportLock
+    // page. _exportLock
     // serialises concurrent Export clicks across rapid clicks (the
     // helm sometimes machine-guns the button on a slow tablet) so
     // the same JS module isn't imported twice.
@@ -1149,10 +1147,10 @@
             Toasts.Warning($"MOB waypoint '{NameOrId(wp.Name, wp.Id)}' cannot be renamed (correlation preserved)");
             return;
         }
-        // Themed in-app prompt via ConfirmationService. Replaced the
-        // earlier window.prompt(): the native dialog is blocked in
-        // some MDM profiles and in PWA standalone display mode on
-        // iPad, and it ignored night-mode anyway. The service
+        // Themed in-app prompt via ConfirmationService rather than
+        // window.prompt(): the native dialog is blocked in some MDM
+        // profiles and in PWA standalone display mode on iPad, and it
+        // ignores night-mode anyway. The service
         // returns null on Cancel / Escape and a trimmed non-empty
         // string on OK.
         var current = wp.Name ?? "";

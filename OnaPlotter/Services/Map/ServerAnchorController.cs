@@ -28,7 +28,7 @@ public sealed class ServerAnchorController
     private readonly IMapAnchorJs _anchorJs;
     private readonly Func<bool> _isSignalKConnected;
     private readonly Action<string> _raiseTimeoutWarning;
-    private readonly Func<DateTime> _utcNow;
+    private readonly TimeProvider _time;
 
     /// <summary>How long to wait for a server-confirmation delta after
     /// the helm tapped raise before surfacing a "didn't confirm" warning
@@ -56,16 +56,18 @@ public sealed class ServerAnchorController
     /// the Drop panel (no anchor).</summary>
     public bool ServerAnchorDrawn => _serverAnchorDrawn;
 
+    private DateTime UtcNow() => _time.GetUtcNow().UtcDateTime;
+
     public ServerAnchorController(
         IMapAnchorJs anchorJs,
         Func<bool> isSignalKConnected,
         Action<string> raiseTimeoutWarning,
-        Func<DateTime>? utcNow = null)
+        TimeProvider time)
     {
         _anchorJs = anchorJs ?? throw new ArgumentNullException(nameof(anchorJs));
         _isSignalKConnected = isSignalKConnected ?? throw new ArgumentNullException(nameof(isSignalKConnected));
         _raiseTimeoutWarning = raiseTimeoutWarning ?? throw new ArgumentNullException(nameof(raiseTimeoutWarning));
-        _utcNow = utcNow ?? (() => DateTime.UtcNow);
+        _time = time ?? throw new ArgumentNullException(nameof(time));
     }
 
     /// <summary>
@@ -77,7 +79,7 @@ public sealed class ServerAnchorController
     /// that still sees <c>Data.AnchorActive</c> after
     /// <see cref="RaiseTimeoutSec"/> fires the warning callback.
     /// </summary>
-    public void MarkRaisePending() => _raisePendingUtc = _utcNow();
+    public void MarkRaisePending() => _raisePendingUtc = UtcNow();
 
     /// <summary>
     /// Cancels a previously-armed raise watchdog. Called when the PUT
@@ -166,9 +168,9 @@ public sealed class ServerAnchorController
             {
                 if (!_isSignalKConnected())
                 {
-                    _raisePendingUtc = _utcNow();        // re-arm
+                    _raisePendingUtc = UtcNow();        // re-arm
                 }
-                else if ((_utcNow() - t).TotalSeconds > RaiseTimeoutSec)
+                else if ((UtcNow() - t).TotalSeconds > RaiseTimeoutSec)
                 {
                     _raisePendingUtc = null;
                     _raiseTimeoutWarning("Anchor raise not confirmed by server - still anchored");

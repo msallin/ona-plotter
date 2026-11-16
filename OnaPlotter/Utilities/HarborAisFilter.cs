@@ -4,11 +4,9 @@ using OnaPlotter.Services;
 namespace OnaPlotter.Utilities;
 
 /// <summary>
-/// Pure, side-effect-light helper for the Harbor-mode AIS filter. Was
-/// previously inlined in <c>Map.razor.PushAisTargets</c>; lifting it
-/// here means the moored-filter contract is unit-testable without
-/// bUnit + JS interop, which is what the parallel review flagged
-/// (TEST-001). Map.razor becomes a one-liner that delegates the
+/// Pure, side-effect-light helper for the Harbor-mode AIS filter. Kept
+/// out of <c>Map.razor.PushAisTargets</c> so the moored-filter contract
+/// is unit-testable without bUnit + JS interop; Map.razor delegates the
 /// filtering decision and stays focused on the JS-payload assembly.
 /// </summary>
 public static class HarborAisFilter
@@ -18,7 +16,7 @@ public static class HarborAisFilter
     /// chart and pushed to the JS layer.
     /// <para>
     /// When <paramref name="harbor"/> is false, every vessel with a
-    /// known position passes through (legacy behaviour).
+    /// known position passes through.
     /// </para>
     /// <para>
     /// When <paramref name="harbor"/> is true:
@@ -44,9 +42,9 @@ public static class HarborAisFilter
             // producer in production is AisStore.GetVessels(), which
             // already filters null-position vessels and returns an
             // AisVessel[]. When that invariant holds we can fast-return
-            // the array as-is, avoiding the per-tick List<>(N) +
-            // copy that previously dominated this method's allocation
-            // cost on a 200-vessel push.
+            // the array as-is, avoiding a per-tick List<>(N) + copy
+            // that would dominate this method's allocation cost on a
+            // 200-vessel push.
             //
             // The null-position drop contract is preserved for
             // collections that DO contain nulls (test fixtures that
@@ -79,8 +77,7 @@ public static class HarborAisFilter
 
         // Harbor mode ON: cleanup + drop moored.
         // Vessels-collection overload skips the HashSet build when
-        // nothing is tracked, which is most ticks. The previous
-        // pattern allocated the set unconditionally.
+        // nothing is tracked, which is most ticks.
         tracker.Cleanup(vessels);
 
         var kept = new List<AisVessel>(vessels.Count);

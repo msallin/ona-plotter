@@ -56,7 +56,7 @@ export function setBoatPosition(lat, lon) {
     if (measureActive && measurePoints.length > 0 && hasVesselMeasurePoint()) {
         // Geometry-only incremental update instead of a full
         // redrawMeasure teardown. Fires every position fix (~1 Hz),
-        // so the previous full rebuild was N marker create/destroy +
+        // so a full rebuild would be N marker create/destroy +
         // 2N polyline create/destroy + N tooltip create/destroy +
         // N marker event-listener re-bind per second on a vessel-
         // anchored ruler. The geometry-only path moves each vessel

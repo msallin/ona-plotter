@@ -2,10 +2,10 @@
   "name": "ona-plotter-lint",
   "version": "0.0.0",
   "private": true,
-  "description": "Repo-root lint harness for OnaPlotter's wwwroot/js sources. Catches the TDZ / no-undef class of bug ESLint surfaces statically - the kind that previously only failed at runtime in production (see fix(map): hoist editModeDeps before its first use, 2026-04). Not a build artefact: the Blazor build doesn't depend on it; CI runs npm run lint as a gate before the test step.",
+  "description": "Repo-root lint harness for OnaPlotter's hand-written JS (wwwroot/js interop layer, deploy/ plugin shim, scripts/ build helpers). Catches the TDZ / no-undef class of bug ESLint surfaces statically. The Blazor build depends on node_modules only for esbuild in Release publish; CI runs npm run lint as a gate before the test step.",
   "type": "module",
   "scripts": {
-    "lint": "eslint OnaPlotter/wwwroot/js deploy"
+    "lint": "eslint OnaPlotter/wwwroot/js deploy scripts"
   },
   "devDependencies": {
     "esbuild": "^0.24.0",

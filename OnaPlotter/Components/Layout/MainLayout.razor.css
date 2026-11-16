@@ -32,8 +32,8 @@ main {
     box-shadow: var(--sidebar-shadow, none);
     /* Default expanded width (icons + labels). iPad touch target
        floor is 44 px; 10 rem leaves comfortable room for every
-       label without wrapping. Collapses to 4 rem in fullscreen
-       - see rules below. */
+       label without wrapping. Collapses to the 4 rem icon rail via
+       .page.sidebar-collapsed below. */
     width: 10rem;
     /* Same --app-height as <main>: the html content box, which is the
        dynamic viewport shrunk by the safe-area padding. */
@@ -41,29 +41,45 @@ main {
     position: sticky;
     top: 0;
     flex-shrink: 0;
-    transition: width 0.18s ease;
-    /* Prevent any scrollbar from leaking onto the sidebar itself.
-       NavMenu's .nav-scrollable already hides its scrollbar but in
-       the narrow-rail fullscreen state the outer .sidebar occasion-
-       ally showed a track on Safari; belt + braces. */
+    /* No width transition: animating width reflows <main> and resizes
+       the chart on every frame. The rail snaps to its new width in a
+       single layout pass (MainLayout then nudges Leaflet to re-measure
+       once) and only the rail's contents animate, below. */
+    /* Clips the sliding contents during the toggle animation and keeps
+       Safari from drawing a stray scrollbar track on the narrow rail. */
     overflow: hidden;
 }
 
-/* Narrow icon-rail: 4rem (up from 3.5rem) leaves room for the
-   1.15rem-font icons without clipping, and the forced
-   `overflow: hidden` above suppresses the stray scrollbar Safari
-   draws on the narrower rail.
-   Single trigger now: `.page.sidebar-collapsed`, which is mirrored
-   off Settings.SidebarCollapsed in MainLayout. The fullscreen modes
-   (`:fullscreen` / `html.ios-fullbleed`) used to ALSO force this
-   class via CSS, but that overrode the user's chevron-toggle in
-   the rail - the helm couldn't re-expand the sidebar while
-   fullscreen was on. Now MainLayout flips Settings.SidebarCollapsed
-   in OnFullscreenChanged so entering fullscreen still defaults to
-   the icon rail (matches prior behaviour) but the manual toggle
-   wins over the auto-flip. */
+/* Icon rail. Single trigger: `.page.sidebar-collapsed`, mirrored off
+   Settings.SidebarCollapsed in MainLayout, which also flips that
+   setting on fullscreen enter / exit so the chevron toggle in the
+   rail stays authoritative. 4 rem fits the 1.15 rem rail icons
+   without clipping. */
 .page.sidebar-collapsed .sidebar {
     width: 4rem;
+}
+
+/* Toggle animation: compositor-only (transform + opacity) on the rail's
+   contents, so the chart behind never re-lays out mid-animation. Two
+   identical keyframes with different names restart the animation on
+   every toggle, because a changed animation-name re-runs it. */
+@media (prefers-reduced-motion: no-preference) {
+    .sidebar ::deep .nav-scrollable {
+        animation: sidebar-contents-expand 0.18s ease-out;
+    }
+    .page.sidebar-collapsed .sidebar ::deep .nav-scrollable {
+        animation-name: sidebar-contents-collapse;
+    }
+}
+
+@keyframes sidebar-contents-expand {
+    from { opacity: 0; transform: translateX(-0.75rem); }
+    to   { opacity: 1; transform: none; }
+}
+
+@keyframes sidebar-contents-collapse {
+    from { opacity: 0; transform: translateX(-0.75rem); }
+    to   { opacity: 1; transform: none; }
 }
 
 .top-row {
@@ -86,6 +102,31 @@ main {
     padding-right: 1rem !important;
 }
 
+/* Phone (portrait, or a phone turned landscape; same breakpoint as the
+   phone block in app.css, which sizes the topbar controls).
+   - Expanded sidebar narrows to 7 rem so the chart and the topbar keep
+     their width; the collapsed rail stays at 4 rem (44 px+ targets).
+   - Topbar row: tight padding + gap, and an inline-size container so
+     app.css can drop the zoom pair when the row runs short.
+     flex-start makes any residual overflow spill off the right end,
+     away from the connection dot and the Notifications button. */
+@media (max-width: 600px), (max-height: 500px) and (max-width: 900px) {
+    .sidebar {
+        width: 7rem;
+    }
+    .page.sidebar-collapsed .sidebar {
+        width: 4rem;
+    }
+    .top-row {
+        justify-content: flex-start;
+        padding-left: 4px !important;
+        padding-right: 4px !important;
+        gap: 4px;
+        flex-wrap: nowrap;
+        container: topbar / inline-size;
+    }
+}
+
 .connection-status {
     font-size: 0.8rem;
     color: var(--sk-top-row-text);
@@ -98,12 +139,9 @@ article {
 
 /* Shared shape for topbar glyph buttons (Night / Fullscreen / zoom).
    Fixed 2 rem square so they line up with the search input next to
-   them (.topbar-search-input is 31 px tall). The earlier
-   align-self: stretch experiment made the buttons fill the full
-   3 rem row, which left them looking taller than the search box +
-   clipped the bottom border against the topbar's own border.
-   Compact width keeps the row of identical glyphs reading as a
-   unit. */
+   them (.topbar-search-input is 31 px tall) and the row of identical
+   glyphs reads as a unit. Touch pointers and phone widths raise them
+   to 44 px via app.css. */
 .topbar-icon-btn {
     display: inline-flex;
     align-items: center;

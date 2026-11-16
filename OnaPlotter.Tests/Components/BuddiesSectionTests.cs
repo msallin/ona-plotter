@@ -6,9 +6,9 @@ using OnaPlotter.Models;
 namespace OnaPlotter.Tests.Components;
 
 /// <summary>
-/// Buddy-MMSI exact-match behaviour was a review punch-list item - if
-/// the lookup falls back to Contains() we regress to the false-match
-/// bug. These tests pin the correct behaviour.
+/// Buddy-MMSI exact-match behaviour: if the lookup falls back to
+/// Contains(), a buddy name can false-match another vessel's MMSI.
+/// These tests pin the correct behaviour.
 /// </summary>
 public class BuddiesSectionTests
 {
@@ -27,8 +27,8 @@ public class BuddiesSectionTests
     [Test]
     public async Task BuddyWithNoMatchingVessel_Shows_NotInAisRange()
     {
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<BuddiesSection>(p => p
+        using var ctx = new Bunit.BunitContext();
+        var cut = ctx.Render<BuddiesSection>(p => p
             .Add(x => x.Buddies, new[] { Buddy("urn:mrn:imo:mmsi:1234", "Friend") })
             .Add(x => x.Vessels, Array.Empty<VesselListEntry>()));
         Expand(cut);
@@ -40,8 +40,8 @@ public class BuddiesSectionTests
     [Test]
     public async Task BuddyWithMatchingMmsi_Shows_Distance()
     {
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<BuddiesSection>(p => p
+        using var ctx = new Bunit.BunitContext();
+        var cut = ctx.Render<BuddiesSection>(p => p
             .Add(x => x.Buddies, new[] { Buddy("urn:mrn:imo:mmsi:1234", "Friend") })
             .Add(x => x.Vessels, new[] {
                 Vessel("vessels.urn:mrn:imo:mmsi:1234", "Friend Live", "1234", distNm: 2.4)
@@ -55,11 +55,11 @@ public class BuddiesSectionTests
     [Test]
     public async Task BuddyNameContainingOtherMmsi_Does_Not_FalseMatch()
     {
-        // A buddy's name contains "1234" as a substring. Under the old
-        // Contains-based lookup this matched a different vessel whose
-        // MMSI happened to be 1234. Ensure the exact-Mmsi match fixes it.
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<BuddiesSection>(p => p
+        // A buddy's name contains "1234" as a substring. A Contains-based
+        // lookup would match a different vessel whose MMSI happens to be
+        // 1234; the match must be on the exact MMSI.
+        using var ctx = new Bunit.BunitContext();
+        var cut = ctx.Render<BuddiesSection>(p => p
             .Add(x => x.Buddies, new[] { Buddy("urn:mrn:imo:mmsi:9999", "Boat 1234 Doe") })
             .Add(x => x.Vessels, new[] {
                 Vessel("vessels.urn:mrn:imo:mmsi:1234", "Different Boat", "1234", distNm: 5.0)
@@ -75,12 +75,12 @@ public class BuddiesSectionTests
     [Test]
     public async Task No_Refresh_Button_In_Section()
     {
-        // The Refresh button was pulled (user feedback - the buddy list
-        // refreshes itself on reconnect / on the BuddyList seed, the
-        // in-panel button was visual noise). If it comes back, ship an
-        // explicit Parameter + test; don't leak the old title back in.
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<BuddiesSection>(p => p
+        // No in-panel Refresh button: the buddy list refreshes itself on
+        // reconnect / on the BuddyList seed, so the button is visual
+        // noise. If one is wanted, ship an explicit Parameter + test
+        // rather than letting this title leak back in.
+        using var ctx = new Bunit.BunitContext();
+        var cut = ctx.Render<BuddiesSection>(p => p
             .Add(x => x.Buddies, new[] { Buddy("urn:mrn:imo:mmsi:1", "A") })
             .Add(x => x.Vessels, Array.Empty<VesselListEntry>()));
 

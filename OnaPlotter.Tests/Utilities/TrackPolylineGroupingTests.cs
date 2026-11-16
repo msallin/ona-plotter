@@ -3,10 +3,9 @@ using OnaPlotter.Utilities;
 namespace OnaPlotter.Tests.Utilities;
 
 /// <summary>
-/// Pins the bucket-grouping semantics of <see cref="TrackPolylineGrouping"/>
-/// against the old JS-side <c>setColoredTrack</c> algorithm. The C# port
-/// must produce byte-identical results so the speed-coloured track
-/// renders the same on the chart after the move.
+/// Pins the bucket-grouping semantics of <see cref="TrackPolylineGrouping"/>,
+/// which decide how the speed-coloured track is split into
+/// same-colour polylines on the chart.
 /// </summary>
 public sealed class TrackPolylineGroupingTests
 {

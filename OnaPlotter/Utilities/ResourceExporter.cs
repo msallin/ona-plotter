@@ -58,8 +58,7 @@ public static class ResourceExporter
     private const double RadToDeg = 180.0 / Math.PI;
 
     // GeoJSON Feature shapes serialise via OnaGeoJsonContext (source-
-    // gen, WriteIndented=true). The earlier shared `PrettyJson` options
-    // were redundant with the context's options; deleted.
+    // gen, WriteIndented=true).
 
     // ---------------- ROUTE -----------------------------------------
 
@@ -284,8 +283,7 @@ public static class ResourceExporter
                 // Numeric fields stay raw so the consumer can format
                 // (knots vs m/s, nm vs km, h:mm vs seconds). Nullable
                 // doubles ride through unchanged; they emit as
-                // "key": null when absent (matches earlier PrettyJson
-                // behaviour, no DefaultIgnoreCondition was set).
+                // "key": null when absent (no DefaultIgnoreCondition).
                 DurationSec: segment.Duration.TotalSeconds,
                 DistanceMeters: segment.DistanceMetres,
                 SogAvgMs: segment.SogAvgMs,
@@ -415,11 +413,10 @@ public static class ResourceExporter
         return closed;
     }
 
-    // Properties-bag construction is inlined at each export site
-    // now; the per-shape named records (GeoJsonRouteProperties,
+    // Properties-bag construction is inlined at each export site via
+    // the per-shape named records (GeoJsonRouteProperties,
     // GeoJsonNameProperties, GeoJsonTitleDescProperties,
-    // GeoJsonNameDescProperties) replaced the earlier private helpers
-    // that returned `object` and let the reflection serializer pick
+    // GeoJsonNameDescProperties) so source-gen, not reflection, picks
     // the shape. See OnaPlotter/Models/GeoJsonDtos.cs.
 }
 

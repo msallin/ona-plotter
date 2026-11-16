@@ -9,9 +9,9 @@ namespace OnaPlotter.Tests;
 /// in <c>wwwroot/css/app.css</c>, which the Layers-panel legend swatches
 /// read via <c>var()</c>.
 /// <para>
-/// Previously the legend swatches had the hex values hardcoded and
-/// would silently drift whenever someone tuned a palette entry on the
-/// C# side. The tokens now live in one place; this test makes the
+/// Hardcoded hex values in the legend swatches would silently drift
+/// whenever someone tuned a palette entry on the C# side. The tokens
+/// live in one place; this test makes the
 /// parity explicit so a tuning change that forgets to update the CSS
 /// (or vice versa) fails in CI instead of landing with a subtly-wrong
 /// legend.

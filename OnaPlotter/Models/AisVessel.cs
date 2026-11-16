@@ -17,9 +17,9 @@ public enum TargetSource
 }
 
 /// <summary>
-/// Mutable state for a single tracked target. Originally built for AIS
-/// vessels; now doubles as the state holder for radar ARPA targets too
-/// (they share the same fields the alarm pipeline cares about).
+/// Mutable state for a single tracked target: AIS vessels and radar
+/// ARPA targets alike (they share the same fields the alarm pipeline
+/// cares about).
 /// Populated from SignalK delta updates.
 /// </summary>
 public sealed class AisVessel
@@ -260,9 +260,8 @@ public sealed class AisVessel
                     var parsed = TryGetString(rawValue);
                     // null AND empty/whitespace must NOT overwrite a good
                     // name. SK servers in the wild occasionally republish
-                    // identity with name="" (empty string is non-null so the
-                    // previous IsNullOrEmpty-free guard let it through),
-                    // which would knock the resolved displayName back to
+                    // identity with name="" (non-null, so a plain null
+                    // check lets it through), which would knock the resolved displayName back to
                     // the MMSI fallback and leave the on-chart label stuck
                     // on the number. Treat blank as no-op.
                     if (string.IsNullOrWhiteSpace(parsed)) return false;
@@ -290,10 +289,10 @@ public sealed class AisVessel
                 // Expected shapes:
                 //   { id: 36, name: "Sailing" }   -> ShipType = "Sailing"
                 //   { id: 60 }                    -> name absent; skip
-                //                                    (previous code stringified the JSON,
-                //                                    producing e.g. '{"id":60}' on
-                //                                    the HUD - worse than falling back
-                //                                    to the existing value).
+                //                                    (stringifying the JSON would put
+                //                                    e.g. '{"id":60}' on the HUD -
+                //                                    worse than keeping the existing
+                //                                    value).
                 //   "Sailing"                     -> plain string
                 //   number (enum id only)         -> no human label; skip
                 if (rawValue.TryGetElement(out var typeEl)
@@ -411,8 +410,8 @@ public sealed class AisVessel
     // (name / mmsi / callsign) so a null-valued delta from the flatten
     // path doesn't clobber existing good data. SK servers emit
     // { name: null, mmsi: "..." } occasionally on partial identity
-    // updates, which the previous .ToString() fallback turned into
-    // the literal string "null".
+    // updates, which a .ToString() fallback would turn into the
+    // literal string "null".
     // A numeric identity (mmsi published as 211234567) is rendered in
     // invariant round-trip form, e.g. 211234567 -> "211234567".
     private static string? TryGetString(DeltaValue raw) => raw.Kind switch

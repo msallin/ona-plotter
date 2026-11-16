@@ -153,10 +153,9 @@ public class RadarApiParseTests
     {
         // Pedantic guard: if a non-conforming server ships a nested
         // object or array as a channel value, we clamp to zero AND
-        // advance the reader past the whole value. Previously the
-        // reader was left mid-object and the outer loop's EndObject
-        // check tripped on the nested brace, dropping subsequent
-        // channels. This test pins the fix.
+        // advance the reader past the whole value. A reader left
+        // mid-object would trip the outer loop's EndObject check on
+        // the nested brace, dropping subsequent channels.
         const string json = """
             { "type": "normal", "color": { "r": { "nested": 5 }, "g": 128, "b": 64 } }
             """;
@@ -288,11 +287,11 @@ public class RadarApiParseTests
     public async Task RadarCapabilities_DeserialisesFullMayaraResponse()
     {
         // End-to-end pin: the actual openplotter / Mayara
-        // /capabilities response previously made GetCapabilitiesAsync
-        // return null because of the doppler-array shape. Verify the
-        // full document round-trips and the legend lands non-null
-        // (the legend null check inside the JS layer's _setLegend was
-        // the symptom - bytes 1-4 falling back to default blue).
+        // /capabilities response, whose doppler-array shape can make
+        // GetCapabilitiesAsync return null. Verify the full document
+        // round-trips and the legend lands non-null (a null legend
+        // shows up in the JS layer's _setLegend as bytes 1-4 falling
+        // back to default blue).
         const string json = """
             {
               "maxRange": 66672,

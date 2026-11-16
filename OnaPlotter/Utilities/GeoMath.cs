@@ -115,9 +115,8 @@ public static class GeoMath
     /// (0.1 m/s) - a stationary boat would otherwise render a stub
     /// pointing some arbitrary way. Mirrors the JS contract in
     /// <c>geoMath.js</c>: <c>cogRad == null || sogMs == null</c>
-    /// returns null on both sides; the C# port previously took
-    /// non-nullable doubles and silently rendered a due-north vector
-    /// when a caller passed default(0,0).
+    /// returns null on both sides. The inputs are nullable so a caller
+    /// can't pass default(0,0) and silently render a due-north vector.
     /// <para>Pass <c>null</c> for <paramref name="minutes"/> to use
     /// <see cref="DefaultVectorMinutes"/>; pass an explicit value
     /// (typically <c>OwnCogVectorMinutes</c> or

@@ -1,16 +1,16 @@
 // RainViewer radar-precipitation tile overlay. Drawn in its own pane
-// above every chart tile layer (tilePane, z 200; chart layers can be
-// opaque, so anything inside the tile pane underneath them is hidden)
-// and below the vector overlays (overlayPane, z 400) so routes, AIS
-// vectors and the course line stay on top. Semi-transparent, so the
-// charts and seamark overlays show through. Caps at z=12 server-side because
+// above the base chart tiles (tilePane, z 200; chart layers can be
+// opaque, so anything inside the tile pane underneath them is hidden),
+// below the overlay charts (chartOverlayPane, z 260: seamarks stay
+// legible through the rain) and below the vector overlays (overlayPane,
+// z 400) so routes, AIS vectors and the course line stay on top.
+// Semi-transparent, so the base charts show through. Caps at z=12 server-side because
 // that's RainViewer's native max; Leaflet upscales above that so the
 // nowcast just blurs instead of erroring out from the upstream CDN.
 // (OpenWeatherMap would need an API key - not threaded through yet.)
 //
 // Helm controls opacity via a Misc-section slider (10%..90%). 0.5
-// matches the previous baked-in default so an existing install
-// without a Settings value keeps the same look.
+// is the default for an install without a Settings value.
 
 const WEATHER_OPACITY_DEFAULT = 0.5;
 

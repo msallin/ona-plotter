@@ -115,9 +115,8 @@ public class GeoMathTests
     public async Task BearingDeg_AlwaysInZeroToThreeSixtyRange()
     {
         // Property: regardless of where two points are, BearingDeg
-        // wraps into [0, 360). The atan2+%360 shape used to occasionally
-        // return -180 in earlier JS versions; the +360 added before %
-        // is the fix being pinned here.
+        // wraps into [0, 360). A bare atan2+%360 can return -180; the
+        // +360 added before % is what this pins.
         var rng = new Random(unchecked((int)0xCA_FE_BA_BE));
         for (int i = 0; i < 200; i++)
         {

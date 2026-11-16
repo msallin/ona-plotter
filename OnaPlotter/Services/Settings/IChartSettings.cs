@@ -5,7 +5,7 @@ namespace OnaPlotter.Services.Settings;
 /// quick-bar, chart loader). Charts are large + ordered, so the
 /// API uses sets / lists.
 ///
-/// <para>Carved from <see cref="IAppSettings"/> as part of ARCH-003.
+/// <para>Narrow slice of <see cref="IAppSettings"/>.
 /// </para>
 /// </summary>
 public interface IChartSettings

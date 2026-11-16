@@ -6,12 +6,11 @@ namespace OnaPlotter.Models;
 /// SignalK subscribe / unsubscribe envelopes sent over the WebSocket
 /// from the client to the server. Spec: https://signalk.org/specification/1.7.0/doc/subscription_protocol.html
 ///
-/// <para>These named records replace the earlier
+/// <para>Named records rather than
 /// <c>JsonSerializer.Serialize(new {...})</c> anonymous shapes in
-/// <see cref="OnaPlotter.Services.SignalkClient"/>. The migration is
-/// part of the trim-readiness work tracked in
-/// <c>docs/research-trimmode.md</c>: anonymous types are reachable
-/// from the static call graph today, but a future <c>TrimMode=full</c>
+/// <see cref="OnaPlotter.Services.SignalkClient"/>, for trim-readiness
+/// (see <c>docs/research-trimmode.md</c>): anonymous types are reachable
+/// from the static call graph, but a <c>TrimMode=full</c>
 /// flip would require either <c>[DynamicDependency]</c> hints or named
 /// types each call site can reference. Named records keep the wire
 /// shape explicit and let the source-gen

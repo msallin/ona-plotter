@@ -293,9 +293,9 @@ public class TrackSegmenterTests
         // resulting "moving" segment is sub-MinSegmentDuration (2 min)
         // so it gets absorbed.
         //
-        // Pinned because the previous implementation only checked
-        // "fewer than 2 points" and let multi-point blips survive -
-        // exactly the "14-second moving trip the helm caused by
+        // Pinned because a check for only "fewer than 2 points" lets
+        // multi-point blips survive - exactly the "14-second moving
+        // trip the helm caused by
         // stepping on the throttle" case the constant comment warns
         // about.
         var pts = new List<TrackPoint>();

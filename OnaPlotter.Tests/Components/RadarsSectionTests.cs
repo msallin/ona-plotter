@@ -26,12 +26,12 @@ public class RadarsSectionTests
         new() { Id = id, Name = "R200", Brand = "AcmeRadar", Status = "transmit", Range = range };
 
     private static IRenderedComponent<RadarsSection> RenderExpanded(
-        Bunit.TestContext ctx,
+        Bunit.BunitContext ctx,
         RadarInfo[] radars,
         IReadOnlyDictionary<string, RadarCapabilities?>? caps = null)
     {
         IReadOnlySet<string> enabled = new HashSet<string>();
-        var cut = ctx.RenderComponent<RadarsSection>(p => p
+        var cut = ctx.Render<RadarsSection>(p => p
             .Add(x => x.Radars, radars)
             .Add(x => x.Enabled, enabled)
             .Add(x => x.Capabilities, caps ?? new Dictionary<string, RadarCapabilities?>()));
@@ -58,7 +58,7 @@ public class RadarsSectionTests
         // only. PUTting anything outside validValues comes back
         // 'value not legal'. The dropdown must therefore drive off
         // validValues.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var caps = new Dictionary<string, RadarCapabilities?>
         {
             ["r1"] = new RadarCapabilities
@@ -81,7 +81,7 @@ public class RadarsSectionTests
         // Older / minimal providers may not ship validValues; in
         // that case supportedRanges is the only signal of what the
         // server will accept and we use it as-is.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var caps = new Dictionary<string, RadarCapabilities?>
         {
             ["r1"] = new RadarCapabilities
@@ -103,7 +103,7 @@ public class RadarsSectionTests
         // /radars arriving and /capabilities completing; an early
         // dropdown click in that window should still see usable
         // options instead of an empty select.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderExpanded(ctx, [Radar("r1", 1000)]);
 
         var values = OptionValues(cut);
@@ -119,7 +119,7 @@ public class RadarsSectionTests
         // validValues or supportedRanges (custom firmware, in-flight
         // change, mid-step). The select must still reflect server
         // truth instead of silently snapping to a different option.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var caps = new Dictionary<string, RadarCapabilities?>
         {
             ["r1"] = new RadarCapabilities
@@ -142,7 +142,7 @@ public class RadarsSectionTests
         // MFD shows ("1/4 nm" not "0.2 nm"); use them verbatim. Falls
         // back to FormatRange for any value the descriptions table
         // doesn't cover.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var caps = new Dictionary<string, RadarCapabilities?>
         {
             ["r1"] = new RadarCapabilities
@@ -172,7 +172,7 @@ public class RadarsSectionTests
         // 1234 m has no description: falls back to FormatRange, which
         // formats >=1000 m as `(m/1852.0):F1` nm. Pin the exact value
         // so a regression that returns "0.0 nm" or "1234 m" is caught
-        // (the previous predicate-based assertion accepted either).
+        // (a predicate-based assertion would accept either).
         await Assert.That(labels).Contains("0.7 nm");
     }
 
@@ -184,7 +184,7 @@ public class RadarsSectionTests
         // forces the fallthrough; pin it so a future refactor that
         // drops the length check would pin the dropdown to an empty
         // list with no signal.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var caps = new Dictionary<string, RadarCapabilities?>
         {
             ["r1"] = new RadarCapabilities
@@ -208,7 +208,7 @@ public class RadarsSectionTests
         // dropdown would render as an empty <select>, making the radar
         // unconfigurable in the brief gap before /capabilities lands
         // and on misconfigured providers.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var caps = new Dictionary<string, RadarCapabilities?>
         {
             ["r1"] = new RadarCapabilities
@@ -227,11 +227,11 @@ public class RadarsSectionTests
     public async Task Range_Dropdown_Selects_Exactly_The_Current_Range()
     {
         // Blazor renders `selected` on the option whose value matches
-        // the select's `value=` attribute - we no longer have to (and
+        // the select's `value=` attribute - we don't have to (and
         // shouldn't) emit an explicit `selected=@(v == rangeM)` per
         // option ourselves. Pin that exactly one option ends up
         // selected and it's the radar's current range.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderExpanded(ctx, [Radar("r1", 1000)]);
         var selected = cut.FindAll(".radar-range-select option")
             .Where(o => o.HasAttribute("selected"))
@@ -248,7 +248,7 @@ public class RadarsSectionTests
         // string becomes a class-token-injection primitive (e.g.
         // "transmit hidden" would visually disappear the chip).
         // Spec-defined values render with their own suffix.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
 
         var transmitting = new RadarInfo { Id = "r1", Status = "transmit", Range = 1000 };
         var attacker = new RadarInfo { Id = "r2", Status = "transmit hidden", Range = 1000 };

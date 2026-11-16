@@ -7,13 +7,13 @@ using OnaPlotter.Services.Map;
 namespace OnaPlotter.Tests.Services.Map;
 
 /// <summary>
-/// Pins the contract of <see cref="AisPushService"/> on the surface
-/// area Map.razor used to own: payload-shape (the JS layer expects
+/// Pins the contract of <see cref="AisLayerController"/>:
+/// payload-shape (the JS layer expects
 /// specific field names), harbor-mode filter pass-through, and the
 /// "no map yet" guard. The detailed CPA / COLREGS / palette /
 /// harbour math has its own dedicated test suites.
 /// </summary>
-public class AisPushServiceTests
+public class AisLayerControllerTests
 {
     private sealed class FakeAisJs : IMapAisJs
     {
@@ -50,7 +50,7 @@ public class AisPushServiceTests
         public void Advance(TimeSpan delta) => _now = _now.Add(delta);
     }
 
-    private static AisPushService NewService(
+    private static AisLayerController NewService(
         AisStore store,
         IMapAisJs js,
         IAppSettings? settings = null,
@@ -262,23 +262,23 @@ public class AisPushServiceTests
         await Assert.That(entry.VectorTone).IsEqualTo(AisTone.Buddy);
     }
 
-    // --- BuildSnapshot resilience pins (PR #264) ----------------------
+    // --- BuildSnapshot resilience pins --------------------------------
     //
-    // Hardening against the failure modes the code-review flagged:
+    // Hardening against these failure modes:
     // a) NaN/Infinity slipping through AisStore poisoning JSInterop
     // b) a single bad vessel record blowing up the whole tick
     // c) the cache committing before the work succeeds, swallowing
     //    failed pushes and freezing the map on stale data
-    // The failing JS-side push (rare but real - radar-overlay leak)
-    // emptied the chart for the rest of the session before this fix.
+    // A failing JS-side push (rare but real - radar-overlay leak)
+    // must not empty the chart for the rest of the session.
 
     [Test]
     public async Task BuildSnapshot_Skips_Vessel_With_NaN_Position_DoesNotPoisonOthers()
     {
         // AisStore.GetVessels filters null lat/lon, but a NaN slipping
         // through (manually-crafted delta, future schema migration)
-        // used to propagate to JSInterop which throws "Cannot serialize
-        // NaN to JSON" and dumped the entire snapshot. The per-vessel
+        // would reach JSInterop, which throws "Cannot serialize NaN
+        // to JSON" and dumps the entire snapshot. The per-vessel
         // finite gate skips the offender and keeps the rest.
         var store = new AisStore();
         SeedVessel(store, "vessels.urn:mrn:imo:mmsi:111", 47.0, 8.0, name: "Real");
@@ -323,12 +323,12 @@ public class AisPushServiceTests
     [Test]
     public async Task PushAsync_OnInteropFailure_DoesNotCommitCache_NextTickRetries()
     {
-        // Cache-commit ordering: previously the skip-when-unchanged
-        // cache (_lastPushed*) was written BEFORE the JS interop call.
-        // If the interop call threw, the next tick would skip
-        // (because the cache said "we already pushed this state") and
-        // the map would freeze on stale data until something else
-        // changed. Pin: a failed first push leaves the cache in the
+        // Cache-commit ordering: if the skip-when-unchanged cache
+        // (_lastPushed*) is written BEFORE the JS interop call and
+        // the call throws, the next tick skips (because the cache
+        // says "we already pushed this state") and the map freezes
+        // on stale data until something else changes. Pin: a failed
+        // first push leaves the cache in the
         // pre-push state so the next tick retries.
         var store = new AisStore();
         SeedVessel(store, "vessels.urn:mrn:imo:mmsi:111", 47.0, 8.0);
@@ -356,11 +356,11 @@ public class AisPushServiceTests
     [Test]
     public async Task PushAsync_NonJsException_IsCaught_DoesNotPropagate()
     {
-        // Outer catch was previously narrowed to JSException; an
-        // InvalidOperationException from a stale Leaflet handle (the
-        // radar-HUD regression) propagated past, tripped Blazor's
-        // renderer error UI, and emptied the chart. Pin that the
-        // catch is broad enough to keep the page functional.
+        // An outer catch narrowed to JSException lets an
+        // InvalidOperationException from a stale Leaflet handle (e.g.
+        // a leaked radar overlay) propagate, trip Blazor's renderer
+        // error UI, and empty the chart. Pin that the catch is broad
+        // enough to keep the page functional.
         var store = new AisStore();
         SeedVessel(store, "vessels.urn:mrn:imo:mmsi:111", 47.0, 8.0);
         var js = new ThrowAlwaysNonJsAisJs();
@@ -373,7 +373,7 @@ public class AisPushServiceTests
         await Assert.That(js.AttemptedPushes).IsEqualTo(1);
     }
 
-    // --- Threat-band integration pins (m7 from the PR-265 follow-up) -
+    // --- Threat-band integration pins ---------------------------------
     // The two-tier classification is unit-tested at the helper
     // level (CpaTests.ClassifyThreat_*); these tests pin that the
     // plumbing through BuildSnapshot ends up writing the right
@@ -541,7 +541,7 @@ public class AisPushServiceTests
     [Test]
     public async Task BuildSnapshot_NonThreatVessel_HasNullColregsLabels()
     {
-        // PR-265 made COLREGS lazy: only computed when threat is
+        // COLREGS is lazy: only computed when threat is
         // Awareness or Alarm. Pin that the lazy path means popups
         // for non-threats see null labels (the JS popup then
         // suppresses the COLREGS row entirely - correct, since the
@@ -605,11 +605,11 @@ public class AisPushServiceTests
         // (internal-visible to tests via InternalsVisibleTo) so a
         // rename of the underlying enum case still surfaces here at
         // compile time.
-        await Assert.That(AisPushService.ThreatToWireString(
+        await Assert.That(AisLayerController.ThreatToWireString(
             OnaPlotter.Utilities.Cpa.Threat.Alarm)).IsEqualTo("alarm");
-        await Assert.That(AisPushService.ThreatToWireString(
+        await Assert.That(AisLayerController.ThreatToWireString(
             OnaPlotter.Utilities.Cpa.Threat.Awareness)).IsEqualTo("awareness");
-        await Assert.That(AisPushService.ThreatToWireString(
+        await Assert.That(AisLayerController.ThreatToWireString(
             OnaPlotter.Utilities.Cpa.Threat.None)).IsEqualTo("none");
     }
 
@@ -768,7 +768,7 @@ public class AisPushServiceTests
 
         await svc.PushAsync(new NavigationData());
         await svc.PushAsync(new NavigationData());
-        time.Advance(AisPushService.MaxSkipInterval + TimeSpan.FromSeconds(1));
+        time.Advance(AisLayerController.MaxSkipInterval + TimeSpan.FromSeconds(1));
         await svc.PushAsync(new NavigationData());
 
         await Assert.That(js.Updates.Count).IsEqualTo(1);

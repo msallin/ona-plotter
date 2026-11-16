@@ -1,7 +1,6 @@
 @* Small segmented-control for picking a trailing time window
-   (e.g. "last 15 min" / "last 1 h"). Originally inline on
-   WindRose; hoisted here so History / future instrument pages
-   can reuse the same affordance.
+   (e.g. "last 15 min" / "last 1 h"). Shared so instrument pages
+   use the same affordance.
 
    Value flow: the parent owns the selected number of minutes;
    this component renders the buttons and fires ValueChanged on

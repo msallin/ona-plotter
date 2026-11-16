@@ -7,7 +7,7 @@ namespace OnaPlotter.Services.Map;
 /// <summary>
 /// Pure presentation rules for an AIS / radar target on the chart: name
 /// fallbacks, colour roles, label and overlay visibility. Split out of
-/// <see cref="AisPushService"/> so each rule is unit-testable without a
+/// <see cref="AisLayerController"/> so each rule is unit-testable without a
 /// store or a clock.
 /// </summary>
 public static class AisVesselPresentation

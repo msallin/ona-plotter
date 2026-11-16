@@ -103,9 +103,9 @@
     /// <summary>Normalise a bearing in radians to whole degrees on
     /// [0, 360). Returns null when the input is null, NaN, or
     /// infinite - a malformed delta would otherwise produce a
-    /// non-finite degree value that the previous while-loop
-    /// implementation looped on for millions of iterations per
-    /// render. Single modulo idiom is bounded constant-time.</summary>
+    /// non-finite degree value that a while-loop normalisation would
+    /// spin on for millions of iterations per render. Single modulo
+    /// idiom is bounded constant-time.</summary>
     private static int? NormaliseBearingDeg(double? bearingRad)
     {
         if (bearingRad is not double rad) return null;

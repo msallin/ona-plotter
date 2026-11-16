@@ -22,13 +22,11 @@ internal static class ResourceHttp
     /// <summary>SignalK uses camelCase JSON property names; our DTO
     /// records are Pascal-case (no [JsonPropertyName] attributes
     /// for terseness). Default System.Text.Json options are
-    /// case-sensitive in .NET 10, so the deserialiser silently
-    /// dropped every camelCased value onto the floor and the
-    /// caller saw `default` for every property. Helm regression:
-    /// the MOB recovery on reload returned an envelope where
-    /// every State / Position / CreatedAt was null, so the
-    /// `if (dto.State is null) continue;` guard skipped every
-    /// entry. Setting PropertyNameCaseInsensitive once here
+    /// case-sensitive in .NET 10, so the deserialiser would silently
+    /// drop every camelCased value and the caller would see
+    /// `default` for every property (MOB recovery on reload, for
+    /// example, would get a null State on every entry and skip
+    /// them all). Setting PropertyNameCaseInsensitive once here
     /// covers every GetDict caller without per-DTO attribute
     /// churn; existing [JsonPropertyName] attributes still take
     /// priority where they exist.</summary>
@@ -101,6 +99,20 @@ internal static class ResourceHttp
                 return parser(doc.RootElement);
             },
             parse, ct);
+    }
+
+    /// <summary>
+    /// Same policy as <see cref="GetJsonAsync{T}(HttpClient, string, ILogger, CancellationToken, JsonSerializerOptions?)"/>
+    /// for endpoints whose body is not reliably JSON (e.g.
+    /// <c>/signalk/v1/api/self</c>, which some servers answer with a
+    /// bare, unquoted URN). Returns the raw body text.
+    /// </summary>
+    public static Task<ApiResult<string>> GetTextAsync(
+        HttpClient http, string url, ILogger logger, CancellationToken ct = default)
+    {
+        return GetCoreAsync<string, object?>(http, url, logger,
+            static async (content, _, token) => await content.ReadAsStringAsync(token),
+            null, ct);
     }
 
     private static async Task<ApiResult<T>> GetCoreAsync<T, TState>(
@@ -317,11 +329,11 @@ internal static class ResourceHttp
     ///     </description></item>
     /// </list>
     ///
-    /// The old approach of <c>body.Trim('"')</c> worked for the first
-    /// shape but produced the ENTIRE envelope as an "id" for the second,
-    /// which then blew up Delete (URL-encoded JSON in the path) and
-    /// hid newly-saved resources from the Layers UI (the diff against
-    /// prevIds matched nothing).
+    /// A plain <c>body.Trim('"')</c> handles the first shape but yields
+    /// the ENTIRE envelope as an "id" for the second, which breaks
+    /// Delete (URL-encoded JSON in the path) and hides newly-saved
+    /// resources from the Layers UI (the diff against prevIds matches
+    /// nothing).
     /// </summary>
     public static string? ParseCreatedId(string body)
     {

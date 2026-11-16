@@ -178,7 +178,7 @@ public class AnchorRadiusHeuristicTests
     [Test]
     public async Task NullDepth_PositiveInfinityLastChosen_LandsOnCeiling()
     {
-        // +Infinity -> the helm previously typed something insane
+        // +Infinity -> the helm once typed something insane
         // OR storage is corrupted. Cap at the ceiling (Max) so the
         // panel still has a usable preset to render rather than
         // proposing int.MaxValue (which would render as "2147483647 m"

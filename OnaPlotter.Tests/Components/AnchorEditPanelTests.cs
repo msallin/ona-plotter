@@ -31,13 +31,13 @@ namespace OnaPlotter.Tests.Components;
 public class AnchorEditPanelTests
 {
     private static IRenderedComponent<AnchorEditPanel> RenderDrop(
-        Bunit.TestContext ctx,
+        Bunit.BunitContext ctx,
         bool busy = false,
         Action? onDrop = null,
         Action? onCancel = null,
         string suggestion = "")
     {
-        return ctx.RenderComponent<AnchorEditPanel>(p => p
+        return ctx.Render<AnchorEditPanel>(p => p
             .Add(x => x.Mode, AnchorEditPanel.AnchorPanelMode.Drop)
             .Add(x => x.InitialRadiusMeters, 0)
             .Add(x => x.Busy, busy)
@@ -49,7 +49,7 @@ public class AnchorEditPanelTests
     }
 
     private static IRenderedComponent<AnchorEditPanel> RenderSetRadius(
-        Bunit.TestContext ctx,
+        Bunit.BunitContext ctx,
         int initial = 30,
         bool busy = false,
         Action<int>? onPreviewRadius = null,
@@ -66,7 +66,7 @@ public class AnchorEditPanelTests
         int chainLengthMeters = 0,
         Action<int>? onChainLengthChanged = null)
     {
-        return ctx.RenderComponent<AnchorEditPanel>(p => p
+        return ctx.Render<AnchorEditPanel>(p => p
             .Add(x => x.Mode, AnchorEditPanel.AnchorPanelMode.SetRadius)
             .Add(x => x.InitialRadiusMeters, initial)
             .Add(x => x.InitialPickIsAuto, initialPickIsAuto)
@@ -103,7 +103,7 @@ public class AnchorEditPanelTests
     [Test]
     public async Task DropMode_Renders_DropButton_NoChips()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderDrop(ctx);
 
         await Assert.That(cut.FindAll(".anchor-edit-drop").Count).IsEqualTo(1);
@@ -114,7 +114,7 @@ public class AnchorEditPanelTests
     [Test]
     public async Task DropButton_FiresOnDrop_NoArguments()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         bool fired = false;
         var cut = RenderDrop(ctx, onDrop: () => fired = true);
 
@@ -127,7 +127,7 @@ public class AnchorEditPanelTests
     {
         // While the PUT round-trip is in flight, both buttons disable
         // so a double-tap doesn't fire two PUTs.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderDrop(ctx, busy: true);
 
         var drop = cut.Find(".anchor-edit-drop");
@@ -144,7 +144,7 @@ public class AnchorEditPanelTests
     {
         // bUnit's .Click() ignores disabled, so the in-handler
         // `if (Busy) return;` gate is the real defence.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         bool fired = false;
         var cut = RenderDrop(ctx, busy: true, onDrop: () => fired = true);
 
@@ -155,7 +155,7 @@ public class AnchorEditPanelTests
     [Test]
     public async Task DropMode_Close_FiresOnCancel()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         bool fired = false;
         var cut = RenderDrop(ctx, onCancel: () => fired = true);
 
@@ -167,7 +167,7 @@ public class AnchorEditPanelTests
     [Test]
     public async Task DropMode_TitleReadsDropAnchor()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderDrop(ctx);
         await Assert.That(cut.Find(".anchor-edit-title").TextContent).IsEqualTo("Drop anchor");
     }
@@ -180,7 +180,7 @@ public class AnchorEditPanelTests
         // Pick-then-Set: the row has 5 numeric chips + Auto, plus
         // a dedicated Set button. Pin so a regression that goes
         // back to live-commit (Set button gone) fails here.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderSetRadius(ctx);
 
         await Assert.That(cut.FindAll(".anchor-edit-auto").Count).IsEqualTo(1);
@@ -195,10 +195,10 @@ public class AnchorEditPanelTests
     public async Task SetRadiusMode_NoCloseButton()
     {
         // Field-study: "Cancel" / "Close" misled both sailors into
-        // thinking the dropped pin would be aborted. New SetRadius
+        // thinking the dropped pin would be aborted. SetRadius
         // mode has no escape button - helm raises via the Anchor
         // button if they don't want to set a radius.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderSetRadius(ctx);
 
         var closeButtons = cut.FindAll("button.map-btn")
@@ -210,7 +210,7 @@ public class AnchorEditPanelTests
     [Test]
     public async Task SetRadiusMode_TitleReadsSetAlarmRadius()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderSetRadius(ctx);
         await Assert.That(cut.Find(".anchor-edit-title").TextContent).IsEqualTo("Set alarm radius");
     }
@@ -220,7 +220,7 @@ public class AnchorEditPanelTests
     {
         // Initial=30 -> 30 chip is active (panel seeds _pickedNumeric
         // from InitialRadiusMeters on first parameter set).
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderSetRadius(ctx, initial: 30);
 
         var actives = cut.FindAll(".anchor-edit-chips .map-btn.active");
@@ -232,7 +232,7 @@ public class AnchorEditPanelTests
     public async Task SetRadiusMode_InitialBetweenPresets_SnapsUp()
     {
         // 65 m -> 75 m chip (round UP keeps scope >= 5:1).
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderSetRadius(ctx, initial: 65);
 
         var actives = cut.FindAll(".anchor-edit-chips .map-btn.active");
@@ -245,7 +245,7 @@ public class AnchorEditPanelTests
     {
         // UnseededInitialRadius -> _pickedNumeric stays null, Auto
         // chip is the implicit active. No numeric chip lights up.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderSetRadius(ctx, initial: AnchorEditPanel.UnseededInitialRadius);
 
         var numericActives = cut.FindAll(".anchor-edit-chips .map-btn.active")
@@ -268,7 +268,7 @@ public class AnchorEditPanelTests
         // and InitialRadiusMeters seeding tests; here we render with
         // Unseeded + null AutoPreviewRadius so no initial emit fires
         // and the chip click is the only preview event.)
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var preview = new List<int>();
         var commits = new List<int>();
         var cut = RenderSetRadius(ctx,
@@ -291,7 +291,7 @@ public class AnchorEditPanelTests
         // Auto chip tap previews the parent-supplied AutoPreviewRadius
         // (not a hardcoded value) so the on-map ring matches what
         // Set would commit.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var preview = new List<int>();
         var cut = RenderSetRadius(ctx, initial: 30,
             autoPreview: 47,
@@ -311,7 +311,7 @@ public class AnchorEditPanelTests
         // remains plain "Auto" and Set stays disabled.
         // (initial=Unseeded keeps Auto active from the start so
         // there's no initial-mount emit either.)
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var preview = new List<int>();
         var cut = RenderSetRadius(ctx,
             initial: AnchorEditPanel.UnseededInitialRadius,
@@ -332,7 +332,7 @@ public class AnchorEditPanelTests
         // (and thereby ships the wrong preview) breaks the test.
         // (initial=Unseeded with autoPreview=47 fires preview(47) on
         // mount; the click sequence then adds 75 and 47.)
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var preview = new List<int>();
         var cut = RenderSetRadius(ctx,
             initial: AnchorEditPanel.UnseededInitialRadius,
@@ -352,7 +352,7 @@ public class AnchorEditPanelTests
     [Test]
     public async Task SetRadiusMode_Set_AfterNumericPick_FiresOnSetRadius_WithChipValue()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var commits = new List<int>();
         var cut = RenderSetRadius(ctx, initial: 30,
             onSetRadius: r => commits.Add(r));
@@ -371,7 +371,7 @@ public class AnchorEditPanelTests
         // Auto picked + AutoPreviewRadius=47 -> Set commits 47.
         // The single-callback path means the parent's PUT logic is
         // identical for Auto and numeric chips.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var commits = new List<int>();
         var cut = RenderSetRadius(ctx,
             initial: AnchorEditPanel.UnseededInitialRadius,
@@ -390,7 +390,7 @@ public class AnchorEditPanelTests
         // -> Set is disabled and the in-handler guard suppresses
         // any attempted commit. Pin: Set tap with nothing to commit
         // is a no-op rather than a PUT of zero / null.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var commits = new List<int>();
         var cut = RenderSetRadius(ctx,
             initial: AnchorEditPanel.UnseededInitialRadius,
@@ -408,7 +408,7 @@ public class AnchorEditPanelTests
     {
         // bUnit's .Click() ignores disabled; the in-handler Busy
         // guard is what actually stops the second PUT mid-flight.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var commits = new List<int>();
         var cut = RenderSetRadius(ctx, initial: 50, busy: true,
             onSetRadius: r => commits.Add(r));
@@ -422,7 +422,7 @@ public class AnchorEditPanelTests
     public async Task SetRadiusMode_Busy_DisablesEverything()
     {
         // While a PUT is in flight: every chip + Set disabled.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderSetRadius(ctx, initial: 30, busy: true);
 
         foreach (var chip in cut.FindAll(".anchor-edit-chips .map-btn"))
@@ -438,7 +438,7 @@ public class AnchorEditPanelTests
         // The Busy gate also covers the preview path - a preview
         // PUT would race the in-flight Set PUT and confuse the helm
         // about which value committed.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var preview = new List<int>();
         var cut = RenderSetRadius(ctx, initial: 30, busy: true,
             autoPreview: 47,
@@ -462,7 +462,7 @@ public class AnchorEditPanelTests
         // OnParametersSet should fire OnPreviewRadius(47) so the
         // parent draws the initial alarm ring without the helm
         // having to tap Auto first.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var preview = new List<int>();
         var cut = RenderSetRadius(ctx,
             initial: AnchorEditPanel.UnseededInitialRadius,
@@ -480,9 +480,9 @@ public class AnchorEditPanelTests
         // re-emit OnPreviewRadius with the new value so the on-map
         // ring follows. This is the "Auto means whatever Auto says
         // right now" contract.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var preview = new List<int>();
-        var cut = ctx.RenderComponent<AnchorEditPanel>(p => p
+        var cut = ctx.Render<AnchorEditPanel>(p => p
             .Add(x => x.Mode, AnchorEditPanel.AnchorPanelMode.SetRadius)
             .Add(x => x.InitialRadiusMeters, AnchorEditPanel.UnseededInitialRadius)
             .Add(x => x.AutoPreviewRadius, 30)
@@ -493,11 +493,11 @@ public class AnchorEditPanelTests
         await Assert.That(preview).IsEquivalentTo([30]);
 
         // Boat drifts: parent passes new AutoPreviewRadius.
-        cut.SetParametersAndRender(p => p.Add(x => x.AutoPreviewRadius, 35));
+        cut.Render(p => p.Add(x => x.AutoPreviewRadius, 35));
         await Assert.That(preview).IsEquivalentTo([30, 35]);
 
         // Drifts again.
-        cut.SetParametersAndRender(p => p.Add(x => x.AutoPreviewRadius, 40));
+        cut.Render(p => p.Add(x => x.AutoPreviewRadius, 40));
         await Assert.That(preview).IsEquivalentTo([30, 35, 40]);
     }
 
@@ -507,9 +507,9 @@ public class AnchorEditPanelTests
         // Helm picked 75; AutoPreviewRadius then changes. The on-
         // map ring should stay at 75 (the helm's pick), not jump
         // to the new Auto value. Numeric pick is a sticky decision.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var preview = new List<int>();
-        var cut = ctx.RenderComponent<AnchorEditPanel>(p => p
+        var cut = ctx.Render<AnchorEditPanel>(p => p
             .Add(x => x.Mode, AnchorEditPanel.AnchorPanelMode.SetRadius)
             .Add(x => x.InitialRadiusMeters, AnchorEditPanel.UnseededInitialRadius)
             .Add(x => x.AutoPreviewRadius, 30)
@@ -525,8 +525,8 @@ public class AnchorEditPanelTests
 
         // Boat drifts - AutoPreviewRadius bumps but should NOT
         // re-fire because numeric is the pick.
-        cut.SetParametersAndRender(p => p.Add(x => x.AutoPreviewRadius, 35));
-        cut.SetParametersAndRender(p => p.Add(x => x.AutoPreviewRadius, 40));
+        cut.Render(p => p.Add(x => x.AutoPreviewRadius, 35));
+        cut.Render(p => p.Add(x => x.AutoPreviewRadius, 40));
 
         await Assert.That(preview.Count).IsEqualTo(firesAfterPick);
     }
@@ -538,9 +538,9 @@ public class AnchorEditPanelTests
         // the same preview value twice in a row (parent's render
         // could trigger our re-render → loop). Pin: AutoPreviewRadius
         // unchanged across re-render = no extra fire.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var preview = new List<int>();
-        var cut = ctx.RenderComponent<AnchorEditPanel>(p => p
+        var cut = ctx.Render<AnchorEditPanel>(p => p
             .Add(x => x.Mode, AnchorEditPanel.AnchorPanelMode.SetRadius)
             .Add(x => x.InitialRadiusMeters, AnchorEditPanel.UnseededInitialRadius)
             .Add(x => x.AutoPreviewRadius, 30)
@@ -551,7 +551,7 @@ public class AnchorEditPanelTests
 
         // Same value pushed again - e.g., parent re-rendered for
         // an unrelated reason.
-        cut.SetParametersAndRender(p => p.Add(x => x.SuggestionLabel, "5x 6m depth"));
+        cut.Render(p => p.Add(x => x.SuggestionLabel, "5x 6m depth"));
 
         await Assert.That(preview).IsEquivalentTo([30]);
     }
@@ -561,7 +561,7 @@ public class AnchorEditPanelTests
     [Test]
     public async Task SetRadiusMode_AutoChip_RendersPlainAuto_WhenNoPreview()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderSetRadius(ctx, initial: 30, autoPreview: null);
 
         await Assert.That(cut.Find(".anchor-edit-auto").TextContent.Trim())
@@ -571,7 +571,7 @@ public class AnchorEditPanelTests
     [Test]
     public async Task SetRadiusMode_AutoChip_RendersPreviewedRadius_WhenSet()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderSetRadius(ctx, initial: 30, autoPreview: 47);
 
         var auto = cut.Find(".anchor-edit-auto");
@@ -582,7 +582,7 @@ public class AnchorEditPanelTests
     [Test]
     public async Task SetRadiusMode_AutoChip_TooltipReflectsPreview()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderSetRadius(ctx, initial: 30, autoPreview: 47);
 
         var auto = cut.Find(".anchor-edit-auto");
@@ -597,7 +597,7 @@ public class AnchorEditPanelTests
         // surfaces both so a long-press reveals the formula -- helm
         // can sanity-check "47 m = swing 38 + tide 4 + 5 margin"
         // without opening Settings or scrolling the eyebrow text.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderSetRadius(ctx,
             initial: 30,
             autoPreview: 47,
@@ -617,7 +617,7 @@ public class AnchorEditPanelTests
         // (or the parent simply doesn't compute the breakdown for this
         // path). Tooltip still surfaces the rounded value so the helm
         // gets the same number on the chip face and on hover.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderSetRadius(ctx, initial: 30, autoPreview: 47, autoBreakdown: null);
 
         var title = cut.Find(".anchor-edit-auto").GetAttribute("title")!;
@@ -630,7 +630,7 @@ public class AnchorEditPanelTests
         // No anchor pin / no GPS -> no preview -> chip face is plain
         // "Auto" and the tooltip describes the formula in words so the
         // helm understands what Auto would do once the inputs land.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderSetRadius(ctx, initial: 30, autoPreview: null, autoBreakdown: null);
 
         var title = cut.Find(".anchor-edit-auto").GetAttribute("title")!;
@@ -642,12 +642,12 @@ public class AnchorEditPanelTests
     [Test]
     public async Task SetRadiusMode_AutoChip_LivePreviewUpdatesOnReRender()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderSetRadius(ctx, initial: 30, autoPreview: 40);
 
         await Assert.That(cut.Find(".anchor-edit-auto").TextContent).Contains("40");
 
-        cut.SetParametersAndRender(p => p.Add(x => x.AutoPreviewRadius, 55));
+        cut.Render(p => p.Add(x => x.AutoPreviewRadius, 55));
 
         await Assert.That(cut.Find(".anchor-edit-auto").TextContent).Contains("55");
         await Assert.That(cut.Find(".anchor-edit-auto").TextContent).DoesNotContain("40");
@@ -658,14 +658,14 @@ public class AnchorEditPanelTests
     [Test]
     public async Task ModeSwitch_DropToSetRadius_RendersChipRowAndSet()
     {
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<AnchorEditPanel>(p => p
+        using var ctx = new Bunit.BunitContext();
+        var cut = ctx.Render<AnchorEditPanel>(p => p
             .Add(x => x.Mode, AnchorEditPanel.AnchorPanelMode.Drop)
             .Add(x => x.InitialRadiusMeters, 30));
 
         await Assert.That(cut.FindAll(".anchor-edit-chips").Count).IsEqualTo(0);
 
-        cut.SetParametersAndRender(p => p
+        cut.Render(p => p
             .Add(x => x.Mode, AnchorEditPanel.AnchorPanelMode.SetRadius));
 
         await Assert.That(cut.FindAll(".anchor-edit-chips").Count).IsEqualTo(1);
@@ -678,7 +678,7 @@ public class AnchorEditPanelTests
     [Test]
     public async Task SuggestionLabel_RendersWhenProvided()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderSetRadius(ctx, initial: 30, suggestion: "5x 6.0 m depth");
         await Assert.That(cut.FindAll(".anchor-edit-sub").Count).IsEqualTo(1);
         await Assert.That(cut.Find(".anchor-edit-sub").TextContent).IsEqualTo("5x 6.0 m depth");
@@ -687,7 +687,7 @@ public class AnchorEditPanelTests
     [Test]
     public async Task SuggestionLabel_Empty_HidesSubline()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderSetRadius(ctx, initial: 30, suggestion: "");
         await Assert.That(cut.FindAll(".anchor-edit-sub").Count).IsEqualTo(0);
     }
@@ -702,7 +702,7 @@ public class AnchorEditPanelTests
         // 50 m chip and the helm reads it as "the panel changed my
         // choice". With InitialPickIsAuto=true the Auto chip stays
         // active despite the numeric InitialRadiusMeters.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderSetRadius(ctx,
             initial: 47,
             autoPreview: 47,
@@ -722,7 +722,7 @@ public class AnchorEditPanelTests
         // Inverse contract: when the prior commit was numeric the
         // panel snaps the saved radius back to its closest preset
         // chip so the helm sees their explicit choice.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderSetRadius(ctx,
             initial: 50,
             autoPreview: 47,
@@ -739,7 +739,7 @@ public class AnchorEditPanelTests
     {
         // Set tap with Auto picked emits FromAuto=true so the parent
         // can stash intent for the next Adjust open.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var commits = new List<AnchorEditPanel.AnchorSetCommit>();
         var cut = RenderSetRadius(ctx,
             initial: AnchorEditPanel.UnseededInitialRadius,
@@ -759,7 +759,7 @@ public class AnchorEditPanelTests
         // Set tap with a numeric chip picked emits FromAuto=false.
         // The matching contract to the Auto case so the parent's
         // intent tracker can't drift.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var commits = new List<AnchorEditPanel.AnchorSetCommit>();
         var cut = RenderSetRadius(ctx,
             initial: AnchorEditPanel.UnseededInitialRadius,
@@ -783,7 +783,7 @@ public class AnchorEditPanelTests
     {
         // No on-map anchor to grab -> no Move affordance (a button
         // that does nothing is worse than no button).
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderSetRadius(ctx, initial: 30, canMove: false);
 
         await Assert.That(cut.FindAll(".anchor-edit-move").Count).IsEqualTo(0);
@@ -792,7 +792,7 @@ public class AnchorEditPanelTests
     [Test]
     public async Task SetRadiusMode_MoveButton_RendersWhenCanMove()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderSetRadius(ctx, initial: 30, canMove: true);
 
         var move = cut.FindAll(".anchor-edit-move");
@@ -805,7 +805,7 @@ public class AnchorEditPanelTests
     public async Task SetRadiusMode_MoveButton_Tap_RequestsEnable()
     {
         // Move off -> tapping asks the parent to enable (true).
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var toggles = new List<bool>();
         var cut = RenderSetRadius(ctx, initial: 30, canMove: true,
             moveActive: false, onToggleMove: v => toggles.Add(v));
@@ -818,7 +818,7 @@ public class AnchorEditPanelTests
     [Test]
     public async Task SetRadiusMode_MoveActive_RendersPressedAndDragHint()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderSetRadius(ctx, initial: 30, canMove: true, moveActive: true);
 
         var move = cut.Find(".anchor-edit-move");
@@ -834,7 +834,7 @@ public class AnchorEditPanelTests
     public async Task SetRadiusMode_MoveActive_Tap_RequestsDisable()
     {
         // Move on -> tapping asks the parent to disable (false).
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var toggles = new List<bool>();
         var cut = RenderSetRadius(ctx, initial: 30, canMove: true,
             moveActive: true, onToggleMove: v => toggles.Add(v));
@@ -849,7 +849,7 @@ public class AnchorEditPanelTests
     {
         // In-flight PUT: the in-handler Busy guard blocks a move
         // toggle so it can't race the commit.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var toggles = new List<bool>();
         var cut = RenderSetRadius(ctx, initial: 30, canMove: true, busy: true,
             onToggleMove: v => toggles.Add(v));
@@ -864,7 +864,7 @@ public class AnchorEditPanelTests
     [Test]
     public async Task SetRadiusMode_ChainInput_Renders()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderSetRadius(ctx, initial: 30);
 
         await Assert.That(cut.FindAll(".anchor-edit-chain-input").Count).IsEqualTo(1);
@@ -873,7 +873,7 @@ public class AnchorEditPanelTests
     [Test]
     public async Task SetRadiusMode_ChainInput_ShowsValueWhenSet_BlankWhenZero()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
 
         var withChain = RenderSetRadius(ctx, initial: 30, chainLengthMeters: 40);
         await Assert.That(withChain.Find(".anchor-edit-chain-input").GetAttribute("value"))
@@ -887,7 +887,7 @@ public class AnchorEditPanelTests
     [Test]
     public async Task SetRadiusMode_ChainInput_Change_FiresParsedValue()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var changes = new List<int>();
         var cut = RenderSetRadius(ctx, initial: 30, onChainLengthChanged: v => changes.Add(v));
 
@@ -901,7 +901,7 @@ public class AnchorEditPanelTests
     {
         // Cleared field / non-numeric collapses to 0 ("not entered")
         // rather than throwing or leaving a stale value.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var changes = new List<int>();
         var cut = RenderSetRadius(ctx, initial: 30, chainLengthMeters: 40,
             onChainLengthChanged: v => changes.Add(v));
@@ -913,7 +913,7 @@ public class AnchorEditPanelTests
     [Test]
     public async Task SetRadiusMode_ChainInput_Busy_Disabled()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderSetRadius(ctx, initial: 30, busy: true);
 
         await Assert.That(cut.Find(".anchor-edit-chain-input").HasAttribute("disabled")).IsTrue();
@@ -924,7 +924,7 @@ public class AnchorEditPanelTests
     {
         // Chain entry only makes sense once the radius decision is in
         // play; Drop mode stays minimal.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = RenderDrop(ctx);
 
         await Assert.That(cut.FindAll(".anchor-edit-chain-input").Count).IsEqualTo(0);
@@ -939,8 +939,8 @@ public class AnchorEditPanelTests
         // current MaxRadius as InitialRadiusMeters. After Set, the
         // parent re-renders with a fresh InitialRadiusMeters from
         // the server delta. The active chip should track that.
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<AnchorEditPanel>(p => p
+        using var ctx = new Bunit.BunitContext();
+        var cut = ctx.Render<AnchorEditPanel>(p => p
             .Add(x => x.Mode, AnchorEditPanel.AnchorPanelMode.SetRadius)
             .Add(x => x.InitialRadiusMeters, 30));
 
@@ -949,7 +949,7 @@ public class AnchorEditPanelTests
         await Assert.That(actives[0].TextContent).Contains("30");
 
         // Server delta arrives, parent passes the new radius down.
-        cut.SetParametersAndRender(p => p.Add(x => x.InitialRadiusMeters, 75));
+        cut.Render(p => p.Add(x => x.InitialRadiusMeters, 75));
 
         actives = cut.FindAll(".anchor-edit-chips .map-btn.active");
         await Assert.That(actives.Count).IsEqualTo(1);

@@ -249,10 +249,10 @@ public sealed class SignalkClient : ISignalkClient, IAsyncDisposable
         "navigation.magneticVariation",
         // (Route-total progress: the v2 equivalents live at
         //  navigation.course.calcValues.route.* on the fast tier; the
-        //  legacy v1 aggregates (courseGreatCircle.activeRoute.*) were
-        //  removed in the same sweep that dropped the v1 per-leg
-        //  subscriptions. NavigationData.Apply still handles v1 values
-        //  if a server emits them on the fast stream.)
+        //  legacy v1 aggregates (courseGreatCircle.activeRoute.*) and
+        //  v1 per-leg paths are not subscribed. NavigationData.Apply
+        //  still handles v1 values if a server emits them on the fast
+        //  stream.)
     ];
 
     /// <summary>vessels.* (which matches self too) @ 1 Hz. Shared nav
@@ -391,7 +391,7 @@ public sealed class SignalkClient : ISignalkClient, IAsyncDisposable
             Policy: "instant"),
     ];
 
-    /// <summary>Back-compat view: every self-context path across all
+    /// <summary>Flattened view: every self-context path across all
     /// self tiers (fast + notifications + slow). Used by RawStream's
     /// chip-list defaults and by <c>SubscribedPaths</c>. Cached eagerly
     /// because callers iterate it in tight UI loops.</summary>
@@ -401,14 +401,14 @@ public sealed class SignalkClient : ISignalkClient, IAsyncDisposable
              .Distinct(StringComparer.Ordinal)
              .ToArray();
 
-    /// <summary>Back-compat view: just the slow self tier. Subscription
+    /// <summary>Flattened view: just the slow self tier. Subscription
     /// tests assert it doesn't leak fast-moving fields.</summary>
     internal static IReadOnlyList<string> SlowSelfPaths { get; } =
         Tiers.Where(t => t.Name == "SelfSlow")
              .SelectMany(t => t.Paths)
              .ToArray();
 
-    /// <summary>Back-compat view: AIS tier. vessels.* matches self too,
+    /// <summary>Flattened view: AIS tier. vessels.* matches self too,
     /// so these reach own-boat without appearing in SelfPaths.</summary>
     internal static IReadOnlyList<string> AisPaths { get; } =
         Tiers.Where(t => t.Context == "vessels.*")
@@ -483,13 +483,14 @@ public sealed class SignalkClient : ISignalkClient, IAsyncDisposable
     // Extra paths subscribed to by the RawStream page (re-applied on reconnect).
     private readonly HashSet<string> _extraPaths = [];
 
-    public SignalkClient(ISignalKBaseUrl baseUrl, ILogger<SignalkClient> logger,
+    public SignalkClient(ISignalKBaseUrl baseUrl, ILoggerFactory loggerFactory,
         NavigationData data, TrackBuffer track, AisStore ais, HttpClient http, IAppSettings settings,
         ServerNotificationStore serverNotifs,
         AtonStore atons,
         TimeProvider time,
         ITokenStore? tokens = null)
     {
+        var logger = loggerFactory.CreateLogger<SignalkClient>();
         _logger = logger;
         _data = data;
         _baseUrl = baseUrl;
@@ -498,7 +499,7 @@ public sealed class SignalkClient : ISignalkClient, IAsyncDisposable
         _seeding = new SignalkConnectSeeding(http, baseUrl, data, ais,
             setSelfContext: _dispatcher.SetSelfContext,
             onDataChanged: RaiseDataChanged,
-            logger);
+            loggerFactory);
         _headingPreference = new HeadingPreferenceSync(settings, data, RaiseDataChanged);
 
         // The WS URL is resolved per connect attempt against

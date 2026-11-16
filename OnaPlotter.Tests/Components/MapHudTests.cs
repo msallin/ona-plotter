@@ -12,7 +12,7 @@ namespace OnaPlotter.Tests.Components;
 /// bUnit tests for MapHud click-to-expand. The four corner panels share
 /// one expandedHud selector; clicking a panel toggles it and flips the
 /// hud-panel-expanded class. Also pins the leeway / Beaufort / DMS
-/// helpers since they now show up in the expanded markup.
+/// helpers since they show up in the expanded markup.
 /// </summary>
 public class MapHudTests
 {
@@ -24,8 +24,8 @@ public class MapHudTests
 
     /// <summary>Stub <see cref="INavigationAverages"/>: empty buffers,
     /// every mean returns null. The HUD renders the live numbers
-    /// without the smoothed parenthetical - which is what these tests
-    /// already expected before the averaging surface landed.</summary>
+    /// without the smoothed parenthetical, which is what these tests
+    /// assert.</summary>
     private sealed class StubNavigationAverages : INavigationAverages
     {
         public RollingScalarSeries Tws { get; } = new(TimeSpan.FromMinutes(180));
@@ -60,14 +60,15 @@ public class MapHudTests
             => Task.FromResult<OnaPlotter.Models.TrackPoint[]?>(null);
     }
 
-    private static IRenderedComponent<MapHud> Render(Bunit.TestContext ctx, NavigationData data)
+    private static IRenderedComponent<MapHud> Render(Bunit.BunitContext ctx, NavigationData data)
     {
         // MapHud now @injects IToastService for the autopilot
         // heading-nudge audit toast; supply a real ToastService rather
         // than a fake since the assertions never read its state.
         ctx.Services.AddSingleton<IToastService, ToastService>();
+        ctx.Services.AddSingleton(TimeProvider.System);
         ctx.Services.AddSingleton<INavigationAverages, StubNavigationAverages>();
-        return ctx.RenderComponent<MapHud>(p => p
+        return ctx.Render<MapHud>(p => p
             .Add(x => x.Data, data)
             .Add(x => x.Autopilot, new FakeAutopilot()));
     }
@@ -75,7 +76,7 @@ public class MapHudTests
     [Test]
     public async Task TopLeft_Panel_Starts_Collapsed()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var data = new NavigationData();
         var cut = Render(ctx, data);
 
@@ -86,7 +87,7 @@ public class MapHudTests
     [Test]
     public async Task Clicking_TopLeft_Flips_Expanded_Class()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var data = new NavigationData();
         var cut = Render(ctx, data);
 
@@ -105,7 +106,7 @@ public class MapHudTests
     {
         // Only one panel can be expanded at a time; switching corners
         // should close the previous and open the new one.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var data = new NavigationData();
         var cut = Render(ctx, data);
 
@@ -119,7 +120,7 @@ public class MapHudTests
     [Test]
     public async Task Expanded_TopLeft_Shows_DMS_Position_When_Fix_Available()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var data = new NavigationData();
         data.ApplyPosition(47.3769, 8.5417); // Zurich-ish
         var cut = Render(ctx, data);
@@ -138,7 +139,7 @@ public class MapHudTests
     [Test]
     public async Task Expanded_TopRight_Shows_SignedAwa_And_Beaufort()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var data = new NavigationData();
         // 35° starboard (positive radians) at ~10 m/s = F5 Fresh.
         data.Apply("environment.wind.angleApparent", 35.0 * System.Math.PI / 180);
@@ -158,7 +159,7 @@ public class MapHudTests
     [Test]
     public async Task Expanded_TopRight_Port_Side_Negative_Angle()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var data = new NavigationData();
         data.Apply("environment.wind.angleApparent", -45.0 * System.Math.PI / 180);
         data.Apply("environment.wind.speedApparent", 5.0);
@@ -176,7 +177,7 @@ public class MapHudTests
         // Vessel sitting in a marina with no tide data should expand to
         // a nearly-empty expanded panel - the compact view shows Depth,
         // the expanded view has no extra rows to render.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var data = new NavigationData();
         data.Apply("environment.depth.belowTransducer", 8.5);
         var cut = Render(ctx, data);
@@ -194,7 +195,7 @@ public class MapHudTests
         // The four corner panels are plain divs with @onclick; explicit
         // role="button" + tabindex + aria-expanded is what tells screen
         // readers and Tab navigation this is an actionable element.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = Render(ctx, new NavigationData());
         var panel = cut.Find(".hud-stack-tl .hud-panel");
 
@@ -211,7 +212,7 @@ public class MapHudTests
     {
         // Keyboard parity with mouse click. Enter / Space match implicit
         // button behaviour.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = Render(ctx, new NavigationData());
         var panel = cut.Find(".hud-stack-tl .hud-panel");
 
@@ -225,7 +226,7 @@ public class MapHudTests
     [Test]
     public async Task Expanded_BottomRight_Shows_Leeway_When_Cog_And_Hdg_Differ()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var data = new NavigationData();
         // HDG = 090° (east), COG = 100° (10° starboard of HDG).
         data.Apply("navigation.headingTrue", 90.0 * System.Math.PI / 180);
@@ -245,7 +246,7 @@ public class MapHudTests
     [Test]
     public async Task Heading_ShowsT_WhenTrueHeadingPreferred()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var data = new NavigationData();
         data.Apply("navigation.headingTrue", 45.0 * System.Math.PI / 180);
         data.PreferMagneticHeading = false;
@@ -258,7 +259,7 @@ public class MapHudTests
     [Test]
     public async Task Heading_ShowsM_WhenMagneticPreferred()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var data = new NavigationData();
         data.Apply("navigation.headingMagnetic", 45.0 * System.Math.PI / 180);
         data.PreferMagneticHeading = true;
@@ -275,7 +276,7 @@ public class MapHudTests
     [Arguments(6.0)]   // warn (< 8 m)
     public async Task Depth_Shallow_ShowsWarnGlyph(double depth)
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var data = new NavigationData();
         data.Apply("environment.depth.belowTransducer", depth);
         var cut = Render(ctx, data);
@@ -289,7 +290,7 @@ public class MapHudTests
     [Arguments(25.0)]
     public async Task Depth_Deep_NoWarnGlyph(double depth)
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var data = new NavigationData();
         data.Apply("environment.depth.belowTransducer", depth);
         var cut = Render(ctx, data);
@@ -300,7 +301,7 @@ public class MapHudTests
     [Test]
     public async Task Depth_Unknown_NoWarnGlyph()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var cut = Render(ctx, new NavigationData());
 
         await Assert.That(cut.FindAll(".depth-warn-glyph").Count).IsEqualTo(0);
@@ -310,7 +311,7 @@ public class MapHudTests
     public async Task Depth_PrefersBelowKeelForTheGlyph()
     {
         // 9 m under the transducer but 2 m under the keel: shallow.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var data = new NavigationData();
         data.Apply("environment.depth.belowTransducer", 9.0);
         data.Apply("environment.depth.belowKeel", 2.0);
@@ -328,7 +329,7 @@ public class MapHudTests
         // NavigationData with a fake clock that advances between apply
         // and render. Depth aged ~20 s -> Stale tier -> badge text
         // "stale" visible in the depth hud label.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var now = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
         var clock = new ClockHolder(now);
         var data = new NavigationData(new DelegateTimeProvider(clock.Get));
@@ -343,7 +344,7 @@ public class MapHudTests
     [Test]
     public async Task Depth_Dead_Badge_AppearsWhenSensorSilent()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var now = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
         var clock = new ClockHolder(now);
         var data = new NavigationData(new DelegateTimeProvider(clock.Get));
@@ -367,7 +368,7 @@ public class MapHudTests
     [Test]
     public async Task Expanded_TopLeft_Shows_Stw_Row_When_Published()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var data = new NavigationData();
         // 5.4 kn = ~2.78 m/s. Format.Speed renders with 1 decimal so
         // we assert on the digit pair the helm actually reads.
@@ -386,7 +387,7 @@ public class MapHudTests
     {
         // Installs without a paddlewheel / sonic-log leave the STW row
         // dormant rather than rendering a "--" placeholder.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var data = new NavigationData();
         var cut = Render(ctx, data);
 
@@ -403,7 +404,7 @@ public class MapHudTests
         // Drift lives on the HDG card, XTE lives on the HDG card next to
         // the heading reference it relates to. The SOG card stays focused
         // on speed + position.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var data = new NavigationData();
         data.Apply("navigation.headingTrue", 90.0 * System.Math.PI / 180);
         data.Apply("navigation.courseOverGroundTrue", 100.0 * System.Math.PI / 180);
@@ -424,7 +425,7 @@ public class MapHudTests
     [Test]
     public async Task Expanded_BottomRight_Shows_Alternate_Heading_True_When_Primary_Magnetic()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var data = new NavigationData();
         data.Apply("navigation.headingMagnetic", 80.0 * System.Math.PI / 180);
         data.Apply("navigation.headingTrue", 88.0 * System.Math.PI / 180);
@@ -446,7 +447,7 @@ public class MapHudTests
     [Test]
     public async Task Expanded_BottomRight_Shows_Alternate_Heading_Magnetic_When_Primary_True()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var data = new NavigationData();
         data.Apply("navigation.headingTrue", 100.0 * System.Math.PI / 180);
         data.Apply("navigation.headingMagnetic", 108.0 * System.Math.PI / 180);
@@ -465,11 +466,11 @@ public class MapHudTests
     [Test]
     public async Task Expanded_BottomRight_Does_Not_Show_Xte()
     {
-        // XTE used to live on the HDG card; it now lives on the route
-        // card alongside DTW / BRG / VMG (single source of truth for
-        // active-course numbers). Pin the removal so a future refactor
-        // can't silently put it back and duplicate the readout.
-        using var ctx = new Bunit.TestContext();
+        // XTE lives on the route card alongside DTW / BRG / VMG
+        // (single source of truth for active-course numbers), not on
+        // the HDG card. Pin it so a change can't silently add it here
+        // and duplicate the readout.
+        using var ctx = new Bunit.BunitContext();
         var data = new NavigationData();
         data.Apply("navigation.course.calcValues.crossTrackError", 42.0);
         var cut = Render(ctx, data);
@@ -483,7 +484,7 @@ public class MapHudTests
     [Test]
     public async Task Expanded_BottomRight_Shows_Ap_Target_Magnetic_When_Published()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var data = new NavigationData();
         data.ApplyString("steering.autopilot.state", "auto");
         // 90 deg magnetic target.
@@ -516,7 +517,7 @@ public class MapHudTests
     [Test]
     public async Task BuildAnchorSnapshot_RendersBearingNeedle_WhenLatLonAvailable()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var data = new NavigationData();
         data.ApplyAnchorPosition(0.0, 0.0);
         data.Apply("navigation.anchor.maxRadius", 30.0);
@@ -532,7 +533,7 @@ public class MapHudTests
     {
         // No GPS fix on own-ship - GeoBearing returns null and
         // the needle hides.
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var data = new NavigationData();
         data.ApplyAnchorPosition(0.0, 0.0);
         data.Apply("navigation.anchor.maxRadius", 30.0);
@@ -554,7 +555,7 @@ public class MapHudTests
     {
         // Sensor noise below the HUD's display precision must not cost
         // a render (0.03 kn of SOG jitter, 0.1 deg of heading wobble).
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var data = new NavigationData();
         data.Apply("navigation.speedOverGround", 2.50);
         var cut = Render(ctx, data);
@@ -570,7 +571,7 @@ public class MapHudTests
     [Test]
     public async Task Refresh_VisibleChange_Repaints()
     {
-        using var ctx = new Bunit.TestContext();
+        using var ctx = new Bunit.BunitContext();
         var data = new NavigationData();
         data.Apply("navigation.speedOverGround", 2.5);
         var cut = Render(ctx, data);

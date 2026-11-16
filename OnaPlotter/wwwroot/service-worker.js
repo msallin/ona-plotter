@@ -1263,15 +1263,18 @@
 //               intercepted; course-up rotation (mapRotation.js), in-icon
 //               AIS labels, boatIcons / keyboardShortcuts / ownBoatPopup
 //               modules; MapHud depth glyph; night track palette.
-const CACHE_NAME = 'ona-plotter-v118';
+// v118 -> v119: Map .map-viewport wrapper (oversized course-up container,
+//               upright controls); HudRouteCard / Dashboard TimeProvider;
+//               SearchBox expanded-state parameter; seamark overlay pane.
+const CACHE_NAME = 'ona-plotter-v119';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
 // planning sessions. Eviction is FIFO by insertion order
-// (trimTileCache below deletes from the front of cache.keys()); the
-// earlier LRU promotion on hits was dropped after helm reports of
-// "no single tile loads" pointed at body-stream contention between
-// the served response and the background re-put. With a 5000 entry
+// (trimTileCache below deletes from the front of cache.keys()); no LRU
+// promotion on hits, because re-putting a hit causes body-stream
+// contention between the served response and the background re-put
+// ("no single tile loads"). With a 5000 entry
 // cap, FIFO is plenty for typical coastal / rivers use - the home
 // anchorage tiles fall out only after several sessions of heavy
 // route-planning elsewhere. Bump this number rather than switching
@@ -1305,8 +1308,8 @@ const APP_SHELL = [
     new URL('apple-touch-icon-180.png', SCOPE).toString(),
     new URL('icon-192.png', SCOPE).toString(),
     new URL('icon-512.png', SCOPE).toString(),
-    // Vendored Leaflet 1.9.4 (was loaded from unpkg.com synchronously
-    // in index.html, blocking WASM start on slow links AND breaking
+    // Vendored Leaflet 1.9.4 (a synchronous unpkg.com load in
+    // index.html would block WASM start on slow links AND break
     // PWA offline mode). Precaching the JS + CSS + per-CSS image
     // refs means cold-start fetches one fewer cross-origin asset and
     // the helm can boot the chartplotter offline once the bundle's
@@ -1394,18 +1397,15 @@ async function tileCacheFirstInner(request) {
         cache = await getTileCache();
         const cached = await cache.match(request);
         if (cached) {
-            // Just serve the cached response. Earlier versions did an
-            // LRU promotion via cache.put(request, cached.clone()) so
-            // that trimTileCache evicted least-recently-used entries.
-            // Helm reports of "no single tile loads" point at the
-            // clone path: in some browser builds (Firefox in
-            // particular) the clone's body stream and the served
-            // response share underlying state in a way that the
-            // background put can lock, breaking every subsequent
-            // tile read. The pure-FIFO eviction we land on without
-            // promotion is good enough - with a 5000-tile cap a
-            // home anchorage stays in the cache for several
-            // sessions of normal use, and the alternative
+            // Just serve the cached response. No LRU promotion via
+            // cache.put(request, cached.clone()): in some browser
+            // builds (Firefox in particular) the clone's body stream
+            // and the served response share underlying state in a way
+            // that the background put can lock, breaking every
+            // subsequent tile read ("no single tile loads"). Pure-FIFO
+            // eviction without promotion is good enough - with a
+            // 5000-tile cap a home anchorage stays in the cache for
+            // several sessions of normal use, and the alternative
             // (every-tile failure) is not a trade we'd accept.
             return cached;
         }
@@ -1587,10 +1587,9 @@ self.addEventListener('fetch', (event) => {
  *  launches. Caches every successful 2xx response so the offline
  *  fallback has something to fall back to.
  *
- *  Ceiling on the network race: NETWORK_FIRST_TIMEOUT_MS. The
- *  unbounded `await fetch(request)` we used pre-timeout could block
- *  the WASM bootstrap waiting on a slow upstream - the SignalK Node
- *  server on a Pi-class device can stall serving a flurry of /js/*
+ *  Ceiling on the network race: NETWORK_FIRST_TIMEOUT_MS. An
+ *  unbounded `await fetch(request)` could block the WASM bootstrap
+ *  waiting on a slow upstream - the SignalK Node server on a Pi-class device can stall serving a flurry of /js/*
  *  + /css/* modules immediately after a CACHE_NAME bump emptied the
  *  app-shell cache and forced every module through this handler.
  *  Helm-visible as "the page reloads and then freezes for tens of

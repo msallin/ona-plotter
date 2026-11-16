@@ -9,9 +9,9 @@ namespace OnaPlotter.Tests;
 /// Pins the ProcessSelfDelta handling of <c>navigation.course.activeRoute</c>
 /// and <c>navigation.course.nextPoint</c> / <c>.previousPoint</c> for the
 /// parent-OBJECT form that signalk-server v2's course API actually
-/// emits on state change. Before the parent-object branches existed,
-/// OnA silently dropped the activation delta so externally-activated
-/// routes (freeboard, REST, another plotter) never showed up.
+/// emits on state change. Without the parent-object branches the
+/// activation delta is silently dropped, so externally-activated
+/// routes (freeboard, REST, another plotter) never show up.
 /// </summary>
 public class SignalkClientCourseTests
 {
@@ -27,7 +27,7 @@ public class SignalkClientCourseTests
     {
         var c = new SignalkClient(
             baseUrl: new FakeBaseUrl(),
-            logger: NullLogger<SignalkClient>.Instance,
+            loggerFactory: NullLoggerFactory.Instance,
             data: new OnaPlotter.Models.NavigationData(),
             track: new TrackBuffer(),
             ais: new AisStore(),
@@ -147,7 +147,7 @@ public class SignalkClientCourseTests
     {
         var c = new SignalkClient(
             baseUrl: new FakeBaseUrl(),
-            logger: NullLogger<SignalkClient>.Instance,
+            loggerFactory: NullLoggerFactory.Instance,
             data: new OnaPlotter.Models.NavigationData(),
             track: new TrackBuffer(),
             ais: new AisStore(),

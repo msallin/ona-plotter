@@ -106,7 +106,7 @@ public class RadarOverlayManagerTests
         return (mgr, host, api);
     }
 
-    // --- TEST-002: integration ---------------------------------------
+    // --- integration -------------------------------------------------
 
     [Test]
     public async Task Transmitting_Radar_Auto_Enables_Overlay_On_First_Poll()
@@ -153,13 +153,12 @@ public class RadarOverlayManagerTests
     [Test]
     public async Task Enable_Does_Not_Read_BearingAlignment_From_Controls()
     {
-        // Regression: the manager used to read `bearingAlignment` from
-        // /controls and thread it into the JS overlay. On a live HALO 31
-        // with the radar's own bearingAlignment set to -10° this produced
-        // a 10°-off picture because the radar firmware already shifts its
-        // azimuth output by that amount (so the wire `angle` is bow-
-        // relative-corrected before mayara sees it). Reading the control
-        // and adding it again client-side double-counted the offset.
+        // Guards against double-counting bearing alignment: the radar
+        // firmware already shifts its azimuth output by its own
+        // bearingAlignment (so the wire `angle` is bow-relative-corrected
+        // before mayara sees it). Reading `bearingAlignment` from
+        // /controls and applying it again in the JS overlay would, on a
+        // HALO 31 set to -10°, produce a 10°-off picture.
         // Pin that no control read happens at enable time and that the
         // start config carries only the helm-tunable bits.
         var (mgr, host, api) = NewManager();
@@ -273,7 +272,7 @@ public class RadarOverlayManagerTests
         await Assert.That(host.Ranges).IsEmpty();
     }
 
-    // --- TEST-003: idempotency ---------------------------------------
+    // --- idempotency -------------------------------------------------
 
     [Test]
     public async Task EnableAsync_Idempotent_Across_Repeated_Polls()
@@ -366,7 +365,7 @@ public class RadarOverlayManagerTests
         await Assert.That(host.Started[0].SpokeDataUrl).IsEqualTo(ok.SpokeDataUrl);
     }
 
-    // --- bug 1: stable layer order -----------------------------------
+    // --- stable layer order ------------------------------------------
 
     [Test]
     public async Task Radars_Sorted_By_Id_So_Layer_Order_Is_Stable()
@@ -397,7 +396,7 @@ public class RadarOverlayManagerTests
         await Assert.That(first).IsEquivalentTo(["nav0231A", "nav0231B"]);
     }
 
-    // --- bug 4: reference-equality drives child re-render ------------
+    // --- reference-equality drives child re-render -------------------
 
     [Test]
     public async Task EnabledRadarIds_Reference_Changes_When_Set_Mutates()
@@ -427,9 +426,8 @@ public class RadarOverlayManagerTests
     public async Task EnabledRadarIds_Reference_Changes_On_Auto_Enable()
     {
         // Same pin for the auto-toggle path - arguably the more
-        // important case because the original bug surfaced after
-        // hitting Transmit (auto-enable) rather than the layer
-        // checkbox (user-toggle).
+        // important case because helms typically hit Transmit
+        // (auto-enable) rather than the layer checkbox (user-toggle).
         var (mgr, _, _) = NewManager();
         await mgr.OnRadarListUpdatedAsync([Radar("r1", "standby")]);
         var refBefore = mgr.EnabledRadarIds;
@@ -466,7 +464,7 @@ public class RadarOverlayManagerTests
     [Test]
     public async Task OnHostModuleReplaced_Clears_Enabled_So_Next_Poll_Restarts_Overlay()
     {
-        // Repro for the helm-visible bug: navigate Map -> SailSteer ->
+        // Guards against a blank radar overlay: navigate Map -> SailSteer ->
         // Map. The page disposes its JS module and mounts a new one,
         // but the singleton manager still thinks the radar is "on" -
         // EnableAsync's idempotency guard then skips startRadarOverlay

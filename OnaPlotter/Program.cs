@@ -149,7 +149,7 @@ builder.Services.AddSingleton<IAlarmRule>(sp =>
 builder.Services.AddSingleton<DeadmanTracker>();
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.DeadmanAlarmRule>();
 builder.Services.AddSingleton<IAlarmManager, AlarmManager>();
-// Phase B: cross-plotter publish. Tracker is the read-side that the
+// Cross-plotter publish. Tracker is the read-side that the
 // bridge rule queries to avoid echoing our own publications back into
 // the banner; AlarmPublisher is the writer that POSTs raises/clears
 // to the SK server when the local alarm stack changes. Resolved
@@ -173,7 +173,7 @@ builder.Services.AddSingleton<INoteApi, NoteApi>();
 builder.Services.AddSingleton<IRegionApi, RegionApi>();
 builder.Services.AddSingleton<ICourseApi, CourseApi>();
 // SignalK v2 notifications client. Drives cross-plotter alarm sync
-// via Acknowledge / Silence and (Phase B) lets client-side rules
+// via Acknowledge / Silence and lets client-side rules
 // publish their alarms back to SK so other plotters can see them.
 builder.Services.AddSingleton<INotificationsApi, NotificationsApi>();
 
@@ -383,8 +383,7 @@ _ = resourceStore.RefreshAllAsync(cause: "startup");
 // plotter lands on this plotter's banner immediately. Owning the
 // kick here (rather than from Map.razor's OnAfterRenderAsync) means
 // MOB recovery runs even when the helm reloads on Wind / Settings /
-// History instead of the chart page - a safety regression in the
-// previous wiring. The internal OnConnectionChanged subscription
+// History instead of the chart page. The internal OnConnectionChanged subscription
 // inside MobService re-runs the reconcile portion on every WS
 // reconnect edge. Fire-and-forget: an early-startup REST 401 (auth
 // token not yet loaded) just silently no-ops and the connect-edge

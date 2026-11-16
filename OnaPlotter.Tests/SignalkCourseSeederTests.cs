@@ -201,20 +201,24 @@ public class SignalkCourseSeederTests
     [Test]
     public async Task SeedAsync_TransportException_LogsButDoesNotThrow()
     {
-        // Network failure must not crash the receive loop. The
-        // catch-all logs at Warning and returns.
+        // Network failure must not crash the receive loop. ResourceHttp
+        // logs it at Warning against the course URL and the seed returns.
         var data = new NavigationData();
         int calls = 0;
+        var logger = new RecordingLogger<SignalkCourseSeeder>();
         var seeder = new SignalkCourseSeeder(
             new HttpClient(new StubHandler(new HttpRequestException("boom"))),
             new FakeBaseUrl(), data,
-            NullLogger<SignalkCourseSeeder>.Instance,
+            logger,
             onDataChanged: () => calls++);
 
         await seeder.SeedAsync(CancellationToken.None);
 
         await Assert.That(data.HasActiveCourse).IsFalse();
         await Assert.That(calls).IsEqualTo(0);
+        await Assert.That(logger.Entries.Any(e =>
+            e.Level == Microsoft.Extensions.Logging.LogLevel.Warning
+            && e.Message.Contains("navigation/course"))).IsTrue();
     }
 
     private static NavigationData WithActiveRoute()

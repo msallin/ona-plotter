@@ -3,13 +3,10 @@
 @* Chart overlays (tile layers). Single inline list: each chart row
    carries a quick-bar checkbox; charts that are currently rendering
    on the map get inline reorder arrows that edit their position in
-   the draw stack. Previously this section had a separate "yellow
-   box" ActiveStack above the list that duplicated the rendering
-   charts - it was confusing because ticking the checkbox added the
-   chart to the quick bar but didn't make it render, so the yellow
-   box stayed empty until a second tap on the map chip. Merging into
-   one row per chart removes the two-tap surprise and keeps the
-   reorder affordance next to the chart it moves. *@
+   the draw stack. One row per chart, rather than a separate active
+   stack above the list, avoids a two-tap surprise (ticking a
+   checkbox that adds to the quick bar but doesn't render) and keeps
+   the reorder affordance next to the chart it moves. *@
 
 @if (Charts.Count == 0) return;
 

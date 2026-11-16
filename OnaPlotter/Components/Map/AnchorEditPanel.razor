@@ -192,10 +192,9 @@
     /// <summary>Sentinel for "parent has no initial-radius opinion"
     /// (e.g. Drop mode or no depth). Distinct from any valid preset.
     /// Picked as int.MinValue so a corrupted setting that lands on
-    /// 0 still re-seeds correctly (0 was the previous in-range
-    /// sentinel, which silently behaved like "snap to lowest preset"
-    /// because of the round-up rule - a footgun for whoever next
-    /// adds Drop-mode chip preview).</summary>
+    /// 0 still re-seeds correctly. An in-range sentinel such as 0
+    /// would silently behave like "snap to lowest preset" because of
+    /// the round-up rule - a footgun for Drop-mode chip preview.</summary>
     public const int UnseededInitialRadius = int.MinValue;
 
     /// <summary>Parent's continuously-recomputed "Auto would commit
@@ -315,11 +314,10 @@
     /// on-map ring.</summary>
     [Parameter] public EventCallback<int> OnChainLengthChanged { get; set; }
 
-    /// <summary>Helm-tunable anchor-radius presets (metres). 150 m
-    /// dropped from the v1 set on field-study feedback - 5:1 scope
-    /// at 30 m of water is already 150 m and that's deeper than the
-    /// helm's typical anchorage; the chip was almost never picked
-    /// and was crowding the row visually.</summary>
+    /// <summary>Helm-tunable anchor-radius presets (metres). No 150 m
+    /// chip: 5:1 scope at 30 m of water is already 150 m and that's
+    /// deeper than the helm's typical anchorage; field study showed it
+    /// was almost never picked and it crowds the row visually.</summary>
     private static readonly int[] RadiusPresets = [20, 30, 50, 75, 100];
 
     /// <summary>Internal pick state. Null = Auto picked (default for

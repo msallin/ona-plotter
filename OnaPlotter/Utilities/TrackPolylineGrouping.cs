@@ -5,10 +5,9 @@ namespace OnaPlotter.Utilities;
 /// <summary>
 /// One contiguous run of own-track points that share the same speed
 /// bucket. The JS renderer emits a single Leaflet polyline per run
-/// coloured by <see cref="Bucket"/>; the grouping used to live in
-/// JS but moves here so the per-point comparison + bridge-coord
-/// duplication runs once in WASM rather than every time the renderer
-/// is fed.
+/// coloured by <see cref="Bucket"/>; the grouping happens here so the
+/// per-point comparison + bridge-coord duplication runs once in WASM
+/// rather than every time the renderer is fed.
 /// </summary>
 public sealed class TrackPolylineRun
 {
@@ -28,8 +27,7 @@ public sealed class TrackPolylineRun
 /// <summary>
 /// Walks a track-buffer snapshot (lat / lon / SOG triples) and emits
 /// one <see cref="TrackPolylineRun"/> per contiguous same-bucket span.
-/// Mirrors what <c>setColoredTrack</c> in leafletInterop.js used to do
-/// in JS, with the bridge-coord semantics preserved exactly:
+/// Bridge-coord semantics:
 /// <list type="bullet">
 /// <item><description>The very first point seeds the current run.</description></item>
 /// <item><description>On a bucket change the current run is flushed

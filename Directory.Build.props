@@ -1,0 +1,12 @@
+<!--
+  Repo-wide build settings, imported by every project under this directory.
+  Warnings fail the build so the zero-warning rule in AGENTS.md is enforced
+  by the compiler rather than by review. Analyzer configuration stays at the
+  SDK defaults; a warning that is genuinely noise gets a targeted
+  NoWarn with a comment at the project that raises it.
+-->
+<Project>
+  <PropertyGroup>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+</Project>

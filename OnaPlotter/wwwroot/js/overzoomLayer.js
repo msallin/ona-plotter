@@ -8,13 +8,12 @@
 // Removable in one go: drop this file + the addChartLayer call site
 // + the Settings flag and the feature is gone.
 //
-// Why no probe: see docs/design/overzoom.md (and the design draft).
-// The previous implementation tried to detect missing tiles at
-// runtime via 404 / 200-empty-PNG / redirect heuristics. Each
-// SignalK chart-plugin variant behaves differently. The probe
-// jittered, the calibrator settled at unstable values, and the
-// helm saw tiles popping in and out. v2 trusts the metadata: if
-// MBTiles says maxzoom 18, we believe it. The downshift calibrator
+// Why no probe: see docs/design/overzoom.md. Detecting missing tiles
+// at runtime via 404 / 200-empty-PNG / redirect heuristics is
+// unreliable because each SignalK chart-plugin variant behaves
+// differently: a probe jitters, a calibrator settles at unstable
+// values, and tiles pop in and out. So the decorator trusts the
+// metadata: if MBTiles says maxzoom 18, we believe it. The downshift calibrator
 // in leafletInterop.js (driven by bonafide `tileerror` 404s, only
 // at the current cap) handles the metadata-lies-about-maxzoom
 // case without re-introducing the probe instability.
