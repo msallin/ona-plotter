@@ -114,7 +114,7 @@ public class NavigationDataTests
     public async Task Apply_NullValue_ReturnsFalse()
     {
         var nav = new NavigationData();
-        await Assert.That(nav.Apply("navigation.speedOverGround", null)).IsFalse();
+        await Assert.That(nav.Apply("navigation.speedOverGround", DeltaValue.Null)).IsFalse();
         await Assert.That(nav.SpeedOverGround).IsNull();
     }
 
@@ -487,7 +487,7 @@ public class NavigationDataTests
     public async Task MarkDataReceived_SetsLastReceivedUtcFromInjectedClock()
     {
         var fixedNow = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
-        var nav = new NavigationData(() => fixedNow);
+        var nav = new NavigationData(new DelegateTimeProvider(() => fixedNow));
         nav.MarkDataReceived();
         await Assert.That(nav.LastReceivedUtc).IsEqualTo(fixedNow);
     }

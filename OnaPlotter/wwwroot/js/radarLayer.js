@@ -113,6 +113,10 @@ let ringsCount = 4;
 // a live edit takes effect on the next sweep.
 let helmBearingCorrectionDeg = 0;
 
+// Page hidden: sockets stay closed, including for overlays enabled
+// while hidden, until setRadarPaused(false).
+let radarPaused = false;
+
 /**
  * Update the global range-rings configuration. Refreshes every
  * active radar overlay so the helm sees the new rings (or their
@@ -194,6 +198,7 @@ export function enableRadarOverlay(deps, cfg) {
     if (activeRadars.has(cfg.radarId)) return;
     const rec = new RadarOverlay(deps.map, cfg);
     activeRadars.set(cfg.radarId, rec);
+    rec.paused = radarPaused;
     rec.connect();
 }
 
@@ -265,8 +270,26 @@ export function setRadarRange(radarId, range) {
  *  reposition. Called from the existing boat-position delta handler
  *  in leafletInterop. */
 export function setBoatState(lat, lon, headingRad) {
-    boatState = { lat, lon, headingRad: headingRad ?? 0 };
+    const h = headingRad ?? 0;
+    // Fixes repeat at the frame rate while nothing moved; each change
+    // schedules a canvas reposition per overlay.
+    if (boatState.lat === lat && boatState.lon === lon && boatState.headingRad === h) return;
+    boatState = { lat, lon, headingRad: h };
     for (const rec of activeRadars.values()) rec.onBoatStateChanged();
+}
+
+/**
+ * Closes (true) or reopens (false) every overlay's spoke socket. The
+ * page calls it on visibilitychange: a backgrounded tab would otherwise
+ * keep receiving and decoding several MB/min of spokes nobody sees.
+ * The canvas keeps its last picture until fresh spokes overwrite it.
+ */
+export function setRadarPaused(paused) {
+    radarPaused = !!paused;
+    for (const rec of activeRadars.values()) {
+        if (radarPaused) rec.pause();
+        else rec.resume();
+    }
 }
 
 /** Debug/tests: expose how many overlays are live. */
@@ -411,6 +434,8 @@ class RadarOverlay {
         this.ws = null;
         this.lastRange = 0;
         this.destroyed = false;
+        this.paused = false;
+        this._retryTimer = null;
 
         // rAF throttle for the CSS-position update path. We only
         // actually touch DOM when the boat moves or the range
@@ -538,8 +563,24 @@ class RadarOverlay {
         this.refreshRangeRings();
     }
 
+    pause() {
+        this.paused = true;
+        if (this._retryTimer) { clearTimeout(this._retryTimer); this._retryTimer = null; }
+        if (this.ws) {
+            try { this.ws.close(); } catch { /* ignore */ }
+            this.ws = null;
+        }
+    }
+
+    resume() {
+        if (!this.paused) return;
+        this.paused = false;
+        this._reconnectMs = null;
+        if (!this.ws) this._openWebsocket();
+    }
+
     _openWebsocket() {
-        if (this.destroyed) return;
+        if (this.destroyed || this.paused || this.ws) return;
         let ws;
         try {
             ws = new WebSocket(this.spokeDataUrl);
@@ -555,9 +596,13 @@ class RadarOverlay {
         // first reconnect after a long-stable session shouldn't have
         // to climb back up the ladder.
         ws.addEventListener('open', () => { this._reconnectMs = null; });
-        ws.addEventListener('message', (ev) => this._onFrame(ev.data));
+        ws.addEventListener('message', (ev) => {
+            if (this.ws === ws) this._onFrame(ev.data);
+        });
         ws.addEventListener('close', () => {
-            if (this.destroyed) return;
+            // A socket replaced by pause / resume closes late; only the
+            // current one schedules a reconnect.
+            if (this.destroyed || this.paused || this.ws !== ws) return;
             this.ws = null;
             this._retryLater();
         });
@@ -578,7 +623,10 @@ class RadarOverlay {
         if (this._reconnectMs == null) this._reconnectMs = 3000;
         const delay = this._reconnectMs;
         this._reconnectMs = Math.min(delay * 2, 60000);
-        setTimeout(() => this._openWebsocket(), delay);
+        this._retryTimer = setTimeout(() => {
+            this._retryTimer = null;
+            this._openWebsocket();
+        }, delay);
     }
 
     _onFrame(buffer) {
@@ -910,6 +958,7 @@ class RadarOverlay {
 
     destroy() {
         this.destroyed = true;
+        if (this._retryTimer) { clearTimeout(this._retryTimer); this._retryTimer = null; }
         if (this.ws) {
             try { this.ws.close(); } catch { /* ignore */ }
             this.ws = null;

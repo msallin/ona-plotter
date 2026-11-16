@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Net;
 using OnaPlotter.Models;
 using OnaPlotter.Services.Api;
@@ -37,7 +38,7 @@ public class TrackApiTests
             }
             return new HttpResponseMessage(HttpStatusCode.NotFound);
         });
-        return new TrackApi(http, ApiTestHelpers.FixedBaseUrl());
+        return new TrackApi(http, ApiTestHelpers.FixedBaseUrl(), TimeProvider.System, NullLogger<TrackApi>.Instance);
     }
 
     [Test]
@@ -166,7 +167,7 @@ public class TrackApiTests
         // returns null because we no longer carry those fallbacks.
         var http = ApiTestHelpers.MockClient(_ =>
             new HttpResponseMessage(HttpStatusCode.NotFound));
-        var api = new TrackApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new TrackApi(http, ApiTestHelpers.FixedBaseUrl(), TimeProvider.System, NullLogger<TrackApi>.Instance);
         var pts = await api.GetServerTrackAsync("1h");
         await Assert.That(pts).IsNull();
     }
@@ -571,7 +572,7 @@ public class TrackApiTests
         // try/catch. Pin both the catch and the null return so a
         // refactor that drops the wrapper goes red.
         var http = ApiTestHelpers.MockClient(_ => throw new HttpRequestException("dns fail"));
-        var api = new TrackApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new TrackApi(http, ApiTestHelpers.FixedBaseUrl(), TimeProvider.System, NullLogger<TrackApi>.Instance);
         var pts = await api.GetServerTrackPointsAsync(from: null, to: null, timespan: "1h");
         await Assert.That(pts).IsNull();
     }
@@ -585,7 +586,7 @@ public class TrackApiTests
         // data.
         var http = ApiTestHelpers.MockClient(_ =>
             new HttpResponseMessage(HttpStatusCode.InternalServerError));
-        var api = new TrackApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new TrackApi(http, ApiTestHelpers.FixedBaseUrl(), TimeProvider.System, NullLogger<TrackApi>.Instance);
         var pts = await api.GetServerTrackPointsAsync(from: null, to: null, timespan: "1h");
         await Assert.That(pts).IsNull();
     }
@@ -767,7 +768,7 @@ public class TrackApiTests
                 Content = new StringContent("""{"error":"history provider not configured"}""",
                     System.Text.Encoding.UTF8, "application/json"),
             });
-        var api = new TrackApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new TrackApi(http, ApiTestHelpers.FixedBaseUrl(), TimeProvider.System, NullLogger<TrackApi>.Instance);
         var pts = await api.GetServerTrackAsync("1h");
         await Assert.That(pts).IsNull();
     }

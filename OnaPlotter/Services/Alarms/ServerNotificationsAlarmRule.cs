@@ -48,6 +48,11 @@ public sealed class ServerNotificationsAlarmRule : IAlarmRule
     /// before noticing the doc.</summary>
     public string Title => string.Empty;
 
+    /// <summary>Rule-level id. Individual alarms carry the id of the
+    /// local rule they correspond to (see <see cref="DeriveRuleId"/>), so
+    /// the manager filters disabled sources per alarm, not per rule.</summary>
+    public AlarmRuleId Id => AlarmRuleId.ServerNotification;
+
     /// <summary>Sits between collision (200) and wind shift (300). The
     /// per-AlarmInfo severity is what actually orders the stack; this
     /// only matters for deterministic ordering between two same-
@@ -140,6 +145,7 @@ public sealed class ServerNotificationsAlarmRule : IAlarmRule
                 api, id, canAcknowledge: n.Status?.CanAcknowledge ?? false);
         }
         return new AlarmInfo(
+            RuleId: DeriveRuleId(n.Path),
             Title: title,
             Message: message,
             Severity: n.Severity,
@@ -191,6 +197,27 @@ public sealed class ServerNotificationsAlarmRule : IAlarmRule
         return MatchKnownPath(tail).Title;
     }
 
+    /// <summary>Alarm identity for a server notification path. Paths
+    /// that correspond to a local rule carry that rule's id so its
+    /// Settings toggle and UI affordances apply to both sources;
+    /// everything else is <see cref="AlarmRuleId.ServerNotification"/>.
+    /// <para>Only the course-provider arrival family maps today.
+    /// <c>notifications.environment.depth.*</c> and
+    /// <c>notifications.security.collision.*</c> deliberately do NOT map
+    /// to SHALLOW / CPA: those come from other plotters or server
+    /// plugins with their own thresholds, and switching off the local
+    /// rule must not silence a remote source.</para></summary>
+    internal static AlarmRuleId DeriveRuleId(string path)
+    {
+        var tail = StripNotificationsPrefix(path);
+        return tail.StartsWith("navigation.course.", StringComparison.Ordinal)
+               || tail is "navigation.arrivalCircleEntered"
+                   or "navigation.perpendicularPassed"
+                   or "navigation.routeComplete"
+            ? AlarmRuleId.Approach
+            : AlarmRuleId.ServerNotification;
+    }
+
     /// <summary>Strip the leading <c>notifications.</c> prefix when
     /// present so prefix matchers can work on the meaningful tail.</summary>
     private static string StripNotificationsPrefix(string path)
@@ -211,10 +238,9 @@ public sealed class ServerNotificationsAlarmRule : IAlarmRule
     /// a recognised title so muscle memory carries from one chartplotter
     /// to the next. Unknown paths fall through to leaf-segment uppercased.</para>
     ///
-    /// <para>The "APPROACH" title is load-bearing: MainLayout.razor
-    /// checks <c>a.Title == "APPROACH"</c> to render the "Next WP"
-    /// advance button on the banner. Course-provider bridged alarms
-    /// use the same title so the layout doesn't need a per-rule case.</para>
+    /// <para>Course-provider paths map to <see cref="AlarmRuleId.Approach"/>
+    /// (see <see cref="DeriveRuleId"/>): the banner renders the "Next WP"
+    /// button for that id and the APPROACH Settings toggle covers them.</para>
     ///
     /// <para>Row shape: rows with a <c>HardcodedDefault</c> ignore
     /// <c>HumanisePrefix</c> (empty string sentinel); rows with a null

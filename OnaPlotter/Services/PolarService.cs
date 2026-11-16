@@ -13,7 +13,7 @@ namespace OnaPlotter.Services;
 /// </remarks>
 public sealed class PolarService : IPolarService
 {
-    private const string StorageKey = "polar";
+    private const string StorageKey = SettingKeys.Polar;
 
     private readonly IKeyValueStore _store;
 
@@ -34,6 +34,8 @@ public sealed class PolarService : IPolarService
     {
         if (_loaded) return;
         _loaded = true;
+        await KeyValueStoreMigration.MigrateRenamedAsync(
+            _store, [(SettingKeys.LegacyPolar, StorageKey)]);
         try
         {
             var csv = await _store.GetAsync(StorageKey);

@@ -6,10 +6,12 @@ namespace OnaPlotter.Utilities;
 /// the give-way role. Useful for a quick "who turns?" glance when a target
 /// shows up on the guard zone.
 /// <para>
-/// We use the classical thresholds from Rules 13-15: an overtaking arc of
-/// 22.5° either side of a reciprocal course for head-on, the same 22.5°
-/// abaft-the-beam cut-off for overtaking, and side-of-own-beam for
-/// crossings. Sailing-vessel rules (Rule 12, wind-based) are out of scope
+/// Thresholds from Rules 13-15: head-on is the target within 22.5° of
+/// our bow on a reciprocal course; overtaking (Rule 13) is one vessel
+/// closing from more than 22.5° abaft the other's beam, i.e. a relative
+/// bearing in (112.5°, 247.5°) from the overtaken vessel's heading,
+/// whatever the heading difference; crossing is the target in the
+/// sectors between, starboard [22.5°, 112.5°] or port [247.5°, 337.5°]. Sailing-vessel rules (Rule 12, wind-based) are out of scope
 /// here - this is the decision a motorised watch keeper makes in seconds.
 /// </para>
 /// </summary>
@@ -21,9 +23,11 @@ public static class Colregs
         Indeterminate,
         /// <summary>Nearly reciprocal courses, target within ±22.5° of our bow.</summary>
         HeadOn,
-        /// <summary>Same direction, we're catching up from abaft the target's beam.</summary>
+        /// <summary>We are closing on the target from more than 22.5° abaft
+        /// its beam (Rule 13): we keep out of the way.</summary>
         Overtaking,
-        /// <summary>Same direction, target is catching up on us from our stern.</summary>
+        /// <summary>The target is closing on us from more than 22.5° abaft
+        /// our beam (Rule 13): we stand on.</summary>
         BeingOvertaken,
         /// <summary>Target approaches from our port side on a crossing course.</summary>
         CrossingFromPort,
@@ -89,7 +93,10 @@ public static class Colregs
     private const double DegToRad = Math.PI / 180.0;
     private const double RadToDeg = 180.0 / Math.PI;
     private const double HeadOnCone = 22.5;       // half-angle
-    private const double OvertakingCone = 22.5;   // abaft the beam cut-off
+    // Rule 13 sector: more than 22.5 deg abaft the beam, measured from
+    // the overtaken vessel's heading.
+    private const double AbaftBeamFrom = 90 + 22.5;    // 112.5
+    private const double AbaftBeamTo = 270 - 22.5;     // 247.5
     private const double StationaryMs = 0.1;      // ~0.2 kn
 
     public static Result Classify(
@@ -143,9 +150,14 @@ public static class Colregs
         double headingDiff = SmallestAngle(ownCogDeg, tgtCogDeg);
 
         bool targetAhead = relBearing < HeadOnCone || relBearing > 360 - HeadOnCone;
-        bool targetAstern = Math.Abs(relBearing - 180) < OvertakingCone;
-        bool targetOnStbd = relBearing >= HeadOnCone && relBearing <= 180 - OvertakingCone;
-        bool targetOnPort = relBearing >= 180 + OvertakingCone && relBearing <= 360 - HeadOnCone;
+        // Rule 13 from both sides: is the target abaft OUR beam, and are
+        // WE abaft the TARGET's beam (own's bearing seen from the target,
+        // relative to the target's heading)?
+        bool targetAbaftOurBeam = InAbaftBeamSector(relBearing);
+        bool weAbaftTargetBeam = InAbaftBeamSector(Norm360(bearing + 180 - tgtCogDeg));
+        bool targetOnStbd = relBearing >= HeadOnCone && relBearing <= AbaftBeamFrom;
+        bool targetOnPort = relBearing >= AbaftBeamTo && relBearing <= 360 - HeadOnCone;
+        bool closing = IsClosing(bearing, ownCogDeg, ownSogMs, tgtCogDeg, tgtSogMs);
 
         // Rule 18 propulsion override: when own + target propulsion
         // differ, sail has priority over power. The CATEGORY is still
@@ -169,18 +181,17 @@ public static class Colregs
         if (targetAhead && headingDiff > 180 - HeadOnCone)
             return new Result(Category.HeadOn, HeadOnOrCrossing(Role.GiveWay));
 
-        // Overtaking / being overtaken: headings roughly aligned.
-        // Rule 13: overtaking overrides Rule 18 (the overtaker always
-        // gives way regardless of propulsion).
-        if (headingDiff < OvertakingCone)
-        {
-            if (targetAhead && ownSogMs > tgtSogMs)
-                return new Result(Category.Overtaking, Role.GiveWay);
-            if (targetAstern && tgtSogMs > ownSogMs)
-                return new Result(Category.BeingOvertaken, Role.StandOn);
-        }
+        // Overtaking / being overtaken (Rule 13): the overtaker comes up
+        // from the other vessel's abaft-the-beam sector and closes.
+        // Overtaking overrides Rule 18 (the overtaker always gives way
+        // regardless of propulsion). Both conditions cannot hold at once
+        // while closing: each vessel behind the other means opening range.
+        if (closing && weAbaftTargetBeam)
+            return new Result(Category.Overtaking, Role.GiveWay);
+        if (closing && targetAbaftOurBeam)
+            return new Result(Category.BeingOvertaken, Role.StandOn);
 
-        // Crossing: target on one side of our beam, heading not aligned.
+        // Crossing: target in a side sector and neither vessel overtaking.
         if (targetOnStbd)
             return new Result(Category.CrossingFromStarboard, HeadOnOrCrossing(Role.GiveWay));
         if (targetOnPort)
@@ -221,6 +232,23 @@ public static class Colregs
         Role.StandOn => "Stand on",
         _ => null
     };
+
+    private static bool InAbaftBeamSector(double relDeg) =>
+        relDeg > AbaftBeamFrom && relDeg < AbaftBeamTo;
+
+    /// <summary>True when the range is decreasing: the relative velocity
+    /// (target minus own) points against the line of sight from own to
+    /// target. Flat-earth over the few miles a COLREGS encounter spans.</summary>
+    private static bool IsClosing(double bearingDeg, double ownCogDeg, double ownSogMs,
+        double tgtCogDeg, double tgtSogMs)
+    {
+        double b = bearingDeg * DegToRad, oc = ownCogDeg * DegToRad, tc = tgtCogDeg * DegToRad;
+        // East / north components.
+        double losE = Math.Sin(b), losN = Math.Cos(b);
+        double relE = tgtSogMs * Math.Sin(tc) - ownSogMs * Math.Sin(oc);
+        double relN = tgtSogMs * Math.Cos(tc) - ownSogMs * Math.Cos(oc);
+        return losE * relE + losN * relN < 0;
+    }
 
     private static double BearingDeg(double lat1, double lon1, double lat2, double lon2)
     {

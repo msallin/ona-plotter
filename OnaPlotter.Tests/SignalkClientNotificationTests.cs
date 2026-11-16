@@ -35,6 +35,7 @@ public class SignalkClientNotificationTests
         var c = new SignalkClient(
             baseUrl: new FakeBaseUrl(),
             logger: NullLogger<SignalkClient>.Instance,
+            data: new OnaPlotter.Models.NavigationData(),
             track: new TrackBuffer(),
             ais: new AisStore(),
             http: new HttpClient(),
@@ -118,8 +119,8 @@ public class SignalkClientNotificationTests
     [Test]
     public async Task OnDataChanged_Fires_For_Notification_Delta()
     {
-        // MainLayout's MaybeAutoAdvanceWaypoint runs inside
-        // HandleDataChanged which subscribes to OnDataChanged. If
+        // AutoAdvanceService runs its edge detector from an
+        // OnDataChanged subscription. If
         // the notification handler doesn't set changed=true, the
         // event won't fire and auto-advance never sees the edge.
         var c = NewClient();
@@ -223,7 +224,7 @@ public class SignalkClientNotificationTests
     // plugin) and some forks publish the leg-advance flag as a plain
     // bool under navigation.course.calcValues.{flag}. The bare-bool
     // fall-through in ProcessSelfDelta routes it to the same flag the
-    // notifications form sets, so MaybeAutoAdvanceWaypoint sees the
+    // notifications form sets, so AutoAdvanceService sees the
     // same edge regardless of which shape the server uses. Without
     // this, auto-advance silently dies on a server that doesn't ship
     // the notifications.
@@ -288,9 +289,9 @@ public class SignalkClientNotificationTests
     [Test]
     public async Task CalcValues_BareBool_FiresOnDataChanged()
     {
-        // Auto-advance only fires inside HandleDataChanged. If the
+        // Auto-advance only fires from OnDataChanged. If the
         // calcValues bare-bool form didn't set changed=true on the
-        // delta processor, MaybeAutoAdvanceWaypoint would never wake
+        // delta processor, AutoAdvanceService would never wake
         // up and the new subscription would be cosmetic. Pin that the
         // event fires so the trigger chain is intact end-to-end.
         var c = NewClient();
@@ -408,8 +409,8 @@ public class SignalkClientNotificationTests
     [Test]
     public async Task ServerNotification_FiresOnDataChanged()
     {
-        // The receive loop's OnDataChanged drives MainLayout's
-        // HandleDataChanged -> Alarms.Evaluate -> banner repaint.
+        // The receive loop's OnDataChanged drives
+        // AlarmEvaluationDriver -> Alarms.Evaluate -> banner repaint.
         // If notifications routing didn't set changed=true the new
         // notification would sit in the store invisibly until the
         // next vessel position update.

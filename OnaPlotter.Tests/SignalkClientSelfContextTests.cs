@@ -16,6 +16,7 @@ public class SignalkClientSelfContextTests
         new(
             baseUrl: new FakeBaseUrl(),
             logger: NullLogger<SignalkClient>.Instance,
+            data: new OnaPlotter.Models.NavigationData(),
             track: new TrackBuffer(),
             ais: store,
             http: new HttpClient(),

@@ -28,13 +28,13 @@ namespace OnaPlotter.Utilities;
 ///     (checkbox + levels input + the two change handlers),</item>
 ///   <item>the <c>upscaleLevels</c> arg on <c>IMapOverlaysJs.AddChartLayerAsync</c>
 ///     and the <c>ChartLayerController</c> call site that resolves it,</item>
-///   <item>the <c>maxZoom: 19 + 3</c> literal on the <c>L.map(...)</c>
-///     call in <c>leafletInterop.js</c>'s <c>initMap</c>: revert to
-///     a plain <c>maxZoom: 19</c> so the helm can't zoom past native.
-///     OSM / OpenSeaMap layers already use <c>maxZoom: 19</c> -
-///     deliberately not bumped, so they go blank past native and
-///     don't compete with the upscaled chart, which means there's
-///     nothing to revert on the base layers.</item>
+///   <item><see cref="MapMaxZoom"/>, passed to <c>initMap</c> as the
+///     <c>L.map(...)</c> viewport cap: set it to <see cref="NativeMaxZoom"/>
+///     so the helm can't zoom past native. OSM / OpenSeaMap layers
+///     already use <c>maxZoom: 19</c> - deliberately not bumped, so
+///     they go blank past native and don't compete with the upscaled
+///     chart, which means there's nothing to revert on the base
+///     layers.</item>
 /// </list>
 /// Drop those, and the feature is gone with no leftover wiring.</para>
 /// </summary>
@@ -54,6 +54,15 @@ public static class ChartUpscale
 
     /// <summary>Default levels when the feature is enabled.</summary>
     public const int DefaultLevels = 2;
+
+    /// <summary>Native top of the OSM / OpenSeaMap tile pyramids.</summary>
+    public const int NativeMaxZoom = 19;
+
+    /// <summary>Viewport cap for the Leaflet map. Must be at least the
+    /// native cap plus <see cref="MaxLevels"/>, otherwise Leaflet clamps
+    /// the helm before the upscale band is reachable and the per-layer
+    /// overzoom has nothing to show.</summary>
+    public const int MapMaxZoom = NativeMaxZoom + MaxLevels;
 
     /// <summary>Clamp a levels value to the supported range. Used by
     /// the Settings setter as belt-and-suspenders against future

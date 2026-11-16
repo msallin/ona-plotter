@@ -34,9 +34,9 @@ public class AppSettingsServiceTests
     public async Task LoadsPersistedValues()
     {
         var kv = new InMemoryKv();
-        await kv.SetAsync("nightMode", "true");
-        await kv.SetAsync("mapOrientation", "course");
-        await kv.SetAsync("depthAlarmThreshold", "5.5");
+        await kv.SetAsync(SettingKeys.NightMode, "true");
+        await kv.SetAsync(SettingKeys.MapOrientation, "course");
+        await kv.SetAsync(SettingKeys.DepthAlarmThreshold, "5.5");
 
         var svc = new AppSettingsService(kv);
         await svc.InitializeAsync();
@@ -44,6 +44,56 @@ public class AppSettingsServiceTests
         await Assert.That(svc.NightMode).IsTrue();
         await Assert.That(svc.MapOrientation).IsEqualTo("course");
         await Assert.That(svc.DepthAlarmThreshold).IsEqualTo(5.5);
+    }
+
+    [Test]
+    public async Task UpgradingHelm_KeepsValuesStoredUnderUnversionedKeys()
+    {
+        // A helm upgrading from a build that persisted these settings
+        // without the ".v1" suffix: every tuned value must survive, the
+        // legacy keys must be gone, and the values must sit under the new
+        // keys so the next boot reads them directly.
+        var kv = new InMemoryKv();
+        await kv.SetAsync("nightMode", "true");
+        await kv.SetAsync("theme", "high-contrast");
+        await kv.SetAsync("mapOrientation", "course");
+        await kv.SetAsync("followBoat", "false");
+        await kv.SetAsync("laylinesVisible", "true");
+        await kv.SetAsync("depthAlarmThreshold", "4.5");
+        await kv.SetAsync("windShiftAlarmThreshold", "20.0");
+        await kv.SetAsync("windShiftLookbackMinutes", "5.0");
+        await kv.SetAsync("anchorTideSafetyMargin", "1.25");
+        await kv.SetAsync("sailingMode", "race");
+        await kv.SetAsync("enabledChartIds", "OSM\nNOAA");
+        await kv.SetAsync("enabledRouteIds", "route-a");
+
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        await Assert.That(svc.NightMode).IsTrue();
+        await Assert.That(svc.Theme).IsEqualTo("high-contrast");
+        await Assert.That(svc.MapOrientation).IsEqualTo("course");
+        await Assert.That(svc.FollowBoat).IsFalse();
+        await Assert.That(svc.LaylinesVisible).IsTrue();
+        await Assert.That(svc.DepthAlarmThreshold).IsEqualTo(4.5);
+        await Assert.That(svc.WindShiftAlarmThreshold).IsEqualTo(20.0);
+        await Assert.That(svc.WindShiftLookbackMinutes).IsEqualTo(5.0);
+        await Assert.That(svc.AnchorTideSafetyMargin).IsEqualTo(1.25);
+        await Assert.That(svc.SailingMode).IsEqualTo("race");
+        await Assert.That(svc.EnabledChartIds.OrderBy(x => x)).IsEquivalentTo(new[] { "NOAA", "OSM" });
+        await Assert.That(svc.EnabledRouteIds).IsEquivalentTo(new[] { "route-a" });
+
+        foreach (var (legacy, current) in SettingKeys.Renamed)
+        {
+            await Assert.That(await kv.GetAsync(legacy)).IsNull();
+            await Assert.That(await kv.GetAsync(current)).IsNotNull();
+        }
+
+        // Second boot reads the migrated keys only.
+        var again = new AppSettingsService(kv);
+        await again.InitializeAsync();
+        await Assert.That(again.DepthAlarmThreshold).IsEqualTo(4.5);
+        await Assert.That(again.SailingMode).IsEqualTo("race");
     }
 
     [Test]
@@ -96,8 +146,8 @@ public class AppSettingsServiceTests
         await svc.SetNightModeAsync(true);
         await svc.SetDepthAlarmThresholdAsync(4.2);
 
-        await Assert.That(await kv.GetAsync("nightMode")).IsEqualTo("true");
-        await Assert.That(await kv.GetAsync("depthAlarmThreshold")).IsEqualTo("4.2");
+        await Assert.That(await kv.GetAsync(SettingKeys.NightMode)).IsEqualTo("true");
+        await Assert.That(await kv.GetAsync(SettingKeys.DepthAlarmThreshold)).IsEqualTo("4.2");
     }
 
     // === Weather overlay opacity ===
@@ -233,7 +283,7 @@ public class AppSettingsServiceTests
         var kv = new InMemoryKv();
         await kv.SetAsync("cpaAlarmThreshold", "0.42");          // canonical (legacy key)
         await kv.SetAsync("guardZoneLookaheadMinutes", "12,5");  // comma locale (legacy key)
-        await kv.SetAsync("windShiftAlarmThreshold", "garbage"); // corrupt
+        await kv.SetAsync(SettingKeys.WindShiftAlarmThreshold, "garbage"); // corrupt
 
         var svc = new AppSettingsService(kv);
         await svc.InitializeAsync();
@@ -360,7 +410,7 @@ public class AppSettingsServiceTests
     {
         // Empty stored value should not produce a single empty-string element.
         var kv = new InMemoryKv();
-        await kv.SetAsync("enabledChartIds", "");
+        await kv.SetAsync(SettingKeys.EnabledChartIds, "");
 
         var svc = new AppSettingsService(kv);
         await svc.InitializeAsync();
@@ -394,7 +444,7 @@ public class AppSettingsServiceTests
     public async Task Theme_GarbageFallsBackToSystem()
     {
         var kv = new InMemoryKv();
-        await kv.SetAsync("theme", "banana");
+        await kv.SetAsync(SettingKeys.Theme, "banana");
         var svc = new AppSettingsService(kv);
         await svc.InitializeAsync();
         await Assert.That(svc.Theme).IsEqualTo("system");
@@ -474,7 +524,7 @@ public class AppSettingsServiceTests
         await Task.WhenAll(tasks);
 
         // Each key should have been read exactly once, not 20 times.
-        await Assert.That(kv.GetCount("nightMode")).IsEqualTo(1);
+        await Assert.That(kv.GetCount(SettingKeys.NightMode)).IsEqualTo(1);
     }
 
     // === Marine POI categories ===
@@ -591,7 +641,7 @@ public class AppSettingsServiceTests
         await svc.InitializeAsync();
 
         await svc.SetSailingModeAsync(mode);
-        await Assert.That(await kv.GetAsync("sailingMode")).IsEqualTo(mode);
+        await Assert.That(await kv.GetAsync(SettingKeys.SailingMode)).IsEqualTo(mode);
 
         var svc2 = new AppSettingsService(kv);
         await svc2.InitializeAsync();
@@ -623,7 +673,7 @@ public class AppSettingsServiceTests
         // an older build's enum, a manual edit). Loading it must not
         // throw and must pick a safe default.
         var kv = new InMemoryKv();
-        await kv.SetAsync("sailingMode", "supersail3000");
+        await kv.SetAsync(SettingKeys.SailingMode, "supersail3000");
         var svc = new AppSettingsService(kv);
         await svc.InitializeAsync();
         await Assert.That(svc.SailingMode).IsEqualTo("cruise");
@@ -918,7 +968,7 @@ public class AppSettingsServiceTests
         // shortcuts in the quick bar; without the seed every helm
         // would land on an empty quick bar after the upgrade.
         var kv = new InMemoryKv();
-        await kv.SetAsync("enabledChartIds", "OSM\nOpenSeaMap");
+        await kv.SetAsync(SettingKeys.EnabledChartIds, "OSM\nOpenSeaMap");
         // Note: no quickBarChartIds.v1 key.
 
         var svc = new AppSettingsService(kv);
@@ -939,7 +989,7 @@ public class AppSettingsServiceTests
         // A user who removed a chart from the quick bar but kept it
         // enabled overall must see that choice respected on next load.
         var kv = new InMemoryKv();
-        await kv.SetAsync("enabledChartIds", "OSM\nOpenSeaMap\nCustomChart");
+        await kv.SetAsync(SettingKeys.EnabledChartIds, "OSM\nOpenSeaMap\nCustomChart");
         await kv.SetAsync("quickBarChartIds.v1", "OSM");
 
         var svc = new AppSettingsService(kv);
@@ -956,7 +1006,7 @@ public class AppSettingsServiceTests
         // persists an empty value. The loader must not "helpfully"
         // re-seed from EnabledChartIds and undo the clear.
         var kv = new InMemoryKv();
-        await kv.SetAsync("enabledChartIds", "OSM\nOpenSeaMap");
+        await kv.SetAsync(SettingKeys.EnabledChartIds, "OSM\nOpenSeaMap");
         await kv.SetAsync("quickBarChartIds.v1", "");
 
         var svc = new AppSettingsService(kv);
@@ -1058,7 +1108,7 @@ public class AppSettingsServiceTests
         await svc.SetMapOrientationAsync("course");
 
         await Assert.That(svc.MapOrientation).IsEqualTo("course");
-        await Assert.That(await kv.GetAsync("mapOrientation")).IsEqualTo("course");
+        await Assert.That(await kv.GetAsync(SettingKeys.MapOrientation)).IsEqualTo("course");
         await Assert.That(fires).IsEqualTo(1);
     }
 

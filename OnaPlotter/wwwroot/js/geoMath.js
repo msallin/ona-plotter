@@ -1,15 +1,8 @@
 // Pure geometry and navigation math utilities.
 // Extracted from leafletInterop.js so they can be tested without a browser/Leaflet.
 //
-// Display formatters (speed colour, lat/lon DMS, knots conversion,
-// range-ring label, ETA, MOB elapsed, AIS staleness opacity) live in
-// `format.js` - their canonical home is C# Utilities/Format.cs +
-// SpeedColor.cs + StalenessOpacity.cs and the JS module mirrors those
-// with cross-reference comments. Re-exported below for back-compat
-// with existing callers; new code should import from `format.js`.
-
-import { speedColor, speedBucket, SPEED_BUCKETS, MS_TO_KNOTS } from './format.js';
-export { speedColor, speedBucket, SPEED_BUCKETS, MS_TO_KNOTS };
+// Display formatters (lat/lon, knots conversion, range-ring label,
+// MOB elapsed, measure distance) live in `format.js`.
 
 export const RAD = Math.PI / 180;
 export const DEG = 180 / Math.PI;
@@ -61,5 +54,29 @@ export function vectorEnd(lat, lon, cogRad, sogMs, minutes) {
     return destPoint(lat, lon, cogRad, sogMs * m * 60);
 }
 
-// speedColor / speedBucket / SPEED_BUCKETS / MS_TO_KNOTS are
-// re-exported from `format.js` at the top of this file.
+/**
+ * Tile-coverage boxes for a chart's [west, south, east, north] bounds,
+ * as [[south, west], [north, east]] pairs, or null when the bounds are
+ * unusable (non-finite, latitude out of range, south above north).
+ *
+ * A chart crossing the antimeridian arrives with west > east. Handed
+ * to Leaflet as is, LatLngBounds normalises it into the complement (the
+ * whole world except the chart). Instead the east edge is unwrapped
+ * past 180, and a second copy shifted by -360 covers the tiles Leaflet
+ * wraps back into [-180, 180] east of the line.
+ *
+ * Example: [170, -20, -170, -10]
+ *   -> [[[-20, 170], [-10, 190]], [[-20, -190], [-10, -170]]]
+ */
+export function chartBoundsBoxes(bounds) {
+    if (!Array.isArray(bounds) || bounds.length !== 4 || !bounds.every(Number.isFinite)) return null;
+    const [west, south, east, north] = bounds;
+    if (south < -90 || north > 90 || south > north) return null;
+    if (west < -540 || west > 540 || east < -540 || east > 540) return null;
+    if (west <= east) return [[[south, west], [north, east]]];
+    const unwrappedEast = east + 360;
+    return [
+        [[south, west], [north, unwrappedEast]],
+        [[south, west - 360], [north, east]],
+    ];
+}

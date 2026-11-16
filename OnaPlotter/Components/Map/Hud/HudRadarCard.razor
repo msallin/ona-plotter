@@ -250,11 +250,8 @@
         {
             return label;
         }
-        return FormatRange(meters);
+        return Format.RadarRange(meters);
     }
-
-    private static string FormatRange(int m) =>
-        m < 1000 ? $"{m} m" : $"{(m / 1852.0):F1} nm";
 
     // Generic spread of metric ranges in metres. Used only as a
     // placeholder while /capabilities is in flight; once caps arrive

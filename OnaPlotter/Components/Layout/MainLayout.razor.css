@@ -11,10 +11,12 @@ main {
        wind / sailsteer page content fits in one viewport. Containing
        the scroll on <main> stops the bounce; pages that DO need to
        scroll (Settings, Resources at >20 rows) still scroll within
-       <main>, just without the rubber-band visual. height:100dvh
-       caps the scroll surface to the visible viewport so the OS
-       chrome (URL bar showing/hiding) doesn't trigger rubber-band. */
-    height: 100dvh;
+       <main>, just without the rubber-band visual. --app-height is
+       the dynamic viewport minus the safe-area insets <html> pads
+       itself by (app.css :root), so main fills the padded html box
+       exactly in a standalone PWA and the OS chrome (URL bar
+       showing/hiding) doesn't trigger rubber-band. */
+    height: var(--app-height);
     overflow-y: auto;
     overscroll-behavior: contain;
 }
@@ -33,14 +35,9 @@ main {
        label without wrapping. Collapses to 4 rem in fullscreen
        - see rules below. */
     width: 10rem;
-    /* dvh (dynamic viewport height) - vh is the FULL screen incl.
-       any browser chrome that may currently be hidden, which on
-       iPad PWA standalone exceeds the html content box (which is
-       shrunk by env(safe-area-inset-*) padding). The mismatch was
-       overflowing the sidebar past the html box and triggering a
-       page-level scrollbar. dvh tracks the live visible area, so
-       100dvh = exactly the height our html content box has. */
-    height: 100dvh;
+    /* Same --app-height as <main>: the html content box, which is the
+       dynamic viewport shrunk by the safe-area padding. */
+    height: var(--app-height);
     position: sticky;
     top: 0;
     flex-shrink: 0;
@@ -73,22 +70,18 @@ main {
     background-color: var(--sk-top-row-bg);
     border-bottom: 1px solid var(--sk-top-row-border);
     justify-content: flex-end;
-    height: 3rem;
+    height: var(--topbar-height);
     display: flex;
     align-items: center;
     position: sticky;
     top: 0;
-    /* z-index 1000 so descendants that visually overflow into the
-       chart area (notably the SearchBox typeahead dropdown) render
-       ABOVE the leaflet map (z-index 200-700) and the HUD cards
-       (--z-hud: 500). `position: sticky` makes this a stacking
-       context, so the dropdown's own local z-index can't escape it
-       - the topbar's value is the ceiling for everything inside.
-       Was z-index: 1; the dropdown was rendered (visible in the
-       DOM) but painted under the map, looking like search returned
-       no results. Stays under modals (--z-modal: 900 wraps overlays
-       which themselves carry their own stacking context above this). */
-    z-index: 1000;
+    /* --z-topbar sits above the map, HUD, controls and Leaflet's own
+       control corners so descendants that overflow into the chart
+       area (the SearchBox typeahead dropdown) paint on top; sticky +
+       z-index makes this a stacking context, so the topbar's tier is
+       the ceiling for everything inside. Alarm banner, toasts and
+       modals sit above it (see the z-index scale in app.css :root). */
+    z-index: var(--z-topbar);
     padding-left: 1rem !important;
     padding-right: 1rem !important;
 }

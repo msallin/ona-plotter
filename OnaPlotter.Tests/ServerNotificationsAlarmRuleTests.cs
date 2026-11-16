@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Net;
 using OnaPlotter.Models;
 using OnaPlotter.Services;
@@ -17,7 +18,7 @@ public class ServerNotificationsAlarmRuleTests
     private static INotificationsApi NoopApi()
     {
         var http = new HttpClient(new NoopHandler());
-        return new NotificationsApi(http, new TestBaseUrl());
+        return new NotificationsApi(http, new TestBaseUrl(), NullLogger<NotificationsApi>.Instance);
     }
 
     private sealed class NoopHandler : HttpMessageHandler
@@ -144,10 +145,10 @@ public class ServerNotificationsAlarmRuleTests
         // signalk-course-data publishes the arrival cue under
         // notifications.navigation.course.arrivalCircleEntered (or
         // the bare notifications.navigation.arrivalCircleEntered on
-        // some builds). Both must surface as title "APPROACH" so
-        // MainLayout.razor's `a.Title == "APPROACH"` test still
-        // renders the "Next WP" advance button on the banner. Pin
-        // both shapes here so a future schema flip is caught.
+        // some builds). Both must surface as title "APPROACH" (the
+        // banner text the helm knows; the Next WP button keys off
+        // AlarmRuleId.Approach, pinned in AlarmRuleIdTests). Pin both
+        // shapes here so a future schema flip is caught.
         var (title1, msg1) = ServerNotificationsAlarmRule.DeriveTitleAndDefault(
             "notifications.navigation.course.arrivalCircleEntered");
         await Assert.That(title1).IsEqualTo("APPROACH");

@@ -243,12 +243,17 @@
                 : 1;
             int dotIdx = 0;
         }
-        @foreach (var pt in windPoints)
-        {
-            if (pt.Time < windowCutoff) continue;
-            if (dotIdx++ % roseStride != 0) continue;
-            <circle cx="@pt.X" cy="@pt.Y" r="2.5" fill="@pt.Color" opacity="0.6" />
-        }
+        @* Grouped so night mode can red-shift the viridis speed ramp
+           in one place (.wind-rose-speed in app.css); every other
+           stroke on this SVG is token-driven. *@
+        <g class="wind-rose-speed">
+            @foreach (var pt in windPoints)
+            {
+                if (pt.Time < windowCutoff) continue;
+                if (dotIdx++ % roseStride != 0) continue;
+                <circle cx="@pt.X" cy="@pt.Y" r="2.5" fill="@pt.Color" opacity="0.6" />
+            }
+        </g>
 
         @* Polar curve overlay (when polar loaded and TWS available) *@
         @if (Polar.HasPolar && SignalkClient.Data.WindSpeedTrue is not null)
@@ -343,7 +348,7 @@
                                 <stop offset="100%" stop-color="#fde725" />
                             </linearGradient>
                         </defs>
-                        <rect x="0" y="0" width="16" height="180" fill="url(#@GradientId)" rx="2" />
+                        <rect class="wind-rose-speed" x="0" y="0" width="16" height="180" fill="url(#@GradientId)" rx="2" />
                         @SvgText(20, 12, $"{MaxSpeedKn:F0}", "currentColor", 10, anchor: "start")
                         @SvgText(20, 95, $"{MaxSpeedKn / 2:F0}", "currentColor", 10, anchor: "start")
                         @SvgText(20, 178, "0", "currentColor", 10, anchor: "start")
@@ -377,12 +382,10 @@
        suppressed individually when their channel lacks >=5 samples
        or <30 s of span. *@
     @{
-        var visibleDir = GetHistorySamples(heroMode, "direction");
-        var visibleSpd = GetHistorySamples(heroMode, "speed");
-        bool hasDirHistory = visibleDir.Count >= 5
-            && (visibleDir[^1].Time - visibleDir[0].Time).TotalSeconds >= 30;
-        bool hasSpdHistory = visibleSpd.Count >= 5
-            && (visibleSpd[^1].Time - visibleSpd[0].Time).TotalSeconds >= 30;
+        var visibleDir = GetHistorySeries(heroMode, "direction");
+        var visibleSpd = GetHistorySeries(heroMode, "speed");
+        bool hasDirHistory = visibleDir.Count >= 5 && visibleDir.Span.TotalSeconds >= 30;
+        bool hasSpdHistory = visibleSpd.Count >= 5 && visibleSpd.Span.TotalSeconds >= 30;
         int totalHistoryCount = Avg.Twd.Count + Avg.Tws.Count
                               + Avg.Awa.Count + Avg.Aws.Count;
         string dirSourceLabel = heroMode == "true" ? "TWD" : "AWA";
@@ -732,6 +735,7 @@
         heroMode = Settings.WindHeroMode;
 
         UpdateCurrentReadouts();
+        _handleDataThrottle = new RenderThrottle(HandleDataThrottle, HandleSignalkData);
         SignalkClient.OnDataChanged += HandleSignalkDataThrottled;
         await Polar.InitializeAsync();
 
@@ -825,39 +829,10 @@
     /// <para>Page-local: MainLayout, Alarm pipeline, and
     /// NavigationAverages stay direct subscribers so live sampling
     /// continues at full rate.</para></summary>
-    private const long HandleDataThrottleMs = 300;
-    private long _lastHandleDataTicks;
-    private int _handleDataPending;
+    private static readonly TimeSpan HandleDataThrottle = TimeSpan.FromMilliseconds(300);
+    private RenderThrottle? _handleDataThrottle;
 
-    /// <summary>Leading + trailing throttle wrapper around the real
-    /// <see cref="HandleSignalkData"/> handler. First delta in a quiet
-    /// period fires immediately; subsequent deltas inside the window
-    /// are coalesced into a single trailing fire at window end. The
-    /// CAS-guarded pending flag ensures only one trailing scheduler is
-    /// parked at a time even if the SignalK receive loop surfaces
-    /// multiple deltas concurrently.</summary>
-    private void HandleSignalkDataThrottled()
-    {
-        long now = Environment.TickCount64;
-        long elapsed = now - _lastHandleDataTicks;
-        if (elapsed >= HandleDataThrottleMs)
-        {
-            _lastHandleDataTicks = now;
-            HandleSignalkData();
-            return;
-        }
-        if (Interlocked.CompareExchange(ref _handleDataPending, 1, 0) != 0) return;
-        _ = ScheduleTrailingHandleDataAsync((int)(HandleDataThrottleMs - elapsed));
-    }
-
-    private async Task ScheduleTrailingHandleDataAsync(int delayMs)
-    {
-        try { await Task.Delay(delayMs); }
-        catch { /* clock weirdness; drain anyway below */ }
-        _handleDataPending = 0;
-        _lastHandleDataTicks = Environment.TickCount64;
-        HandleSignalkData();
-    }
+    private void HandleSignalkDataThrottled() => _handleDataThrottle?.Request();
 
     /// <summary>SignalkClient.OnDataChanged handler (after throttle).
     /// Refreshes the hero readouts, appends a polar dot if AWA + AWS
@@ -1038,6 +1013,7 @@
     public void Dispose()
     {
         SignalkClient.OnDataChanged -= HandleSignalkDataThrottled;
+        _handleDataThrottle?.Dispose();
         _seedCts?.Cancel();
         _seedCts?.Dispose();
     }
@@ -1054,15 +1030,9 @@
     /// 1 kn variations matter visually.</para>
     /// </summary>
     private static (double Min, double Max, double Mean) ComputeYAxis(
-        IReadOnlyList<OnaPlotter.Utilities.TimeSeriesSample> samples, string view)
+        OnaPlotter.Utilities.ChartSeries series, string view)
     {
-        double vMin = double.MaxValue, vMax = double.MinValue, sum = 0;
-        foreach (var s in samples)
-        {
-            if (s.Value < vMin) vMin = s.Value;
-            if (s.Value > vMax) vMax = s.Value;
-            sum += s.Value;
-        }
+        double vMin = series.Min, vMax = series.Max;
         double vMid = (vMin + vMax) / 2;
         double minRange = view == "speed" ? 4 : 20;
         double pad = view == "speed" ? 1 : 5;
@@ -1080,7 +1050,7 @@
         // 360-wide range here; the snap still yields a nice step
         // (e.g. 90) at that extreme.
         (minBound, maxBound) = SnapToNiceAxis(minBound, maxBound, view);
-        return (minBound, maxBound, sum / samples.Count);
+        return (minBound, maxBound, series.Mean);
     }
 
     /// <summary>
@@ -1134,7 +1104,7 @@
     ///   line + polyline + 4 time labels added up under the throttled
     ///   render rate.</item>
     /// </list>
-    /// Inputs already projected (kn or deg) by <see cref="GetHistorySamples"/>.
+    /// Input already projected (kn or deg) by <see cref="GetHistorySeries"/>.
     /// <para>Speed view fills the area below the polyline so the
     /// helm distinguishes the two charts from peripheral vision -
     /// without that the direction and speed charts look identical
@@ -1142,10 +1112,11 @@
     /// the axis unit label to tell apart.</para>
     /// </summary>
     private MarkupString BuildHistoryChartSvg(
-        IReadOnlyList<OnaPlotter.Utilities.TimeSeriesSample> samples,
+        OnaPlotter.Utilities.ChartSeries series,
         string view)
     {
-        var (yMin, yMax, yMean) = ComputeYAxis(samples, view);
+        var (yMin, yMax, yMean) = ComputeYAxis(series, view);
+        var samples = series.Vertices;
         DateTime oldest = samples[0].Time;
         DateTime newest = samples[^1].Time;
         double timeSpanSecs = Math.Max((newest - oldest).TotalSeconds, 1);
@@ -1259,79 +1230,87 @@
     }
 
     /// <summary>
-    /// Generates the SVG polyline points string for the history chart.
-    /// Each <see cref="OnaPlotter.Utilities.TimeSeriesSample"/> already
-    /// carries the projected value (kn or deg) - the view-specific
-    /// projection happens in <see cref="GetHistorySamples"/>.
-    /// <para>Stride-subsampled to <see cref="MaxRenderedChartPoints"/>
-    /// vertices; the first and last samples are always emitted so the
-    /// polyline spans the full window and the rightmost "now" tick
-    /// stays anchored. Axis bounds and the mean line still use every
-    /// sample (see <see cref="ComputeYAxis"/>) so the chart's
-    /// numerical context isn't subsampled - only the drawn vertices.</para>
+    /// Generates the SVG polyline points string for the history chart
+    /// from the already-decimated vertices of a <see cref="GetHistorySeries"/>
+    /// result. Axis bounds and the mean line come from the series' stats
+    /// over every in-window sample (see <see cref="ComputeYAxis"/>), so
+    /// only the drawn vertices are subsampled.
     /// </summary>
-    private string HistoryPolylinePoints(
-        IReadOnlyList<OnaPlotter.Utilities.TimeSeriesSample> samples,
+    private static string HistoryPolylinePoints(
+        IReadOnlyList<OnaPlotter.Utilities.TimeSeriesSample> vertices,
         double yMin, double yMax, DateTime oldest, double timeSpanSecs)
     {
-        var sb = new System.Text.StringBuilder();
+        var sb = new System.Text.StringBuilder(vertices.Count * 12);
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
         double range = yMax - yMin;
-        int stride = samples.Count > MaxRenderedChartPoints
-            ? (int)Math.Ceiling(samples.Count / (double)MaxRenderedChartPoints)
-            : 1;
-        int last = samples.Count - 1;
-        for (int i = 0; i < samples.Count; i++)
+        foreach (var s in vertices)
         {
-            // Always emit the endpoints so the line touches both axes;
-            // skip intermediate samples on the stride to cap vertex count.
-            if (i != 0 && i != last && i % stride != 0) continue;
-            var s = samples[i];
             double t = (s.Time - oldest).TotalSeconds;
             double x = WpPad + WpPlotW * (t / timeSpanSecs);
             double y = WpPad + WpPlotH * (1 - (s.Value - yMin) / range);
             if (sb.Length > 0) sb.Append(' ');
-            sb.Append($"{x:F1},{y:F1}");
+            sb.Append(x.ToString("F1", ci)).Append(',').Append(y.ToString("F1", ci));
         }
         return sb.ToString();
     }
 
-    /// <summary>Pulls the trailing-window samples from
-    /// <see cref="INavigationAverages"/> and projects them into the
-    /// active view's display unit (kn for speed, deg [0, 360) for
-    /// direction). Source buffer follows the unified mode:
+    /// <summary>Cache key for a projected history series. The window's
+    /// trailing edge slides with the clock even when no sample lands, so
+    /// the second bucket forces a rebuild at most once a second while the
+    /// buffer is idle; otherwise a rebuild happens only when the buffer
+    /// changed (Version), the source flipped (apparent / true) or the helm
+    /// picked another window.</summary>
+    private readonly record struct HistorySeriesKey(object Source, long Version, int WindowMinutes, long Second);
+
+    private HistorySeriesKey _dirSeriesKey;
+    private HistorySeriesKey _spdSeriesKey;
+    private OnaPlotter.Utilities.ChartSeries _dirSeries = OnaPlotter.Utilities.ChartSeries.Empty;
+    private OnaPlotter.Utilities.ChartSeries _spdSeries = OnaPlotter.Utilities.ChartSeries.Empty;
+
+    /// <summary>Trailing-window chart series from
+    /// <see cref="INavigationAverages"/>, projected into the view's
+    /// display unit (kn for speed, deg [0, 360) for direction) and
+    /// decimated to <see cref="MaxRenderedChartPoints"/> vertices.
+    /// Source buffer follows the unified mode:
     ///   apparent + speed     -> AWS
     ///   apparent + direction -> AWA
     ///   true     + speed     -> TWS
     ///   true     + direction -> TWD
-    /// Each render evaluates this once and the result is reused for
-    /// axis bounds + polyline emission.</summary>
-    private IReadOnlyList<OnaPlotter.Utilities.TimeSeriesSample> GetHistorySamples(string mode, string view)
+    /// Cached per <see cref="HistorySeriesKey"/>: at the 3 Hz render rate
+    /// most renders reuse the previous projection.</summary>
+    private OnaPlotter.Utilities.ChartSeries GetHistorySeries(string mode, string view)
     {
         var window = TimeSpan.FromMinutes(windowMinutes);
+        long second = Environment.TickCount64 / 1000;
         if (view == "speed")
         {
             var source = mode == "true" ? Avg.Tws : Avg.Aws;
-            var raw = source.SnapshotIn(window);
-            var result = new List<OnaPlotter.Utilities.TimeSeriesSample>(raw.Count);
-            foreach (var s in raw)
+            var key = new HistorySeriesKey(source, source.Version, windowMinutes, second);
+            if (key != _spdSeriesKey)
             {
-                result.Add(new(s.Time, s.Value * MsToKnots));
+                _spdSeries = source.ChartIn(window, MaxRenderedChartPoints, MsToKnotsProjection);
+                _spdSeriesKey = key;
             }
-            return result;
+            return _spdSeries;
         }
-        // Direction view: rad -> deg, normalised to [0, 360). AWA in
-        // apparent mode is bow-relative ±π in the buffer; the same
-        // normalisation maps that to 0..360 (port wind shows as 270..359).
         var dirSource = mode == "true" ? Avg.Twd : Avg.Awa;
-        var rawDir = dirSource.SnapshotIn(window);
-        var dirResult = new List<OnaPlotter.Utilities.TimeSeriesSample>(rawDir.Count);
-        foreach (var s in rawDir)
+        var dirKey = new HistorySeriesKey(dirSource, dirSource.Version, windowMinutes, second);
+        if (dirKey != _dirSeriesKey)
         {
-            double deg = s.Value * 180.0 / Math.PI;
-            if (deg < 0) deg += 360;
-            dirResult.Add(new(s.Time, deg));
+            _dirSeries = dirSource.ChartIn(window, MaxRenderedChartPoints, CompassDegreesProjection);
+            _dirSeriesKey = dirKey;
         }
-        return dirResult;
+        return _dirSeries;
+    }
+
+    private static double MsToKnotsProjection(double ms) => ms * MsToKnots;
+
+    /// <summary>rad to deg in [0, 360). AWA is bow-relative ±π in the
+    /// buffer; the same normalisation shows port wind as 270..359.</summary>
+    private static double CompassDegreesProjection(double rad)
+    {
+        double deg = rad * 180.0 / Math.PI;
+        return deg < 0 ? deg + 360 : deg;
     }
 
     /// <summary>One projected polar dot. <see cref="Time"/> is the

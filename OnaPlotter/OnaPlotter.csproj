@@ -159,8 +159,8 @@
        covers wwwroot/js where the Leaflet glue, AIS layer, error
        relay etc. live (~25 files, mostly hand-formatted for
        readability). esbuild produces identical-but-compact output
-       in one invocation: no bundling, no source-map by default, no
-       path changes - the same files Blazor expects to import live
+       in one invocation: no source-map by default, no path changes
+       (the interop graph is bundled separately below) - the same files Blazor expects to import live
        at the same paths, just smaller. ~30 to 40 percent size cut,
        brotli stacks on top.
 
@@ -170,7 +170,7 @@
        step; locally the deploy.ps1 wrapper / `dotnet publish` user
        has to remember it. The CheckEsbuildPresent guard below
        surfaces a clear error instead of a cryptic npx failure. -->
-  <Target Name="CheckEsbuildPresent" BeforeTargets="MinifyPublishedJs"
+  <Target Name="CheckEsbuildPresent" BeforeTargets="MinifyPublishedJs;BundleInteropModules;MinifyPublishedCss"
           Condition="'$(Configuration)' == 'Release'">
     <Error Text="esbuild not found in node_modules. Run 'npm ci' from the repo root before publishing in Release."
            Condition="!Exists('$(MSBuildThisFileDirectory)..\node_modules\esbuild\package.json')" />
@@ -186,6 +186,36 @@
     <Exec Command="npx --no-install esbuild --minify --allow-overwrite --outdir=&quot;$(PublishDir)wwwroot\js&quot; --outbase=&quot;$(PublishDir)wwwroot\js&quot; @(_JsToMinify->'&quot;%(FullPath)&quot;', ' ')"
           WorkingDirectory="$(MSBuildThisFileDirectory)..\"
           Condition="'@(_JsToMinify)' != ''" />
+  </Target>
+
+  <!-- Bundle leafletInterop.js and its static imports into one hashed
+       module (js/leafletInterop.<HASH>.js) and turn the published
+       leafletInterop.js into a one-line re-export of it, so a cold boot
+       loads two scripts instead of ~30 through the service worker's
+       network-first race. The bundle's name changes with its content,
+       so the service worker serves it cache-first as immutable. Built
+       from the source tree; C# keeps importing ./js/leafletInterop.js
+       in both configurations (Debug serves the unbundled modules). -->
+  <Target Name="BundleInteropModules"
+          AfterTargets="MinifyPublishedJs"
+          Condition="'$(Configuration)' == 'Release'">
+    <Exec Command="node &quot;$(MSBuildThisFileDirectory)..\scripts\bundle-interop.mjs&quot; &quot;$(MSBuildProjectDirectory)\wwwroot\js&quot; &quot;$(PublishDir)wwwroot\js&quot;"
+          WorkingDirectory="$(MSBuildThisFileDirectory)..\" />
+  </Target>
+
+  <!-- Same esbuild pass for the stylesheets: app.css is hand-formatted
+       and heavily commented (~370 KB raw, ~135 KB minified). Paths stay
+       put, so index.html and the service worker need no change. -->
+  <Target Name="MinifyPublishedCss"
+          AfterTargets="MinifyPublishedJs"
+          Condition="'$(Configuration)' == 'Release'">
+    <ItemGroup>
+      <_CssToMinify Include="$(PublishDir)wwwroot\css\**\*.css" />
+    </ItemGroup>
+    <Message Text="esbuild: minifying wwwroot/css in $(PublishDir)" Importance="high" />
+    <Exec Command="npx --no-install esbuild --minify --allow-overwrite --outdir=&quot;$(PublishDir)wwwroot\css&quot; --outbase=&quot;$(PublishDir)wwwroot\css&quot; @(_CssToMinify->'&quot;%(FullPath)&quot;', ' ')"
+          WorkingDirectory="$(MSBuildThisFileDirectory)..\"
+          Condition="'@(_CssToMinify)' != ''" />
   </Target>
 
   <!-- Stamp the published service-worker.js CACHE_NAME with the git
@@ -210,6 +240,31 @@
     </PropertyGroup>
     <Exec Command="node &quot;$(MSBuildThisFileDirectory)..\scripts\stamp-cache-name.mjs&quot; &quot;$(_SwPath)&quot; &quot;$(OnaGitHash)&quot;"
           Condition="Exists('$(_SwPath)')" />
+  </Target>
+
+  <!-- The SDK writes .br / .gz siblings for every static asset BEFORE the
+       three targets above rewrite js/, css/ and service-worker.js, so
+       those siblings hold the unminified, unstamped bytes. Delete them:
+       a server that negotiates encodings would otherwise hand returning
+       helms the old CACHE_NAME and never invalidate their cache. -->
+  <Target Name="DropStalePrecompressedSiblings"
+          AfterTargets="StampPublishedServiceWorker"
+          Condition="'$(Configuration)' == 'Release'">
+    <ItemGroup>
+      <_StaleCompressed Include="$(PublishDir)wwwroot\js\**\*.js.br;$(PublishDir)wwwroot\js\**\*.js.gz" />
+      <_StaleCompressed Include="$(PublishDir)wwwroot\css\**\*.css.br;$(PublishDir)wwwroot\css\**\*.css.gz" />
+      <_StaleCompressed Include="$(PublishDir)wwwroot\service-worker.js.br;$(PublishDir)wwwroot\service-worker.js.gz" />
+    </ItemGroup>
+    <Delete Files="@(_StaleCompressed)" />
+  </Target>
+
+  <!-- Regenerate .br / .gz siblings for js/, css/ and lib/ from the final
+       (minified, bundled) bytes. deploy/index.js serves them to clients
+       that accept the encoding; _framework/ keeps the SDK's siblings. -->
+  <Target Name="PrecompressPublishedAssets"
+          AfterTargets="DropStalePrecompressedSiblings"
+          Condition="'$(Configuration)' == 'Release'">
+    <Exec Command="node &quot;$(MSBuildThisFileDirectory)..\scripts\precompress.mjs&quot; &quot;$(PublishDir)wwwroot\js&quot; &quot;$(PublishDir)wwwroot\css&quot; &quot;$(PublishDir)wwwroot\lib&quot;" />
   </Target>
 
 </Project>

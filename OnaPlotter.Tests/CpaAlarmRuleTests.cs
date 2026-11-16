@@ -149,30 +149,113 @@ public class CpaAlarmRuleTests
         await Assert.That(rule.Check(Ctx(OwnShipUnderway(), [threat], new FakeSettings()))).IsNull();
     }
 
-    [Test]
-    public async Task ExemptsNearStationaryTargets_AfterDwell()
+    private static NavigationData OwnShipAt(double sogMs)
     {
-        // A vessel parked at 0.25 kn right in front of us should be
-        // treated as moored once the dwell (60s, see
-        // MooredVesselTracker.MooredHoldSeconds) has elapsed. First
-        // tick still fires - the tracker isn't convinced yet; the
-        // second tick past 60s later skips. Exercises the dwell flow
-        // end-to-end through the rule's private tracker.
+        var nav = new NavigationData();
+        nav.ApplyPosition(OwnLat, OwnLon);
+        nav.Apply("navigation.courseOverGroundTrue", OwnCogRad);
+        nav.Apply("navigation.speedOverGround", sogMs);
+        return nav;
+    }
+
+    private const double Kn = 0.514444;
+
+    [Test]
+    public async Task ExemptsNearStationaryTargets_AfterDwell_WhenOwnShipSlow()
+    {
+        // Marina manoeuvring: own at 1 kn, a boat parked at 0.25 kn
+        // right ahead. Once the moored dwell (60 s, see
+        // MooredVesselTracker.MooredHoldSeconds) has elapsed the target
+        // is exempt. First tick still fires: the tracker isn't
+        // convinced yet.
         var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
-        var nav = OwnShipUnderway();
-        var parked = ThreatNorthOf(120, speedMs: 0.25, name: "Anchored Cat");
+        var nav = OwnShipAt(1 * Kn);
+        var parked = ThreatNorthOf(60, speedMs: 0.25, name: "Anchored Cat");
         var t0 = DateTime.UtcNow;
 
-        // First observation: not yet moored. The CPA geometry fires
-        // (head-on inside 200 m).
         var first = rule.Check(Ctx(nav, [parked], new FakeSettings(), now: t0));
         await Assert.That(first).IsNotNull();
 
-        // 61 s later: tracker has dwelled through the threshold and
-        // the vessel is skipped.
         var later = rule.Check(Ctx(nav, [parked], new FakeSettings(),
             now: t0.AddSeconds(61)));
         await Assert.That(later).IsNull();
+    }
+
+    [Test]
+    public async Task MooredTarget_StillAlarms_WhenOwnShipUnderwayAtSpeed()
+    {
+        // A moored / anchored hull dead ahead is exactly what the
+        // alarm exists for when we are making way: a stationary target
+        // on our track is a collision, not a nuisance.
+        var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
+        var moored = ThreatNorthOf(300, speedMs: 0.0, name: "Moored");
+        moored.NavigationState = "moored";
+
+        var alarm = rule.Check(Ctx(OwnShipAt(6 * Kn), [moored], new FakeSettings()));
+
+        await Assert.That(alarm).IsNotNull();
+    }
+
+    [Test]
+    public async Task NotUnderCommand_DriftingTarget_Alarms_OwnAt6Kn()
+    {
+        // Review case: own 6 kn on a collision course with a vessel not
+        // under command drifting at 0.5 kn. NUC is the vessel least able
+        // to keep clear; it must never be exempt.
+        var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
+        var nuc = ThreatNorthOf(400, speedMs: 0.5 * Kn, name: "NUC");
+        nuc.NavigationState = "not under command";
+        var t0 = TestClock.FixedUtcNow;
+
+        // Fire on the first tick AND after the moored dwell would have
+        // elapsed, so neither the nav-state path nor the SOG-dwell
+        // heuristic can exempt it.
+        await Assert.That(rule.Check(Ctx(OwnShipAt(6 * Kn), [nuc], new FakeSettings(), now: t0))).IsNotNull();
+        await Assert.That(rule.Check(Ctx(OwnShipAt(6 * Kn), [nuc], new FakeSettings(), now: t0.AddSeconds(120)))).IsNotNull();
+    }
+
+    [Test]
+    [Arguments("not under command")]
+    [Arguments("aground")]
+    [Arguments("restricted manoeuverability")]
+    [Arguments("restricted maneuverability")]
+    public async Task RestrictedOrAgroundTarget_NeverExempt_EvenWhenOwnShipSlow(string navState)
+    {
+        // These states mark a hazard the helm must avoid, not a parked
+        // neighbour; low own speed does not make them safe to ignore.
+        var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
+        var target = ThreatNorthOf(60, speedMs: 0.0, name: "Restricted");
+        target.NavigationState = navState;
+        var t0 = TestClock.FixedUtcNow;
+
+        await Assert.That(rule.Check(Ctx(OwnShipAt(1 * Kn), [target], new FakeSettings(), now: t0))).IsNotNull();
+        await Assert.That(rule.Check(Ctx(OwnShipAt(1 * Kn), [target], new FakeSettings(), now: t0.AddSeconds(120)))).IsNotNull();
+    }
+
+    [Test]
+    public async Task BothSlowInMarina_MooredTarget_NoAlarm()
+    {
+        // Review case: own creeping at 0.5 kn through a marina towards a
+        // boat on its berth. Moored neighbours are expected at close
+        // range here; alarming on every one trains the helm to mute it.
+        var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
+        var berth = ThreatNorthOf(40, speedMs: 0.0, name: "On berth");
+        berth.NavigationState = "moored";
+
+        await Assert.That(rule.Check(Ctx(OwnShipAt(0.5 * Kn), [berth], new FakeSettings()))).IsNull();
+    }
+
+    [Test]
+    public async Task OwnSlowThreshold_Boundary()
+    {
+        // At the threshold the exemption no longer applies; just below
+        // it does.
+        var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
+        var berth = ThreatNorthOf(60, speedMs: 0.0, name: "On berth");
+        berth.NavigationState = "anchored";
+
+        await Assert.That(rule.Check(Ctx(OwnShipAt(CpaAlarmRule.OwnShipSlowSogMs), [berth], new FakeSettings()))).IsNotNull();
+        await Assert.That(rule.Check(Ctx(OwnShipAt(CpaAlarmRule.OwnShipSlowSogMs - 0.01), [berth], new FakeSettings()))).IsNull();
     }
 
     [Test]
@@ -281,18 +364,101 @@ public class CpaAlarmRuleTests
     }
 
     [Test]
-    public async Task Returns_HighestPriority_Or_FirstMatch_InVesselEnumeration()
+    public async Task CheckMany_EmitsOneAlarmPerQualifyingTarget()
     {
-        // When two vessels both qualify we accept whichever the rule
-        // happens to hit first (the spec is "any threat fires"; the
-        // AlarmManager orders + stacks). Just assert SOME threat fires
-        // and the TargetKey is one of the two inputs.
+        // Two simultaneous collision threats must both reach the
+        // manager. With a single result per tick the rule surfaced
+        // whichever vessel AisStore enumerated first and hid the other,
+        // and a dismiss on the first then silenced the second for the
+        // whole 15 min CPA cooldown.
         var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
-        var a = ThreatNorthOf(200, name: "Close A");
-        var b = ThreatNorthOf(300, name: "Close B");
-        var alarm = rule.Check(Ctx(OwnShipUnderway(), [a, b], new FakeSettings()));
-        await Assert.That(alarm).IsNotNull();
-        await Assert.That(alarm!.TargetKey == a.Context || alarm.TargetKey == b.Context).IsTrue();
+        var far = ThreatNorthOf(600, name: "Far");
+        var near = ThreatNorthOf(200, name: "Near");
+        var alarms = ((IAlarmRule)rule).CheckMany(Ctx(OwnShipUnderway(), [far, near], new FakeSettings())).ToList();
+
+        await Assert.That(alarms.Select(a => a.TargetKey!)).IsEquivalentTo([far.Context, near.Context]);
+        await Assert.That(alarms.All(a => a.RuleId == AlarmRuleId.Cpa)).IsTrue();
+    }
+
+    [Test]
+    public async Task Check_ReturnsMostImminentTarget()
+    {
+        // The single-result view is the most imminent threat, not the
+        // first in enumeration order.
+        var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
+        var far = ThreatNorthOf(600, name: "Far");
+        var near = ThreatNorthOf(200, name: "Near");
+        var alarm = rule.Check(Ctx(OwnShipUnderway(), [far, near], new FakeSettings()));
+
+        await Assert.That(alarm!.TargetKey).IsEqualTo(near.Context);
+    }
+
+    [Test]
+    public async Task Manager_SurfacesMostImminent_AndDismissIsPerTarget()
+    {
+        // End to end through the manager: the nearer threat tops the
+        // stack (TTI ordering), and dismissing it leaves the other
+        // threat on the banner instead of silencing every CPA alarm.
+        var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
+        var clock = TestClock.FixedUtcNow;
+        var mgr = new AlarmManager([rule], new DelegateTimeProvider(() => clock));
+        var settings = new FakeSettings();
+        var far = ThreatNorthOf(600, name: "Far");
+        var near = ThreatNorthOf(200, name: "Near");
+
+        mgr.Evaluate(OwnShipUnderway(), [far, near], settings);
+        await Assert.That(mgr.ActiveAlarm!.TargetKey).IsEqualTo(near.Context);
+        await Assert.That(mgr.AllActiveAlarms.Count).IsEqualTo(2);
+
+        await mgr.DismissAsync(mgr.ActiveAlarm);
+        clock = clock.AddSeconds(2);
+        mgr.Evaluate(OwnShipUnderway(), [far, near], settings);
+
+        await Assert.That(mgr.AllActiveAlarms.Select(a => a.TargetKey!)).IsEquivalentTo([far.Context]);
+    }
+
+    [Test]
+    public async Task UsesTrueCourse_WhenHelmPrefersMagneticDisplay()
+    {
+        // AIS COG is true. Own COG must be true too, whatever the HUD
+        // shows: a 20 deg magnetic offset moves a 1.5 km head-on
+        // closer from CPA ~0 nm to ~0.14 nm and silences the alarm.
+        var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
+        var nav = new NavigationData { PreferMagneticCourse = true };
+        nav.ApplyPosition(OwnLat, OwnLon);
+        nav.Apply("navigation.courseOverGroundTrue", 0.0);
+        nav.Apply("navigation.courseOverGroundMagnetic", 20 * Math.PI / 180);
+        nav.Apply("navigation.speedOverGround", OwnSogMs);
+        var threat = ThreatNorthOf(1500, speedMs: 5, name: "Head-on");
+
+        await Assert.That(rule.Check(Ctx(nav, [threat], new FakeSettings()))).IsNotNull();
+    }
+
+    [Test]
+    public async Task ProjectsTargetFromLastFixToNow()
+    {
+        // Head-on closer reported 3000 m north 120 s ago at 5 m/s: it is
+        // now ~2400 m north. Closing at 10 m/s, TCPA must be ~4 min, not
+        // the ~5 min the raw fix gives.
+        var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
+        var t0 = TestClock.FixedUtcNow;
+        var threat = ThreatNorthOf(3000, speedMs: 5, name: "Closing");
+        threat.PositionUpdatedUtc = t0.AddSeconds(-120);
+
+        var alarm = rule.Check(Ctx(OwnShipUnderway(), [threat], new FakeSettings(), now: t0));
+
+        await Assert.That(alarm!.TimeToEventMinutes!.Value).IsEqualTo(4.0).Within(0.05);
+    }
+
+    [Test]
+    public async Task SkipsTargetWhoseFixIsTooOldToProject()
+    {
+        var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
+        var t0 = TestClock.FixedUtcNow;
+        var threat = ThreatNorthOf(200, speedMs: 5, name: "Lost");
+        threat.PositionUpdatedUtc = t0 - OnaPlotter.Utilities.AisDeadReckoning.MaxProjectionAge - TimeSpan.FromSeconds(1);
+
+        await Assert.That(rule.Check(Ctx(OwnShipUnderway(), [threat], new FakeSettings(), now: t0))).IsNull();
     }
 
     [Test]

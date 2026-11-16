@@ -32,6 +32,7 @@ public sealed class AisStore
 
     private AisVessel[]? _cachedSnapshot;
     private DateTime _lastPruneTime;
+    private readonly TimeProvider _time;
     private int _version;
     private int _snapshotVersion = -1;
 
@@ -49,20 +50,24 @@ public sealed class AisStore
     /// Production constructor. Reads the helm-configured prune window from
     /// <see cref="IMapDisplaySettings.AisRemoveMinutes"/>.
     /// </summary>
-    public AisStore(IMapDisplaySettings settings)
+    public AisStore(IMapDisplaySettings settings, TimeProvider time)
     {
-        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _settings = settings;
+        _time = time;
     }
 
     /// <summary>
     /// Settings-less constructor for tests + standalone fixtures. Pruning
-    /// falls back to <see cref="DefaultRemoveMinutes"/> (10 min, the
-    /// historical hard-coded value).
+    /// falls back to <see cref="DefaultRemoveMinutes"/> (10 min).
     /// </summary>
-    public AisStore()
+    public AisStore(TimeProvider time)
     {
         _settings = null;
+        _time = time;
     }
+
+    /// <summary>Settings-less, system clock.</summary>
+    public AisStore() : this(TimeProvider.System) { }
 
     /// <summary>
     /// Gets or creates a vessel entry for the given SignalK context, then applies the path/value.
@@ -77,7 +82,7 @@ public sealed class AisStore
     /// <c>timestamp</c> field, when available. Forwarded to
     /// <see cref="AisVessel.Apply"/> so the per-vessel staleness clock tracks
     /// the wire-supplied instant instead of delta-arrival time.</param>
-    public void Apply(string context, string path, object? value, DateTime? skTimestamp = null)
+    public void Apply(string context, string path, DeltaValue value, DateTime? skTimestamp = null)
     {
         // Block-list guard: once SignalkClient identifies the self-URN,
         // any further deltas on that context are dropped so own-boat
@@ -85,7 +90,7 @@ public sealed class AisStore
         if (_blocklist.ContainsKey(context)) return;
         var vessel = _vessels.GetOrAdd(context, ctx =>
         {
-            var v = new AisVessel(ctx);
+            var v = new AisVessel(ctx, _time);
             if (ctx.StartsWith(RadarContextPrefix, StringComparison.Ordinal))
             {
                 v.Source = TargetSource.Radar;
@@ -119,7 +124,7 @@ public sealed class AisStore
     public AisVessel[] GetVessels()
     {
         // Throttled pruning: at most once per PruneInterval.
-        var now = DateTime.UtcNow;
+        var now = _time.GetUtcNow().UtcDateTime;
         if (now - _lastPruneTime > PruneInterval)
         {
             _lastPruneTime = now;
@@ -145,12 +150,16 @@ public sealed class AisStore
         // this tick lands on the next one (the version counter then
         // forces a fresh rebuild). The earlier "single-thread WASM"
         // comment was wrong about test-time invariants.
+        // Enumerate the dictionary itself, not .Values: Values takes
+        // every bucket lock and copies the whole value list on each
+        // call, while the dictionary enumerator is lock-free.
         int max = _vessels.Count;
         var buf = new AisVessel[max];
         int n = 0;
-        foreach (var v in _vessels.Values)
+        foreach (var kv in _vessels)
         {
             if (n >= buf.Length) break;
+            var v = kv.Value;
             if (v.Latitude is not null && v.Longitude is not null)
                 buf[n++] = v;
         }
@@ -172,8 +181,9 @@ public sealed class AisStore
     /// </summary>
     public bool HasUnnamedAisVessels()
     {
-        foreach (var v in _vessels.Values)
+        foreach (var kv in _vessels)
         {
+            var v = kv.Value;
             if (v.Source == TargetSource.Ais && string.IsNullOrEmpty(v.Name))
                 return true;
         }
@@ -282,7 +292,13 @@ public sealed class AisStore
             // paths (sensors.ais.*, distance-to-self) for a ghost vessel
             // doesn't keep it on the chart forever - the underlying AIS
             // transponder is the source of truth, plugin chatter isn't.
-            if (kvp.Value.LastAisSeen < cutoff)
+            // A vessel with no AIS evidence yet (LastAisSeen still
+            // MinValue) is kept until it is older than the window: one
+            // added a moment ago is mid-Apply, and pruning it would drop
+            // the fix its caller is about to set.
+            var v = kvp.Value;
+            bool awaitingFirstEvidence = v.LastAisSeen == DateTime.MinValue && v.CreatedUtc >= cutoff;
+            if (v.LastAisSeen < cutoff && !awaitingFirstEvidence)
             {
                 _vessels.TryRemove(kvp.Key, out _);
                 Interlocked.Increment(ref _version);

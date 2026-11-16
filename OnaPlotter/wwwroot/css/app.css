@@ -23,20 +23,27 @@
    The fix is the plain 'woff2' format hint - browsers detect
    variation-axis support inside the WOFF2 file itself, so no
    capability is lost.
+   </para>
+   <para>
+   Roman face only: the few italic runs use the browser's synthesized
+   oblique, which saves a second ~390 KB download. The file is subset
+   to Latin (Basic, Latin-1, Extended-A), combining marks, the Greek
+   letters and arrows / math / geometric / misc symbols the UI prints,
+   keeping every OpenType feature (tnum, zero, ...) and both variation
+   axes. Regenerate from the upstream InterVariable.woff2 (rsms/inter)
+   with fontTools (`pip install fonttools brotli`):
+     pyftsubset InterVariable.woff2 --flavor=woff2 --layout-features='*' \
+       --unicodes="U+0020-007E,U+00A0-017F,U+0300-036F,U+0394,U+03A3,U+03A9,U+03BC,U+03C0,U+2000-206F,U+20AC,U+2122,U+2190-21FF,U+2212,U+2248,U+2260,U+2264,U+2265,U+25A0-25FF,U+2600-26FF,U+2713,U+2717" \
+       --output-file=InterVariable.woff2
+   The URL is relative to this stylesheet so it resolves under the
+   SignalK webapp subpath too; index.html preloads the same file.
    </para> */
 @font-face {
     font-family: 'Inter Variable';
     font-style: normal;
     font-weight: 100 900;
     font-display: swap;
-    src: url('/fonts/InterVariable.woff2') format('woff2');
-}
-@font-face {
-    font-family: 'Inter Variable';
-    font-style: italic;
-    font-weight: 100 900;
-    font-display: swap;
-    src: url('/fonts/InterVariable-Italic.woff2') format('woff2');
+    src: url('../fonts/InterVariable.woff2') format('woff2');
 }
 
 :root {
@@ -76,6 +83,15 @@
     --sev-danger-rgb: 239, 68, 68;
     --sev-warn-rgb:   245, 158, 11;
     --sev-ok-rgb:     34, 197, 94;
+
+    /* Alarm banner fills, derived from the severity triad. Theme and
+       night blocks override only where the derived pair would fail
+       contrast (amber + white ink on a light theme, bright fills at
+       night). */
+    --alarm-danger-bg: var(--sev-danger);
+    --alarm-danger-fg: #ffffff;
+    --alarm-warn-bg:   var(--sev-warn);
+    --alarm-warn-fg:   #1a1a1a;
 
     /* ----- User-annotation hue family -----
        Notes and regions are USER-placed, same family as routes. Amber
@@ -159,15 +175,10 @@
        tokens above). */
     --sidebar-shadow: none;
 
-    /* Panel / modal palette. Two tiers:
-       - `--panel-bg`: floating panels docked in page chrome (Layers list,
-         alarm log, full-screen modals like Shortcuts / Legend / Welcome,
-         dialog boxes). Flips to a bright card in light theme.
-       - `--panel-bg-map`: panels that float OVER the map tiles (route
-         edit bar, context menu, FAB menu, nearest-WP chip). Stay dark
-         in every theme - the map tiles are the "background" and these
-         panels need contrast against blue water / satellite imagery.
-       Text / border tokens follow the panel background. */
+    /* Panel / modal palette: floating panels docked in page chrome
+       (Layers list, alarm log, full-screen modals like Shortcuts /
+       Legend / Welcome, dialog boxes). Flips to a bright card in light
+       theme. Text / border tokens follow the panel background. */
     --panel-bg:          rgba(15, 17, 22, 0.92);
     --panel-bg-strong:   rgba(16, 20, 28, 0.96);
     --panel-text:        #e2e8f0;
@@ -177,30 +188,57 @@
        into the chart at typical Layers-panel size. */
     --panel-border:      rgba(255, 255, 255, 0.22);
     --panel-shadow:      0 12px 24px rgba(0, 0, 0, 0.4);
-    /* Map overlays keep the dark tier regardless of theme. */
-    --panel-bg-map:      rgba(15, 17, 22, 0.92);
-    --panel-bg-map-text: #e2e8f0;
 
     /* Route popup tokens (Leaflet popup wrapper with amber-route accent).
        Dark-theme defaults below; light + high-contrast theme blocks
        override with a cream-tinted card so the popup reads on a bright
        basemap without losing the "warm route" identity. Tokenising
-       keeps the three light-theme override blocks (.theme-light,
-       .theme-high-contrast, @media prefers-light .theme-system) free
-       of duplicated literals. */
+       keeps the light and high-contrast theme blocks free of
+       duplicated literals. */
     --route-popup-bg:     rgba(34, 24, 14, 0.96);
     --route-popup-fg:     #e2e8f0;
     --route-popup-border: rgba(224, 159, 62, 0.55);
     --route-popup-title:  #f1c47c;
 
-    /* Z-index stack. Use these consistently to avoid layering conflicts. */
+    /* Z-index stack, lowest to highest. Use these tokens (or a small
+       calc() offset from one) instead of raw numbers.
+         map-layer  in-map decorations
+         hud        HUD card stacks over the chart
+         quick-bar  chart quick-chip bar
+         controls   bottom control bar, map-floating panels and menus
+         popup      in-map dialogs anchored to the chart
+         topbar     sticky top row + its search dropdown; above
+                    Leaflet's own control corners (z 1000)
+         alarm      alarm banner stack, snooze chips, alarm log; never
+                    covered by the topbar or map chrome
+         toast      transient toasts
+         modal      modal scrims (calc(modal - 1)) and dialogs; above
+                    everything interactive so nothing behind stays
+                    tappable
+         fullscreen Blazor error UI */
     --z-map-layer: 10;
     --z-hud: 500;
     --z-quick-bar: 700;
     --z-controls: 800;
     --z-popup: 850;
-    --z-modal: 900;
+    --z-topbar: 1050;
+    --z-alarm: 1100;
+    --z-toast: 1150;
+    --z-modal: 1200;
     --z-fullscreen: 9999;
+
+    /* App-shell geometry. <html> pads itself by the safe-area insets,
+       so the usable height is the dynamic viewport minus the top and
+       bottom insets. Every full-height surface (main, sidebar, map)
+       derives from --app-height so nothing overflows the padded html
+       box in a standalone PWA. */
+    --safe-top:      env(safe-area-inset-top, 0px);
+    --safe-bottom:   env(safe-area-inset-bottom, 0px);
+    --topbar-height: 3rem;
+    --app-height:    calc(100dvh - var(--safe-top) - var(--safe-bottom));
+    --content-height: calc(var(--app-height) - var(--topbar-height));
+    /* Viewport-fixed overlays that sit under the topbar. */
+    --below-topbar:  calc(var(--safe-top) + var(--topbar-height));
 
     /* Map overlay positioning. All floating panels above the control bar use
        --panel-bottom so they stack predictably. Update in one place.
@@ -222,7 +260,7 @@
                           inside the phone @media block below).
          big-type       : ctrl-btn min-height 56 + 10/14 padding ->
                           rendered ~70px regardless of pointer
-                          (override under main:has(.big-type) below).
+                          (override under .page-big-type below).
        Each config's override sets --ctrl-bar-height to the real
        rendered height so --panel-bottom = ctrl-bar-height +
        ctrl-bar-offset + panel-gap places the route HUD's bottom
@@ -301,14 +339,6 @@
     --hud-btn-bg-hover:     rgba(255, 255, 255, 0.12);
     --hud-btn-border:       rgba(255, 255, 255, 0.12);
     --hud-btn-border-hover: rgba(255, 255, 255, 0.25);
-    /* Map overlay accents that need to flip with the page theme so they
-       hold contrast against pastel light tiles. Anchor watch ring is
-       the most visible - green-500 reads fine on a dark chart but
-       washes into the cyan water on the light Mapbox-style basemap. */
-    --map-anchor-ok: #22c55e;
-    --hud-pulse:     #7CC4FF;
-    --hud-warn:      #F5B544;
-    --hud-alarm:     #FF5A4E;
 
     /* Touch & motion */
     --hud-touch-min: 44px;
@@ -397,7 +427,7 @@
    class in sync on <html>; .page still carries a duplicate class for
    any css-isolation rules that referenced it historically. */
 :root.theme-light,
-:root.theme-system {
+:root.theme-system.theme-effective-light {
     --sk-bg: #f8fafc;                 /* slate-50 */
     --sk-surface: #ffffff;
     --sk-surface-hover: #e2e8f0;      /* slate-200 - visible hover delta from slate-50 bg */
@@ -427,6 +457,8 @@
     --sev-ok-rgb:     21, 128, 61;
     --sev-warn-rgb:   180, 83, 9;
     --sev-danger-rgb: 185, 28, 28;
+    /* amber-700 needs light ink: #1a1a1a on it is ~3.4:1. */
+    --alarm-warn-fg:  #ffffff;
 
     /* Chrome palette for light mode. Solid dark slate sidebar (was a
        slate-300 -> slate-400 gradient, which banded on iPad LCDs in
@@ -449,8 +481,7 @@
     --sk-top-row-border: #94a3b8;      /* slate-400 - visible separator under sun */
 
     /* Panel overrides. Chrome-docked / modal panels flip to opaque
-       white cards; map-overlay panels (--panel-bg-map) stay dark for
-       tile contrast. Opaque (was rgba 0.96) so the chart underneath
+       white cards. Opaque (was rgba 0.96) so the chart underneath
        can't bleed into the panel edge under sun. Stronger border
        and shadow so the card silhouette survives polarised glare. */
     --panel-bg:         #ffffff;
@@ -513,63 +544,11 @@
     --route-popup-title:  #0f172a;
 }
 
-/* System mode: only flip to light when the OS is in light mode. When the
-   OS is dark (or prefers-color-scheme is not supported), system falls
-   through to the default dark palette. */
-@media (prefers-color-scheme: dark) {
-    :root.theme-system {
-        --sk-bg: #0f1117;
-        --sk-surface: #1a1e28;
-        --sk-surface-hover: #242a36;
-        --sk-border: #2e3440;
-        --sk-text: #e2e8f0;
-        --sk-text-muted: #94a3b8;
-        --sk-accent: #60a5fa;
-        --sk-accent-dim: #3b82f6;
-        --sk-sidebar-bg: linear-gradient(180deg, #0c1929 0%, #162544 100%);
-        --sk-sidebar-border: transparent;
-        --sk-sidebar-text: rgba(255, 255, 255, 0.65);
-        --sk-sidebar-text-active: #ffffff;
-        --sk-sidebar-hover-bg: rgba(255, 255, 255, 0.06);
-        --sk-sidebar-active-bg: rgba(255, 255, 255, 0.10);
-        --sk-top-row-bg: #1a1d23;
-        --sk-top-row-text: #8a919c;
-        --sk-top-row-border: #363b44;
-
-        /* Snap panel tokens back to the dark defaults. */
-        --panel-bg:         rgba(15, 17, 22, 0.92);
-        --panel-bg-strong:  rgba(16, 20, 28, 0.96);
-        --panel-text:       #e2e8f0;
-        --panel-text-muted: #94a3b8;
-        --panel-border:     rgba(255, 255, 255, 0.12);
-        --panel-shadow:     0 12px 24px rgba(0, 0, 0, 0.4);
-
-        /* Snap HUD card tokens back to the dark defaults too -
-           the system-mode-OS-dark branch must mirror the original
-           :root values, not the light-flipped ones from above. */
-        --hud-card-bg:         #0E1117;
-        --hud-card-stroke-in:  rgba(255, 255, 255, 0.06);
-        --hud-card-stroke-out: rgba(0, 0, 0, 0.5);
-        --hud-card-halo:       0 0 16px rgba(0, 0, 0, 0.4);
-        --hud-ink:             #E8ECF2;
-        --hud-ink-dim:         rgba(232, 236, 242, 0.55);
-        --hud-ink-stale:       rgba(232, 236, 242, 0.40);
-        --hud-divider:         rgba(255, 255, 255, 0.10);
-        --hud-btn-bg:           rgba(255, 255, 255, 0.05);
-        --hud-btn-bg-hover:     rgba(255, 255, 255, 0.12);
-        --hud-btn-border:       rgba(255, 255, 255, 0.12);
-        --hud-btn-border-hover: rgba(255, 255, 255, 0.25);
-        --map-anchor-ok:       #22c55e;
-        /* OS-dark fallthrough on system theme: rail blends with chart, no shadow needed. */
-        --sidebar-shadow:      none;
-
-        /* Snap route-popup tokens back to the dark default amber. */
-        --route-popup-bg:     rgba(34, 24, 14, 0.96);
-        --route-popup-fg:     #e2e8f0;
-        --route-popup-border: rgba(224, 159, 62, 0.55);
-        --route-popup-title:  #f1c47c;
-    }
-}
+/* System mode resolves through .theme-effective-light, which
+   themeApply.js (and the index.html boot seed) set on <html> only when
+   the OS prefers light. On a dark OS the light block above never
+   matches, so every token keeps its :root dark value; there is no
+   second "restore the dark palette" block to drift out of sync. */
 
 /* === High-contrast theme ===
    Bright-sunlight fallback when the regular Light theme washes out on a
@@ -589,13 +568,23 @@
     --sk-text-muted: #1f2937;              /* zinc-800 - still high-contrast */
     --sk-accent: #0b3d91;                  /* deep navy */
     --sk-accent-dim: #082f70;
+    --sk-accent-rgb: 11, 61, 145;
 
     /* Severity tokens get saturated overrides so warning amber and danger
        red stay legible on pure white (the default greens / oranges / reds
-       drop below 7:1 against #fff). */
+       drop below 7:1 against #fff). The -rgb / -bg companions follow so
+       alpha-blended chips and fills stay in the same hue. */
     --sev-ok:     #166534;                 /* green-800 */
     --sev-warn:   #b45309;                 /* amber-700 */
     --sev-danger: #b91c1c;                 /* red-700 */
+    --sev-ok-rgb:     22, 101, 52;
+    --sev-warn-rgb:   180, 83, 9;
+    --sev-danger-rgb: 185, 28, 28;
+    --sev-ok-bg:      rgba(22, 101, 52, 0.14);
+    --sev-warn-bg:    rgba(180, 83, 9, 0.14);
+    --sev-danger-bg:  rgba(185, 28, 28, 0.14);
+    --alarm-warn-fg:  #ffffff;
+    --map-stationary: #1e293b;
 
     --sk-sidebar-bg: linear-gradient(180deg, #1f2937 0%, #0b1120 100%);
     --sk-sidebar-border: #000000;
@@ -677,44 +666,9 @@ html, body {
 .confirm-backdrop,
 .waypoint-dialog,
 .note-dialog,
-.ctx-menu,
-.dropdown-menu,
 .alarm-banner-stack,
 .toast-stack {
     touch-action: manipulation;
-}
-
-/* Theme tokens live on .page (e.g. .page.theme-light redefines
-   --sk-bg / --sk-text / etc), but the html, body rule above reads
-   --sk-bg from :root, so the body backdrop stays dark even when
-   the user picks Light or High-contrast. Result: any text rendered
-   OUTSIDE a card - page h1, h2, h6.page-section-header,
-   .app-page-subtitle - inherits the themed foreground colour but
-   paints on the unthemed (still dark) body BG, dropping to ~1-2.5:1
-   contrast (effectively invisible).
-
-   Hoisting the theme palette one level up via :has() exposes it to
-   :root, so the html/body rule above sees the flipped value. Mirrors
-   what the .night-mode-global rule (further down) does for night
-   mode: the redefinition lives on <html>, body inherits via cascade.
-   No-op when theme is dark/system-OS-dark/system-no-pref-cs (the
-   fallback branch is the original :root values). */
-html:has(.page.theme-light) {
-    --sk-bg: #f8fafc;
-    --sk-text: #0f172a;
-    --sk-text-muted: #475569;
-}
-html:has(.page.theme-high-contrast) {
-    --sk-bg: #ffffff;
-    --sk-text: #000000;
-    --sk-text-muted: #1f2937;
-}
-@media (prefers-color-scheme: light) {
-    html:has(.page.theme-system) {
-        --sk-bg: #f8fafc;
-        --sk-text: #0f172a;
-        --sk-text-muted: #475569;
-    }
 }
 
 /* Blazor error UI: hidden by default, shown by the framework on exception. */
@@ -1130,8 +1084,8 @@ h2 {
     margin-right: 6px;
     vertical-align: middle;
 }
-.connection-dot.connected { background-color: var(--sk-green); }
-.connection-dot.disconnected { background-color: var(--sk-red); }
+.connection-dot.connected { background-color: var(--sev-ok); }
+.connection-dot.disconnected { background-color: var(--sev-danger); }
 .connection-dot.stale { background-color: var(--sev-warn); }
 
 /* Retry button - only rendered when offline. Compact so it fits
@@ -1376,27 +1330,12 @@ h2 {
 
 .map-container {
     position: relative;
-    /* Fill viewport minus the sticky top row (~48px). */
-    height: calc(100dvh - 3rem);
+    /* Fill the safe-area-padded app box minus the sticky top row. The
+       html padding already keeps the bottom edge (and so the control
+       bar + MOB) clear of the home indicator, in every display mode. */
+    height: var(--content-height);
     width: 100%;
     border-radius: 0;
-    overflow: hidden;
-}
-
-/* Fullscreen / iOS fullbleed safe-area padding for the control bar
-   so the bottom HUD + .map-controls cluster stay clear of the iPad
-   home-indicator strip in PWA standalone. The HEIGHT stays at the
-   non-fullscreen baseline (calc(100dvh - 3rem)) - the topbar is
-   still rendered in fullscreen so the helm keeps zoom / night /
-   liveness / exit-fullscreen affordances. */
-html.ios-fullbleed .map-container,
-:fullscreen .map-container {
-    padding-bottom: env(safe-area-inset-bottom);
-    box-sizing: border-box;
-}
-
-/* Prevent page scroll when the map page is active (map fills the viewport). */
-body:has(.map-container) {
     overflow: hidden;
 }
 
@@ -1404,8 +1343,8 @@ body:has(.map-container) {
    Same rule applies to the History page chrome since it shares the
    "fill the article" intent - toolbar / body / controls live inside
    .history-page directly without extra outer padding. */
-article.content:has(.map-container),
-article.content:has(.history-page) {
+.page-map article.content,
+.page-history article.content {
     padding: 0 !important;
 }
 
@@ -1717,24 +1656,6 @@ html:fullscreen .hud-stack-br {
     .hud-card .hud-extra { font-size: 0.7rem; }
 }
 
-/* === Stale + null state language ===
-   stale: data hasn't refreshed in a while but is still on the wire.
-          Desaturate the value so it reads as muted - no badge, no
-          competing colour. The freshness IS the colour channel.
-   dead:  sensor silent. Stronger desaturation + the existing badge
-          stays on (a missing reading is too dangerous to be subtle).
-   null:  no data ever received. Render dotted baseline glyphs in the
-          digit slots; reads as "the instrument is here, the signal
-          isn't yet" rather than the curt - placeholder. */
-.hud-value.is-stale,
-.hud-value.is-stale .hud-unit {
-    color: var(--hud-ink-stale);
-    transition: color var(--hud-dur-med) var(--hud-ease-spring);
-}
-.hud-value.is-dead {
-    color: var(--hud-ink-stale);
-    filter: grayscale(0.5);
-}
 /* === XTE deviation bar (route card) ===
    Centerline = on-track. Filled marker drifts left/right proportional
    to the cross-track-error magnitude (clamped to the bar range).
@@ -1757,6 +1678,7 @@ html:fullscreen .hud-stack-br {
     font-variant-numeric: var(--hud-tnum);
     line-height: 1.1;
     white-space: nowrap;
+    transition: color 0.3s ease;
 }
 
 /* SOG, depth, primary wind speed - the hero number on its card. */
@@ -1820,7 +1742,6 @@ html:fullscreen .hud-stack-br {
     margin-left: 3px;
 }
 
-
 /* Depth alarm threshold label under the depth HUD value. Muted by
    default so it's glanceable context ("you'll hear an alarm below
    this"); switches to a pulsing danger-red when the current depth is
@@ -1860,10 +1781,13 @@ html:fullscreen .hud-stack-br {
 }
 .night-mode-global .hud-position { color: rgba(255,130,130,0.4); }
 
-/* Depth color states */
-.depth-ok { color: var(--sk-green); }
-.depth-warn { color: var(--sk-orange); }
-.depth-danger { color: var(--sk-red); font-weight: 700; animation: value-pulse 0.8s ease-in-out infinite; }
+/* Depth color states. Severity tokens, so the light, high-contrast
+   and night palettes each supply a readable triad. HUD value ink
+   comes from --hud-ink on the card (not a .hud-value colour rule),
+   so these single-class selectors always win. */
+.depth-ok { color: var(--sev-ok); }
+.depth-warn { color: var(--sev-warn); }
+.depth-danger { color: var(--sev-danger); font-weight: 700; animation: value-pulse 0.8s ease-in-out infinite; }
 
 /* .xte-* rules live further down with the active route HUD section
    so the route card's XTE marker + textual XTE class share one
@@ -1875,19 +1799,6 @@ html:fullscreen .hud-stack-br {
     50% { opacity: 0.5; }
 }
 
-/* Smooth value transitions */
-.hud-value {
-    transition: color 0.3s ease;
-}
-
-/* Wind arrow in HUD. NO `transition: transform` here: MapHud writes
-   a fresh `transform: rotate(...)` every SignalK tick (~1 Hz). With a
-   300 ms transition every tick spawned a tween that overlapped 30 %
-   of every second forever, keeping the compositor running an
-   animation frame continuously on anchored idle. Snap-to-angle at
-   1 Hz reads fine on an instrument and lets the GPU sleep between
-   ticks. */
-.wind-arrow { }
 
 /* === Wind dial =============================================
    Both apparent (blue) and true (green) arrows live on the SAME
@@ -1911,9 +1822,11 @@ html:fullscreen .hud-stack-br {
 .wind-dial g {
     transform-origin: 0 0;
     transform-box: view-box;
-    /* No transform transition - see .wind-arrow above. The dial's
-       inline `transform: rotate(...)` updates on every SK tick and
-       a 300 ms tween-per-tick kept the compositor hot indefinitely. */
+    /* No transform transition: the dial's inline
+       `transform: rotate(...)` updates on every SignalK tick (~1 Hz)
+       and a 300 ms tween per tick would keep the compositor animating
+       continuously on anchored idle. Snap-to-angle reads fine on an
+       instrument and lets the GPU sleep between ticks. */
 }
 /* Wind value lives on a single horizontal line.
    Without nowrap the card's content width is set by the 84px dial
@@ -1966,15 +1879,6 @@ html:fullscreen .hud-stack-br {
     display: block;
     margin: 4px auto;
 }
-
-/* Night mode: red tint on HUD, high opacity for readability */
-.night-mode-global .hud-panel {
-    background: rgba(30, 5, 5, 0.92);
-    color: #ffcccc;
-}
-.night-mode-global .hud-label { color: rgba(255,130,130,0.6); }
-.night-mode-global .hud-unit { color: rgba(255,130,130,0.5); }
-.night-mode-global .hud-value { color: #ffdddd; }
 
 /* ===== Map Control Bar ===== */
 
@@ -2103,38 +2007,63 @@ html:fullscreen .hud-stack-br {
     align-self: stretch;
 }
 
-/* MOB: safety-critical, high-visibility variant. */
-.ctrl-btn-danger {
-    color: #fca5a5;
+/* MOB: safety-critical, high-visibility variant. The `:root .ctrl-btn`
+   prefix lifts specificity above every theme / night override of
+   .ctrl-btn (`.theme-effective-light .ctrl-btn.active`,
+   `.night-mode-global .ctrl-btn:hover`, ...) so MOB keeps its danger
+   ink and fill in every palette regardless of source order. */
+:root .ctrl-btn.ctrl-btn-danger {
+    color: var(--sev-danger);
 }
-.ctrl-btn-danger:hover {
+:root .ctrl-btn.ctrl-btn-danger:hover {
     background: rgba(var(--sev-danger-rgb), 0.15);
-    color: #fff;
+    color: var(--sev-danger);
 }
-.ctrl-btn-danger.active {
+:root .ctrl-btn.ctrl-btn-danger.active {
     background: rgba(var(--sev-danger-rgb), 0.35);
-    color: #fff;
+    color: var(--sk-text);
     box-shadow: inset 0 0 0 1px rgba(var(--sev-danger-rgb), 0.6);
-    animation: mob-glow 1.5s ease-in-out infinite;
+}
+:root .ctrl-btn.ctrl-btn-danger.active .ctrl-ico { color: var(--sev-danger); }
+/* MOB-active glow: painted once on a pseudo-element, only its opacity
+   animates, so the compositor never re-rasterises a box-shadow. */
+.ctrl-btn-danger.active,
+.ctrl-btn-confirming {
+    position: relative;
+}
+.ctrl-btn-danger.active::after,
+.ctrl-btn-confirming::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0;
+    animation: glow-opacity-pulse 1.5s ease-in-out infinite;
+}
+.ctrl-btn-danger.active::after {
+    box-shadow: inset 0 0 0 1px rgba(var(--sev-danger-rgb), 0.9), 0 0 14px rgba(var(--sev-danger-rgb), 0.6);
+}
+@keyframes glow-opacity-pulse {
+    0%, 100% { opacity: 0; }
+    50%      { opacity: 1; }
 }
 /* Two-step confirm state on the Stop-Navigation button: first tap
    arms, second tap invokes. Flashing accent (same palette as the
    waypoint-delete confirm) reads as "acknowledged, tap again to
    commit". Animation killed under reduced-motion (see end of file). */
-.ctrl-btn-confirming {
-    background: rgba(var(--sev-danger-rgb), 0.6);
-    color: #fff;
-    box-shadow: inset 0 0 0 2px rgba(var(--sev-danger-rgb), 0.95);
-    animation: ctrl-confirming-pulse 0.9s ease-in-out infinite;
+/* Same :root lift as MOB above; listed with :hover / .active so the
+   armed state also beats the MOB hover and active rules. */
+:root .ctrl-btn.ctrl-btn-confirming,
+:root .ctrl-btn.ctrl-btn-confirming:is(:hover, .active) {
+    background: var(--alarm-danger-bg);
+    color: var(--alarm-danger-fg);
+    box-shadow: inset 0 0 0 2px var(--sev-danger);
 }
-@keyframes ctrl-confirming-pulse {
-    0%, 100% { box-shadow: inset 0 0 0 2px rgba(var(--sev-danger-rgb), 0.95); }
-    50%      { box-shadow: inset 0 0 0 2px rgba(var(--sev-danger-rgb), 1), 0 0 0 3px rgba(var(--sev-danger-rgb), 0.35); }
-}
-
-@keyframes mob-glow {
-    0%, 100% { box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.6), 0 0 4px rgba(239, 68, 68, 0.3); }
-    50% { box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.9), 0 0 14px rgba(239, 68, 68, 0.6); }
+:root .ctrl-btn.ctrl-btn-confirming .ctrl-ico { color: inherit; }
+.ctrl-btn-confirming::after {
+    box-shadow: 0 0 0 3px rgba(var(--sev-danger-rgb), 0.35);
+    animation-duration: 0.9s;
 }
 
 /* MOB pulsing marker on the map (separate from the button). */
@@ -2231,17 +2160,17 @@ html:fullscreen .hud-stack-br {
    carries the "still working" message and the colour shift conveys
    "this tap stops it" without a separate red-button affordance. */
 .map-btn.loading-cancel {
-    border-color: var(--sk-warn, #d18b1f);
-    color: var(--sk-warn, #d18b1f);
+    border-color: var(--sev-warn);
+    color: var(--sev-warn);
 }
 .map-btn.loading-cancel:hover {
-    background: rgba(209, 139, 31, 0.12);
-    border-color: var(--sk-warn, #d18b1f);
+    background: var(--sev-warn-bg);
+    border-color: var(--sev-warn);
 }
 .theme-effective-light .map-btn.loading-cancel {
     background: var(--sk-surface);
-    border-color: var(--sk-warn, #d18b1f);
-    color: var(--sk-warn, #d18b1f);
+    border-color: var(--sev-warn);
+    color: var(--sev-warn);
 }
 
 /* Light + high-contrast: .map-btn inverts so it reads as a button
@@ -2254,8 +2183,6 @@ html:fullscreen .hud-stack-br {
     background: var(--sk-surface);
     border-color: var(--sk-border);
     color: var(--sk-text);
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
 }
 .theme-effective-light .map-btn:hover {
     background: var(--sk-surface-hover);
@@ -2317,7 +2244,7 @@ html:fullscreen .hud-stack-br {
 }
 .night-mode-global .ctrl-btn.active {
     background: rgba(200, 60, 60, 0.25);
-    color: #fff;
+    color: var(--sk-text);
     box-shadow: inset 0 0 0 1px rgba(200, 60, 60, 0.5);
 }
 
@@ -2327,8 +2254,8 @@ html:fullscreen .hud-stack-br {
    the Night/Day toggle itself becomes the most glaring element in a
    page that's supposed to preserve dark adaptation. */
 .night-mode-global .btn-outline-secondary {
-    color: #ffb8b8;
-    border-color: rgba(255, 100, 100, 0.3);
+    color: var(--sk-text-muted);
+    border-color: var(--sk-border);
     background: rgba(30, 5, 5, 0.5);
 }
 .night-mode-global .btn-outline-secondary:hover,
@@ -2363,7 +2290,7 @@ html:fullscreen .hud-stack-br {
 .night-mode-global .ap-mode-btn.active {
     background: rgba(200, 60, 60, 0.3);
     border-color: rgba(200, 60, 60, 0.6);
-    color: #fff;
+    color: var(--sk-text);
 }
 
 /* Leaflet popup overrides for dark theme. The note / region / route
@@ -2372,10 +2299,10 @@ html:fullscreen .hud-stack-br {
    (vessel + waypoint) routes through panel tokens so it flips on
    light theme; the warm-accent ones get their own flips below. */
 .leaflet-popup-content-wrapper {
-    background: var(--panel-bg-strong) !important;
-    color: var(--panel-text) !important;
-    border-radius: 10px !important;
-    box-shadow: var(--panel-shadow) !important;
+    background: var(--panel-bg-strong);
+    color: var(--panel-text);
+    border-radius: 10px;
+    box-shadow: var(--panel-shadow);
     /* No backdrop-filter - the panel-bg-strong token + the panel
        drop shadow already define a readable surface, and popups
        open on every vessel / waypoint tap. Each open popup was a
@@ -2384,12 +2311,12 @@ html:fullscreen .hud-stack-br {
        carrying its weight on iPad in sun. */
 }
 .leaflet-popup-tip {
-    background: var(--panel-bg-strong) !important;
+    background: var(--panel-bg-strong);
 }
 .leaflet-popup-content {
-    margin: 12px 16px !important;
-    font-size: 12px !important;
-    line-height: 1.5 !important;
+    margin: 12px 16px;
+    font-size: 12px;
+    line-height: 1.5;
 }
 
 /* AIS popup structure. Compact one-font layout: every row uses
@@ -2433,7 +2360,7 @@ html:fullscreen .hud-stack-br {
    below so all three popup-link colours are won fairly. */
 .ais-popup-content .ais-popup-buddy {
     font-size: 11px;
-    color: var(--sk-warn, #facc15);
+    color: var(--sev-warn);
     text-decoration: none;
     flex: 0 0 auto;
     white-space: nowrap;
@@ -2666,23 +2593,14 @@ html:fullscreen .hud-stack-br {
 }
 .vector-label::before { display: none !important; }
 
-/* Map-rotation counter-transform for tooltips / popups / labels.
-   When the map container is rotated (course-up / head-up modes,
-   leafletInterop.applyMapRotation) every overlay needs the inverse
-   rotation so the text reads upright. JS toggles
-   `<html data-map-rotated="1">` and writes the angle into the
-   `--map-rot` custom property; the rule is scoped on the attribute
-   so a 0° state doesn't create a transform stacking context on
-   every tooltip element. Single CSS update per rotation; no
-   stylesheet reparse the way the previous JS-built <style> block
-   forced. */
-html[data-map-rotated="1"] .leaflet-tooltip,
-html[data-map-rotated="1"] .leaflet-popup,
-html[data-map-rotated="1"] .ais-label,
-html[data-map-rotated="1"] .vector-label,
-html[data-map-rotated="1"] .route-wp-tooltip,
-html[data-map-rotated="1"] .bearing-tooltip {
-    transform: rotate(var(--map-rot, 0deg)) !important;
+/* Map-rotation counter-rotation for AIS name labels. In course-up /
+   head-up the map container is rotated by -var(--map-rot)
+   (mapRotation.js writes both on the container); labels rendered
+   inside AIS marker icons turn back by the same angle about the icon
+   centre so they read upright. Tooltips and popups are counter-rotated
+   by mapRotation.js itself, appended to Leaflet's inline translate. */
+.leaflet-container[data-map-rotated="1"] .ais-label-slot {
+    rotate: var(--map-rot, 0deg);
 }
 
 .mob-tooltip {
@@ -2724,16 +2642,16 @@ html[data-map-rotated="1"] .bearing-tooltip {
    same look-and-feel; mirrors the .ais-popup chrome so the helm
    recognises "this is a chart-marker dialog" without re-learning. */
 .mob-popup .leaflet-popup-content-wrapper {
-    background: var(--panel-bg-strong) !important;
-    color: var(--panel-text) !important;
-    border: 1px solid var(--sev-danger) !important;
-    border-radius: 6px !important;
+    background: var(--panel-bg-strong);
+    color: var(--panel-text);
+    border: 1px solid var(--sev-danger);
+    border-radius: 6px;
 }
-.mob-popup .leaflet-popup-tip { background: var(--panel-bg-strong) !important; }
+.mob-popup .leaflet-popup-tip { background: var(--panel-bg-strong); }
 .mob-popup .leaflet-popup-content {
-    margin: 10px 14px !important;
-    font-size: 12px !important;
-    line-height: 1.45 !important;
+    margin: 10px 14px;
+    font-size: 12px;
+    line-height: 1.45;
 }
 .mob-popup-body { min-width: 200px; }
 .mob-popup-title {
@@ -2913,54 +2831,27 @@ html {
 }
 
 /* PWA standalone / installed app: lock the document so the helm
-   doesn't see a body-level scrollbar (a few-pixel layout drift from
-   safe-area padding + the sidebar's 100dvh used to add up to a
-   scrollable html). Page content that legitimately overflows
-   (Settings cards, Resources tables, Dashboard) scrolls inside
-   <main> instead - single scroll container, no double-scrollbar
-   confusion. Tab-mode Safari is left alone so its address bar can
-   still collapse on body scroll. */
+   never sees a body-level scrollbar. <html> is border-box (Bootstrap
+   reboot), so height:100% includes the safe-area padding and the
+   content box is exactly --app-height, which is what <main> and the
+   sidebar size themselves to (MainLayout.razor.css). Overflowing page
+   content (Settings, Resources, Dashboard) scrolls inside <main>.
+   Tab-mode Safari is left alone so its address bar can still
+   collapse on body scroll. */
 @media all and (display-mode: standalone), all and (display-mode: fullscreen) {
     html, body {
         height: 100%;
         overflow: hidden;
         overscroll-behavior: none;
     }
-    .page {
-        height: 100%;
-    }
-    main {
-        height: 100%;
-        overflow-y: auto;
-        /* iOS momentum scroll inside a constrained container -
-           noop on iOS 13+ but harmless and reads as intent. */
-        -webkit-overflow-scrolling: touch;
-    }
 }
 
-/* Real-browser fullscreen + iPad CSS-fallback fullscreen: pages with
-   overflowing content (Settings / Dashboard / History / Resources)
-   don't get a usable document scroll. Browsers clamp the fullscreen
-   element to the screen and don't expose a body / html scrollbar,
-   and the iPad .ios-fullbleed mode inherits the same problem because
-   sidebar's 100dvh + content >100dvh would otherwise make body
-   overflow without a scroll container.
-   Earlier attempts locked html + body and made main scroll, which
-   worked on Chrome but Firefox's fullscreen layout silently
-   swallowed the chain. The narrower fix here: constrain ONLY main
-   to 100dvh with its own overflow-y:auto, leaving html / body
-   alone. Inside main the topbar (3rem, sticky) sits at the top and
-   the article scrolls underneath it. Works on Chrome / Firefox /
-   Safari / iPad consistently because no parent-height chain has to
-   propagate. */
+/* Fullscreen (real API or the iPad .ios-fullbleed fallback) needs no
+   height rules of its own: <main> is always --app-height with its own
+   overflow-y:auto (MainLayout.razor.css), so overflowing pages scroll
+   inside it whatever the browser does with the document scroller. */
 :fullscreen {
     overscroll-behavior: none;
-}
-:fullscreen main,
-html.ios-fullbleed main {
-    height: 100dvh;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
 }
 
 .map-btn, .ap-btn, .ap-mode-btn, .ctx-menu-item, .path-chip {
@@ -3023,7 +2914,7 @@ html, body {
    pass display:none-d it to claw back 3rem for the map, but that
    removed the only visible exit-fullscreen control along with the
    zoom / night / liveness chips the helm relies on; map-container's
-   default `calc(100dvh - 3rem)` already leaves room for the topbar
+   default `var(--content-height)` already leaves room for the topbar
    without overflow, and Settings / History / Resources scroll the
    document naturally. */
 
@@ -3106,8 +2997,6 @@ html, body {
     inset: 0;
     z-index: var(--z-modal);
     background: rgba(0, 0, 0, 0.5);
-    -webkit-backdrop-filter: blur(4px);
-    backdrop-filter: blur(4px);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -3119,18 +3008,20 @@ html, body {
     border-radius: 12px;
     padding: 20px 24px;
     max-width: 420px;
+    /* Sized against the overlay (absolute, inset 0 over the map), not
+       the viewport: 100vh on iOS includes hidden browser chrome and
+       clipped the card's foot. */
+    max-height: calc(100% - 32px);
+    overflow-y: auto;
     color: var(--panel-text);
     box-shadow: var(--panel-shadow);
 }
 
 /* Legend is longer than the shortcuts list and the descriptions need
    room to breathe - widen the card specifically for the legend so the
-   descriptions don't wrap to four lines each. Scroll the inner list
-   when the content exceeds the viewport height. */
+   descriptions don't wrap to four lines each. */
 .legend-card {
     max-width: 720px;
-    max-height: calc(100vh - 80px);
-    overflow-y: auto;
 }
 
 .shortcuts-card h5 {
@@ -3186,7 +3077,7 @@ html, body {
     position: fixed;
     bottom: 20px;
     right: 20px;
-    z-index: var(--z-modal);
+    z-index: var(--z-toast);
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -3200,8 +3091,6 @@ html, body {
     border-radius: 8px;
     font-size: 0.85rem;
     background: var(--panel-bg-strong);
-    -webkit-backdrop-filter: blur(8px);
-    backdrop-filter: blur(8px);
     border: 1px solid var(--panel-border);
     color: var(--panel-text);
     cursor: pointer;
@@ -3287,12 +3176,12 @@ html, body {
    leftmost slice). */
 .alarm-banner-stack {
     position: fixed;
-    top: 3rem; /* below the sticky top bar */
+    top: var(--below-topbar);
     left: calc(50% + var(--page-sidebar-width, 0px) / 2);
     transform: translateX(-50%);
     max-width: min(680px, calc(100vw - var(--page-sidebar-width, 0px) - 24px));
     width: max-content;
-    z-index: var(--z-modal);
+    z-index: var(--z-alarm);
     display: flex;
     flex-direction: column;
     align-items: stretch;
@@ -3314,7 +3203,7 @@ html, body {
        the duration of an emergency (collision, anchor drag, deadman)
        which is the worst possible time for the helm's tablet to
        drain its battery. The severity-coloured backgrounds below
-       (.alarm-danger, .alarm-warn) are also flipped to fully opaque
+       (.alarm-banner-danger, .alarm-banner-warn) are fully opaque
        so they punch through the chart cleanly without needing the
        blur to mask the chart underneath. */
     display: flex;
@@ -3398,18 +3287,21 @@ html, body {
 .alarm-body-hold.alarm-holding::after {
     content: "";
     position: absolute;
-    left: 0;
-    bottom: 0;
-    height: 100%;
-    width: 0;
-    background: rgba(255, 255, 255, 0.24);
-    /* Duration matches MainLayout.AlarmHoldMs - keep in sync. */
+    inset: 0;
+    /* Banner ink at low alpha so the sweep follows the theme and
+       night palettes instead of painting white. */
+    background: currentColor;
+    opacity: 0.24;
+    /* Scale a full-size layer instead of growing width so the sweep
+       stays on the compositor. Duration matches
+       MainLayout.AlarmHoldMs - keep in sync. */
+    transform-origin: left center;
     animation: alarm-hold-fill 600ms linear forwards;
     pointer-events: none;
 }
 @keyframes alarm-hold-fill {
-    from { width: 0; }
-    to   { width: 100%; }
+    from { transform: scaleX(0); }
+    to   { transform: scaleX(1); }
 }
 .alarm-snooze,
 .alarm-action {
@@ -3467,6 +3359,10 @@ html, body {
     border-radius: 6px;
     overflow: hidden;
     margin-bottom: 8px;
+    /* Rows are display:contents grid items, so the skip-when-off-
+       screen unit is the per-group table (see .rawstream-entry). */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 600px;
 }
 .paths-row {
     display: contents;
@@ -3576,35 +3472,10 @@ html, body {
     .alarm-overflow { min-height: 40px; font-size: 0.85rem; }
 }
 
-@media (min-width: 641px) {
-    .alarm-banner { left: 220px; } /* clear the sidebar */
-}
-
-/* Push top HUD panels below the alarm banner when it's visible. The
-   nudge is sized for the top (pulsing) banner; additional stacked
-   banners are thinner and acceptable to overlap the HUD by a few px.
-
-   .hud-route is NOT in this list: it sits at the bottom of the screen
-   (`bottom: var(--panel-bottom)`) so an alarm banner at the top has
-   no reason to touch it. Including it here paired a bottom-anchored
-   element with an explicit top value, which stretched the card
-   floor-to-ceiling and caused the bottom-center navigation HUD to
-   visibly jump every time an alarm entered / left the DOM. */
-/* NB: the HUDs + chart-quick-bar previously slid down when an alarm
-   banner or snooze chip row appeared, to avoid the banner covering
-   the top portion of the HUD card. User feedback: the jump reads as
-   "something's broken" every time an alarm enters or leaves. Better
-   to keep layout stable and let the banner briefly overlap during
-   its own acknowledge window. */
-
-/* Smooth the top-HUD shift when alarms appear / disappear so the
-   transition reads as a slide rather than a layout jump. The old
-   behaviour snapped 44 px in a single frame, which users reported as
-   the HUD "jumping for reasons". 180 ms is fast enough not to feel
-   laggy on a helm interaction and slow enough to read as intentional. */
-.hud-stack-tl, .hud-stack-tr, .chart-quick-bar {
-    transition: top 180ms ease;
-}
+/* The top HUD stacks and the chart quick-bar keep a fixed position
+   when an alarm banner or snooze-chip row appears: shifting them read
+   as "something's broken" on every alarm. The banner may briefly
+   overlap them during its own acknowledge window. */
 
 /* Alarm fills are mostly opaque (80 %) - the helm is expected to act
    on them, so they should read clearly over a busy chart instead of
@@ -3612,22 +3483,19 @@ html, body {
    too subtle and missed against satellite imagery / shallow-water
    tints. Solid-ish ink + bold text colour + the existing flash
    keep them obviously alarm-state without being a wall of red. */
-.alarm-danger {
-    /* Opaque red instead of rgba(.., 0.8) - alarms must be eye-
-       catching, and the previous translucency let chart pixels
-       bleed through and desaturate the colour. Also lets the
-       compositor occlusion-skip the chart tiles directly under
-       the banner. */
-    background: #ef4444;
-    color: #fff;
-    border-bottom: 2px solid #ef4444;
+.alarm-banner-danger {
+    /* Opaque fill - alarms must be eye-catching, and translucency
+       lets chart pixels bleed through and desaturate the colour.
+       Also lets the compositor occlusion-skip the chart tiles
+       directly under the banner. Colours come from the --alarm-*
+       tokens so night mode swaps in a dim red-shifted pair. */
+    background: var(--alarm-danger-bg);
+    color: var(--alarm-danger-fg);
 }
 
-.alarm-warn {
-    /* Opaque amber - same reasoning as .alarm-danger above. */
-    background: #f59e0b;
-    color: #1a1a1a;
-    border-bottom: 2px solid #f59e0b;
+.alarm-banner-warn {
+    background: var(--alarm-warn-bg);
+    color: var(--alarm-warn-fg);
 }
 
 @keyframes alarm-flash {
@@ -3654,8 +3522,6 @@ html, body {
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.5);
-    -webkit-backdrop-filter: blur(3px);
-    backdrop-filter: blur(3px);
     z-index: calc(var(--z-modal) - 1);
     animation: welcome-fade 0.2s ease-out;
 }
@@ -3724,7 +3590,7 @@ html, body {
     bottom: 88px;
     left: 50%;
     transform: translateX(-50%);
-    z-index: var(--z-modal);
+    z-index: var(--z-toast);
     padding: 10px 18px;
     /* Shared surface + border tokens so the hint reads as "part of
        the same UI" rather than a stray alert widget. Previous look
@@ -3736,8 +3602,6 @@ html, body {
     border-radius: 999px;
     border: 1px solid var(--sk-border);
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
-    -webkit-backdrop-filter: blur(6px);
-    backdrop-filter: blur(6px);
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
     /* Slide-in once, then a gentle opacity breathe. No colour halo,
@@ -3768,23 +3632,22 @@ html, body {
 .snooze-chips {
     position: fixed;
     /* Sits just below the top navbar. When an alarm banner is also
-       visible, the rule below (:has(.alarm-banner-stack)) pushes the
-       row down by one banner-row. Previously this was a fixed
-       3rem+48px assuming a banner always accompanied the chips, which
-       put the chips on top of the HUD panel in the rearm-cooldown
-       case (banner already dismissed). */
-    top: calc(3rem + 4px);
+       visible, MainLayout adds .snooze-chips-below-banner and the rule
+       below pushes the row down by one banner-row; without a banner
+       the chips stay tucked under the topbar instead of floating over
+       the HUD. */
+    top: calc(var(--below-topbar) + 4px);
     left: 0;
     right: 0;
-    z-index: calc(var(--z-modal) - 1);
+    z-index: calc(var(--z-alarm) - 1);
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
     padding: 4px 12px;
     pointer-events: none; /* chips themselves re-enable below */
 }
-main:has(.alarm-banner-stack) .snooze-chips {
-    top: calc(3rem + 48px);
+.snooze-chips.snooze-chips-below-banner {
+    top: calc(var(--below-topbar) + 48px);
 }
 .snooze-chip {
     pointer-events: auto;
@@ -3798,8 +3661,6 @@ main:has(.alarm-banner-stack) .snooze-chips {
     color: #cbd5e1;
     font-size: 0.72rem;
     cursor: pointer;
-    -webkit-backdrop-filter: blur(4px);
-    backdrop-filter: blur(4px);
     -webkit-tap-highlight-color: transparent;
 }
 .snooze-chip:hover { background: rgba(48, 48, 56, 0.95); }
@@ -3874,14 +3735,21 @@ main:has(.alarm-banner-stack) .snooze-chips {
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
     margin-left: 8px;
-    animation: update-chip-pulse 2.4s ease-in-out infinite;
+    position: relative;
 }
 .update-available-chip:hover {
     filter: brightness(1.1);
 }
-@keyframes update-chip-pulse {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(var(--sk-accent-rgb), 0.0); }
-    50%      { box-shadow: 0 0 0 4px rgba(var(--sk-accent-rgb), 0.25); }
+/* Polite tap-me ring: painted once, only its opacity pulses. */
+.update-available-chip::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: 0 0 0 4px rgba(var(--sk-accent-rgb), 0.25);
+    opacity: 0;
+    animation: glow-opacity-pulse 2.4s ease-in-out infinite;
+    pointer-events: none;
 }
 @media (pointer: coarse) {
     .update-available-chip { min-height: 44px; padding: 10px 16px; font-size: 0.8rem; }
@@ -3899,9 +3767,9 @@ main:has(.alarm-banner-stack) .snooze-chips {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    background: var(--sk-warning, #d97706);
-    border: 1px solid var(--sk-warning, #d97706);
-    color: #fff;
+    background: var(--alarm-warn-bg);
+    border: 1px solid var(--alarm-warn-bg);
+    color: var(--alarm-warn-fg);
     padding: 4px 12px;
     font-size: 0.75rem;
     font-weight: 600;
@@ -3914,7 +3782,7 @@ main:has(.alarm-banner-stack) .snooze-chips {
 .auth-warning-chip:hover {
     filter: brightness(1.1);
     text-decoration: none;
-    color: #fff;
+    color: var(--alarm-warn-fg);
 }
 @media (pointer: coarse) {
     .auth-warning-chip { min-height: 44px; padding: 10px 16px; font-size: 0.8rem; }
@@ -4192,7 +4060,7 @@ main:has(.alarm-banner-stack) .snooze-chips {
 .alarm-log-backdrop {
     position: fixed;
     inset: 0;
-    z-index: calc(var(--z-modal) - 1);
+    z-index: calc(var(--z-alarm) - 1);
     background: transparent;
 }
 @media (max-width: 600px) {
@@ -4208,7 +4076,7 @@ main:has(.alarm-banner-stack) .snooze-chips {
    panel never sits under the native controls. */
 .alarm-log-panel {
     position: fixed;
-    top: 3rem;
+    top: var(--below-topbar);
     right: 56px;
     /* Grow with the viewport: on a 1920-wide desktop the old 360 px
        column clipped SHALLOW / CPA messages mid-sentence. The clamp
@@ -4218,14 +4086,12 @@ main:has(.alarm-banner-stack) .snooze-chips {
     width: clamp(360px, 28vw, 560px);
     max-width: calc(100vw - 72px);
     max-height: 70vh;
-    z-index: var(--z-modal);
+    z-index: calc(var(--z-alarm) + 1);
     background: var(--panel-bg-strong);
     border: 1px solid var(--panel-border);
     border-radius: 8px;
     color: var(--panel-text);
     box-shadow: var(--panel-shadow);
-    -webkit-backdrop-filter: blur(8px);
-    backdrop-filter: blur(8px);
     display: flex;
     flex-direction: column;
     animation: alarm-log-pop 0.18s ease-out;
@@ -4242,13 +4108,14 @@ main:has(.alarm-banner-stack) .snooze-chips {
    tap the (now-blinking) alarm button to dismiss. */
 @media (max-width: 640px) {
     .alarm-log-panel {
-        top: 3rem;
+        top: var(--below-topbar);
         right: 0;
         left: 0;
         bottom: 0;
         width: 100%;
-        height: calc(100dvh - 3rem);
-        max-height: calc(100dvh - 3rem);
+        max-width: none;
+        height: auto;
+        max-height: none;
         border-radius: 0;
         border: none;
         padding-bottom: env(safe-area-inset-bottom);
@@ -4271,13 +4138,13 @@ main:has(.alarm-banner-stack) .snooze-chips {
    the stylesheet honest about what's still rendered. */
 
 /* Lock page scroll behind the alarm-log bottom-sheet on mobile so the
-   map doesn't slide around when the user swipes in the sheet. Scoped
-   by the .alarm-log-open flag on the panel, so desktop-dropdown mode
-   (where the page scroll never mattered) is unaffected. */
+   map doesn't slide around when the user swipes in the sheet.
+   MainLayout sets .page-alarm-log-open while the log is open; the
+   phone-only query leaves desktop-dropdown mode unaffected. */
 @media (max-width: 600px) {
-    .page:has(.alarm-log-open) {
+    .page.page-alarm-log-open {
         overflow: hidden;
-        height: 100vh;
+        height: var(--app-height);
     }
 }
 
@@ -4339,6 +4206,12 @@ main:has(.alarm-banner-stack) .snooze-chips {
     .alarm-log-msg { grid-area: msg; padding-top: 2px; }
 }
 .alarm-log-item:last-child { border-bottom: none; }
+/* History grows unbounded over a passage; off-screen rows skip layout
+   + paint (see .rawstream-entry). */
+.alarm-log-recent .alarm-log-item {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 36px;
+}
 .alarm-log-time { color: var(--panel-text-muted); font-variant-numeric: tabular-nums; font-size: 0.72rem; }
 .alarm-log-title { color: var(--panel-text); font-weight: 600; }
 /* Count chip on grouped (consecutive same-key) entries: "x3" rendered
@@ -4395,11 +4268,11 @@ main:has(.alarm-banner-stack) .snooze-chips {
     padding: 12px 14px;
     border-left: 4px solid transparent;
 }
-.alarm-log-active-item.alarm-danger {
+.alarm-log-active-danger {
     background: rgba(var(--sev-danger-rgb), 0.18);
     border-left-color: var(--sev-danger);
 }
-.alarm-log-active-item.alarm-warn {
+.alarm-log-active-warn {
     background: rgba(var(--sev-warn-rgb), 0.18);
     border-left-color: var(--sev-warn);
 }
@@ -4412,37 +4285,61 @@ main:has(.alarm-banner-stack) .snooze-chips {
     flex-wrap: wrap;
     margin-top: 6px;
 }
+/* Same shape as the banner's .alarm-action / .alarm-snooze, but inked
+   from the panel tokens: the banner buttons inherit the banner's
+   severity ink, which on the panel surface would be dark-on-dark or
+   white-on-white. */
 .alarm-log-active-item .alarm-log-active-actions > button {
     flex: 1 1 auto;
     min-width: 130px;
-    /* Reuse the existing .alarm-action / .alarm-snooze button look
-       (defined alongside the banner) so the helm reads the actions
-       as the same controls they'd see on the banner. */
+    background: var(--hud-btn-bg);
+    border-color: var(--panel-border);
+    color: var(--panel-text);
+}
+.alarm-log-active-item .alarm-log-active-actions > button:hover {
+    background: var(--hud-btn-bg-hover);
+}
+.alarm-log-active-item .alarm-log-active-actions > .alarm-action-danger {
+    border-color: var(--sev-danger);
+    color: var(--sev-danger);
+    position: relative;
+    overflow: hidden;
+}
+/* Hold-to-dismiss progress, same sweep as the banner body. */
+.alarm-action-danger.alarm-holding::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(var(--sev-danger-rgb), 0.3);
+    transform-origin: left center;
+    animation: alarm-hold-fill 600ms linear forwards;
+    pointer-events: none;
 }
 
 /* Mobile-only blink on the topbar button when active alarms exist.
    Banner stack is hidden on mobile (see the .alarm-banner-stack
    display:none rule above), so the blinking button is the helm's
-   only visual cue that something is firing. Animation is a 1.2 s
-   pulse on background + box-shadow so the button reads as urgent
-   without being seizure-inducing; reduced-motion users get a
-   steady accent fill instead (see the prefers-reduced-motion
-   block at the bottom of the file -- .alarm-log-btn-active is
-   listed there). Desktop / iPad don't blink because they still
-   render the banner. */
+   only visual cue that something is firing. A steady danger tint on
+   the button plus a 1.2 s pulse of a pre-painted ::after (fill +
+   ring; only its opacity animates) reads as urgent without being
+   seizure-inducing; reduced-motion users keep the steady tint and
+   an outline (see the prefers-reduced-motion block). Desktop / iPad
+   don't blink because they still render the banner. */
 @media (max-width: 600px) {
-    .alarm-log-btn-active {
-        animation: alarm-log-btn-blink 1.2s ease-in-out infinite;
-    }
-}
-@keyframes alarm-log-btn-blink {
-    0%, 100% {
+    .alarm-log-btn.alarm-log-btn-active {
+        position: relative;
         background: rgba(var(--sev-danger-rgb), 0.25);
-        box-shadow: 0 0 0 0 rgba(var(--sev-danger-rgb), 0.4);
     }
-    50% {
-        background: rgba(var(--sev-danger-rgb), 0.55);
-        box-shadow: 0 0 0 6px rgba(var(--sev-danger-rgb), 0.0);
+    .alarm-log-btn-active::after {
+        content: "";
+        position: absolute;
+        inset: -1px;
+        border-radius: inherit;
+        background: rgba(var(--sev-danger-rgb), 0.3);
+        box-shadow: 0 0 0 4px rgba(var(--sev-danger-rgb), 0.25);
+        opacity: 0;
+        animation: glow-opacity-pulse 1.2s ease-in-out infinite;
+        pointer-events: none;
     }
 }
 
@@ -4463,15 +4360,62 @@ main:has(.alarm-banner-stack) .snooze-chips {
     --sk-text-muted: rgba(255, 130, 130, 0.85);
     --sk-accent: #cc4444;
     --sk-accent-dim: rgba(255, 120, 120, 0.85);
+    --sk-accent-rgb: 204, 68, 68;
     --sk-green: #ff9a9a;  /* collapse to red family */
     --sk-red: #ff6060;
     --sk-orange: #ff8c6a;
     --sk-cyan: #ff9a6b;
     --sk-purple: #ff9090;
 
+    /* Severity stays readable as a triad without leaving the red
+       family: ok is a pale pink, warn leans orange, danger is the
+       most saturated red. Hue + lightness both differ so warn and
+       danger never collapse into one swatch. */
     --sev-ok: #ff9a9a;
-    --sev-warn: #ffb08c;
-    --sev-danger: #ff6060;
+    --sev-warn: #ffa060;
+    --sev-danger: #ff4a4a;
+    --sev-ok-rgb: 255, 154, 154;
+    --sev-warn-rgb: 255, 160, 96;
+    --sev-danger-rgb: 255, 74, 74;
+    --sev-ok-bg: rgba(255, 154, 154, 0.12);
+    --sev-warn-bg: rgba(255, 160, 96, 0.14);
+    --sev-danger-bg: rgba(255, 74, 74, 0.16);
+
+    /* Alarm banner fills. Dim, solid surfaces so a firing alarm does
+       not flood the cockpit with light; danger is a deep red, warn a
+       deep amber-brown, each with matching light ink. */
+    --alarm-danger-bg: #7a0c0c;
+    --alarm-danger-fg: #ffe0e0;
+    --alarm-warn-bg: #5a2a08;
+    --alarm-warn-fg: #ffcfa8;
+
+    /* HUD cards + chrome panels. Same surfaces as the page tokens
+       above so the HUD, Layers panel, dialogs and alarm log read as
+       one red-shifted family with no white or blue ink left over. */
+    --hud-card-bg:          #1e0505;
+    --hud-card-stroke-in:   rgba(255, 100, 100, 0.08);
+    --hud-card-stroke-out:  rgba(0, 0, 0, 0.6);
+    --hud-card-halo:        0 0 16px rgba(0, 0, 0, 0.6);
+    --hud-ink:              #ffdddd;
+    --hud-ink-dim:          rgba(255, 130, 130, 0.6);
+    --hud-ink-stale:        rgba(255, 130, 130, 0.5);
+    --hud-divider:          rgba(255, 100, 100, 0.15);
+    --hud-btn-bg:           rgba(255, 100, 100, 0.06);
+    --hud-btn-bg-hover:     rgba(255, 100, 100, 0.14);
+    --hud-btn-border:       rgba(255, 100, 100, 0.25);
+    --hud-btn-border-hover: rgba(255, 100, 100, 0.5);
+    --panel-bg:             rgba(30, 5, 5, 0.95);
+    --panel-bg-strong:      #1e0505;
+    --panel-text:           #ffcccc;
+    --panel-text-muted:     rgba(255, 130, 130, 0.85);
+    --panel-border:         rgba(255, 100, 100, 0.25);
+    --panel-shadow:         0 12px 24px rgba(0, 0, 0, 0.6);
+    --route-popup-bg:       rgba(34, 8, 8, 0.96);
+    --route-popup-fg:       #ffcccc;
+    --route-popup-border:   rgba(255, 100, 100, 0.4);
+    --route-popup-title:    #ffb08c;
+    --map-stationary:       rgba(255, 130, 130, 0.7);
+    --sidebar-shadow:       none;
 
     /* Map overlays (active-route polyline, current arrow, etc.)
        stay on the map layer which is kept dark-ish by dedicated
@@ -4520,27 +4464,20 @@ main:has(.alarm-banner-stack) .snooze-chips {
     color: var(--sk-text-muted) !important;
 }
 
-.night-mode-global .btn-outline-secondary {
-    color: var(--sk-text-muted);
-    border-color: var(--sk-border);
-}
 
 .night-mode-global svg circle,
 .night-mode-global svg line {
     opacity: 0.8;
 }
 
-/* Red-shift instrument SVGs (SailSteer, WindRose) for night vision.
-   NB: the map SVG icons (AIS triangles, radar outlines, SART bullseye)
-   are NOT filtered - the AIS palette carries ship-type meaning via
-   hue and hue-rotate would silently destroy that. Leaflet containers
-   opt out explicitly below. */
-.night-mode-global article svg {
-    filter: hue-rotate(-30deg) saturate(0.6) brightness(0.8);
-}
-/* Opt-out: map markers keep their semantic colours in night mode. */
-.night-mode-global .leaflet-container svg {
-    filter: none;
+/* Instrument SVGs (SailSteer, WindRose) draw with var(--sk-*) /
+   var(--sev-*) tokens, so the night token block above red-shifts them
+   with no filter. The one exception is the WindRose viridis speed
+   ramp (computed colours, not tokens): its dot group and legend bar
+   carry .wind-rose-speed and get a small static filter. Viridis is
+   monotonic in lightness, so the red-mono result keeps the order. */
+.night-mode-global .wind-rose-speed {
+    filter: grayscale(1) sepia(1) hue-rotate(-30deg) saturate(2.5) brightness(0.85);
 }
 
 .night-mode-global .top-row {
@@ -4976,28 +4913,28 @@ html.night-mode-global body {
    carries that detail) so the chip is short and one-line. */
 .leaflet-control-attribution {
     background: rgba(10, 12, 18, 0.4) !important;
-    color: rgba(255, 255, 255, 0.4) !important;
-    font-size: 9px !important;
-    padding: 1px 5px !important;
-    line-height: 1.2 !important;
-    border-radius: 3px 0 0 0 !important;
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 9px;
+    padding: 1px 5px;
+    line-height: 1.2;
+    border-radius: 3px 0 0 0;
     transition: opacity 180ms ease, color 180ms ease, background-color 180ms ease;
     pointer-events: auto;
 }
 .leaflet-control-attribution:hover,
 .leaflet-control-attribution:focus-within {
     background: rgba(10, 12, 18, 0.75) !important;
-    color: rgba(255, 255, 255, 0.85) !important;
+    color: rgba(255, 255, 255, 0.85);
 }
 .leaflet-control-attribution a {
-    color: rgba(255, 255, 255, 0.65) !important;
+    color: rgba(255, 255, 255, 0.65);
 }
 .leaflet-control-attribution:hover a,
 .leaflet-control-attribution:focus-within a {
-    color: rgba(255, 255, 255, 0.95) !important;
+    color: rgba(255, 255, 255, 0.95);
 }
 @media (max-width: 600px) {
-    .leaflet-control-attribution { font-size: 8px !important; padding: 1px 4px !important; }
+    .leaflet-control-attribution { font-size: 8px; padding: 1px 4px; }
 }
 
 /* Zoom badge in the bottom-left corner of the map but lifted ABOVE
@@ -5011,17 +4948,17 @@ html.night-mode-global body {
    on density mode + content; the magic number is fine for the cases
    we render today and obvious in this comment if it ever drifts. */
 .leaflet-bottom.leaflet-left {
-    bottom: calc(var(--hud-edge) + 96px) !important;
-    left: var(--hud-edge) !important;
-    display: flex !important;
-    flex-direction: row !important;
-    align-items: flex-end !important;
+    bottom: calc(var(--hud-edge) + 96px);
+    left: var(--hud-edge);
+    display: flex;
+    flex-direction: row;
+    align-items: flex-end;
     gap: 6px;
 }
 .leaflet-bottom.leaflet-left > .leaflet-control {
-    float: none !important;
-    clear: none !important;
-    margin: 0 !important;
+    float: none;
+    clear: none;
+    margin: 0;
     flex: 0 0 auto;
 }
 
@@ -5204,17 +5141,6 @@ html.night-mode-global body {
     margin-bottom: 8px;
 }
 
-/* GPX import/export in the layers panel: normal case, consistent sizing. */
-.gpx-btn {
-    font-size: 0.75rem;
-    padding: 6px 12px;
-    text-transform: none !important;
-    letter-spacing: normal !important;
-    cursor: pointer;
-    flex: 1;
-    text-align: center;
-}
-
 /* Active chart stack at the top of the Charts section. Always visible,
    even when the Charts list is collapsed. Each chip is one currently-
    enabled chart; chips stack top-down, topmost chip = top of draw
@@ -5280,7 +5206,7 @@ html.night-mode-global body {
     /* Destructive-action buttons in Layers rows: keep them tappable
        without growing the row height. 40 px is the commercial-chart-
        plotter standard. */
-    .route-action-btn, .gpx-btn { min-height: 40px; padding: 8px 14px; font-size: 0.85rem; }
+    .route-action-btn { min-height: 40px; padding: 8px 14px; font-size: 0.85rem; }
 }
 
 .chart-item {
@@ -5719,8 +5645,9 @@ html.night-mode-global body {
 .rawstream-page {
     display: flex;
     flex-direction: column;
-    height: calc(100vh - var(--nav-height, 64px) - 40px);
-    max-height: calc(100vh - 64px);
+    /* Content area below the topbar, less the article's vertical
+       padding. */
+    height: calc(var(--content-height) - 40px);
     gap: 10px;
 }
 .rawstream-toolbar {
@@ -5815,8 +5742,13 @@ html.night-mode-global body {
     font-size: 0.78rem;
     line-height: 1.35;
 }
+/* Long, append-only list: let the browser skip layout and paint for
+   rows scrolled out of view. `auto` in contain-intrinsic-size keeps
+   each row's last rendered height, so the scrollbar stays stable. */
 .rawstream-entry {
     border-bottom: 1px solid var(--sk-border);
+    content-visibility: auto;
+    contain-intrinsic-size: auto 30px;
 }
 .rawstream-entry:hover { background: rgba(255,255,255,0.03); }
 .rawstream-entry.expanded { background: rgba(var(--sk-accent-rgb), 0.05); }
@@ -5929,9 +5861,6 @@ html.night-mode-global body {
     font-weight: 600;
 }
 
-.connection-dot.stale {
-    background-color: var(--sk-orange);
-}
 
 @keyframes stale-pulse {
     /* 50% trough dim at 0.5 (was 0.3): going 70% transparent made
@@ -6179,10 +6108,6 @@ html.night-mode-global body {
    Anchor, in the "end-the-safety-state" grouping. Leaving .route-stop-btn
    CSS rules behind would just be dead weight, so they're dropped. */
 
-.night-mode-global .route-panel {
-    background: rgba(30, 5, 5, 0.92);
-}
-
 /* Station name under the Tide heading when a plugin publishes it.
    Small and muted so it reads as metadata, not as the value. */
 .tide-station-name {
@@ -6308,8 +6233,6 @@ html.night-mode-global body {
     border: 1px solid rgba(var(--sk-accent-rgb), 0.35);
     border-radius: 8px;
     box-shadow: var(--panel-shadow);
-    -webkit-backdrop-filter: blur(6px);
-    backdrop-filter: blur(6px);
     z-index: var(--z-controls);
     animation: ctrl-menu-pop 0.16s ease-out;
 }
@@ -6462,18 +6385,7 @@ html.night-mode-global body {
     border-radius: 2px;
     clip-path: polygon(0 50%, 80% 0, 80% 100%, 0 50%, 100% 50%);
 }
-/* Course-leg line: white dashed between previous and next WP. */
-.legend-course-leg {
-    background: linear-gradient(90deg,
-        var(--map-course-leg) 0 60%,
-        transparent 60% 100%);
-    background-size: 10px 2px;
-    background-repeat: repeat-x;
-    background-position: center;
-    height: 2px;
-    align-self: center;
-    opacity: 0.6;
-}
+
 /* Bearing-to-WP: cyan dashed from boat to waypoint. */
 .legend-bearing {
     background: linear-gradient(90deg,
@@ -6794,17 +6706,11 @@ html.night-mode-global body {
 .ap-mode-btn.ap-engage-btn.holding::after {
     content: "";
     position: absolute;
-    left: 0;
-    bottom: 0;
-    height: 100%;
-    width: 0;
+    inset: 0;
     background: rgba(var(--sk-accent-rgb), 0.30);
-    animation: ap-hold-fill 600ms linear forwards;
+    transform-origin: left center;
+    animation: alarm-hold-fill 600ms linear forwards;
     pointer-events: none;
-}
-@keyframes ap-hold-fill {
-    from { width: 0; }
-    to   { width: 100%; }
 }
 
 /* Radar HUD card. Shares the autopilot card's chrome (.ap-engaged
@@ -6892,33 +6798,6 @@ html.night-mode-global body {
     min-height: 28px;
 }
 
-/* ===== Dark Ops =====
-   Chrome-off mode for long offshore watches. The map + the alarm
-   banner remain; everything else hides. Explicit opt-in via a long-
-   press on the Night button; Esc or the Exit chip brings chrome back.
-   Intentionally aggressive - if you want a subtler declutter, use
-   Fullscreen + Night mode instead. */
-.map-container.dark-ops .map-controls,
-.map-container.dark-ops .hud-stack,
-.map-container.dark-ops .chart-panel,
-.map-container.dark-ops .chart-quick-bar,
-.map-container.dark-ops .route-edit-bar,
-.map-container.dark-ops .route-edit-hint,
-.map-container.dark-ops .route-edit-list,
-.map-container.dark-ops .leaflet-control-zoom,
-.map-container.dark-ops .ona-zoom-badge {
-    display: none !important;
-}
-
-/* Dim chart tiles in Dark Ops so a satellite-imagery base doesn't kill
-   dark adaptation. Applied to the Leaflet tile pane specifically: AIS
-   markers, route polylines, anchor circles (all inside .leaflet-overlay-pane
-   or SVG layers) keep their original colours so colour-blind-safe hue
-   coding stays intact. */
-.map-container.dark-ops .leaflet-tile-pane {
-    filter: grayscale(1) brightness(0.35) contrast(1.1) sepia(0.4) hue-rotate(-30deg);
-}
-
 /* Light themes: ensure the leaflet-container background follows the
    theme so any tile gap shows the page bg rather than Leaflet's
    default #ddd grey. theme-effective-light is set on <html> by
@@ -6943,12 +6822,31 @@ html.night-mode-global body {
    rest of the UI flips to warm red via token overrides, but Leaflet's
    OSM / OpenSeaMap tiles are bitmap PNGs and stay bright white without
    a pane-level filter. One bright chart tile ruins dark adaptation
-   the moment the helm glances down. Red-leaning sepia + brightness
-   cut keeps the chart legible without blowing the helmsman's eyes;
-   vector overlays are un-touched so the AIS palette / laylines /
+   the moment the helm glances down. A dark rust wash multiplied over
+   the tiles keeps the chart legible without blowing the helmsman's
+   eyes; vector overlays are untouched so the AIS palette / laylines /
    course line keep their hues. */
-.night-mode-global .leaflet-tile-pane {
-    filter: brightness(0.4) sepia(0.8) hue-rotate(-30deg) saturate(1.4);
+.night-mode-global .leaflet-tile-pane::after {
+    content: "";
+    /* The tile pane is a zero-size box at the map-pane origin; the
+       wash is oversized so it covers every tile however far the chart
+       is panned. A flat colour layer blended with multiply is one
+       compositing op per frame, where the old 4-step filter chain
+       re-filtered the whole pane on every zoom-animation frame. The
+       pane's own z-index makes it a stacking context, so the blend
+       touches chart tiles only, never vector overlays or markers. */
+    position: absolute;
+    left: -50000px;
+    top: -50000px;
+    width: 100000px;
+    height: 100000px;
+    z-index: 1000;
+    /* Multiplying by this rust tone maps white land to roughly the
+       old filter's output (brightness 0.4 + sepia + red shift) while
+       keeping land / water / label contrast. */
+    background: #b05a40;
+    mix-blend-mode: multiply;
+    pointer-events: none;
 }
 
 /* Big screen mode: scales every cockpit-distance-relevant element
@@ -6990,20 +6888,21 @@ html.night-mode-global body {
 /* Big-type also bumps the bottom control bar buttons + overflow-menu
    items + chart reorder arrows. Helm screens with older eyes / cold
    gloves need bigger tap targets, not just bigger numbers. Applied
-   when .big-type is on the nearest ancestor (`:has(.big-type)` on
-   main so the control bar outside .map-container still picks it up). */
-main:has(.map-container.big-type) .ctrl-btn {
+   via .page-big-type, which MainLayout sets on .page while the map is
+   shown with Big screen mode on, so chrome outside .map-container
+   (control bar, toasts, alarm banner) picks it up too. */
+.page.page-big-type .ctrl-btn {
     min-height: 56px;
     padding: 10px 14px;
     font-size: 0.95rem;
 }
-main:has(.map-container.big-type) .ctrl-btn .ctrl-lbl { font-size: 0.85rem; }
-main:has(.map-container.big-type) .ctrl-more-item {
+.page.page-big-type .ctrl-btn .ctrl-lbl { font-size: 0.85rem; }
+.page.page-big-type .ctrl-more-item {
     min-height: 52px;
     font-size: 1rem;
     padding: 10px 14px;
 }
-main:has(.map-container.big-type) .chart-reorder-btn {
+.page.page-big-type .chart-reorder-btn {
     min-height: 40px;
     min-width: 40px;
     font-size: 1.1rem;
@@ -7016,7 +6915,7 @@ main:has(.map-container.big-type) .chart-reorder-btn {
    the default and 1pt taller than the touch override; padding
    bumps proportionally so the chip doesn't look squashed under
    the larger glyph. */
-main:has(.map-container.big-type) .chart-quick-chip {
+.page.page-big-type .chart-quick-chip {
     font-size: 0.92rem;
     padding: 6px 14px;
     border-radius: 16px;
@@ -7039,10 +6938,10 @@ main:has(.map-container.big-type) .chart-quick-chip {
          alone. The hard value uses the variable directly so a
          future --ctrl-bar-offset / --panel-gap change still
          lands here. */
-main:has(.map-container.big-type) {
+.page.page-big-type {
     --ctrl-bar-height: 70px;
 }
-main:has(.map-container.big-type) .hud-stack-bc {
+.page.page-big-type .hud-stack-bc {
     bottom: calc(var(--ctrl-bar-height) + var(--ctrl-bar-offset) + var(--panel-gap));
 }
 
@@ -7053,13 +6952,6 @@ main:has(.map-container.big-type) .hud-stack-bc {
    reads as "noticeably bigger" without colliding with the AIS
    labels at typical zoom levels. */
 .map-container.big-type .leaflet-marker-icon.boat-icon svg {
-    transform: scale(1.6);
-    transform-origin: center;
-}
-/* Sleeping AIS markers (anchored / moored) get the same scale so
-   the size convention stays consistent across the fleet. */
-.map-container.big-type .leaflet-marker-icon.boat-icon-sleeping svg,
-.map-container.big-type .leaflet-marker-icon.boat-icon-buddy svg {
     transform: scale(1.6);
     transform-origin: center;
 }
@@ -7092,14 +6984,14 @@ main:has(.map-container.big-type) .hud-stack-bc {
 
 /* Big screen mode: toast notifications. The toast stack lives
    outside .map-container, but the helm seeing toasts from the
-   nav-station seat needs them readable too. :has() lifts the
-   scope to <main>. */
-main:has(.map-container.big-type) .toast-item {
+   nav-station seat needs them readable too; .page-big-type covers
+   it. */
+.page.page-big-type .toast-item {
     font-size: 1rem;
     padding: 0.85rem 1.1rem;
     min-width: 280px;
 }
-main:has(.map-container.big-type) .toast-action {
+.page.page-big-type .toast-action {
     font-size: 0.95rem;
     padding: 0.4rem 0.8rem;
 }
@@ -7108,52 +7000,22 @@ main:has(.map-container.big-type) .toast-action {
    the alarm copy ("APPROACH", "CPA 0.15nm in 1min") is the
    single biggest "act NOW" cue, so it should be the easiest to
    read across the cabin. */
-main:has(.map-container.big-type) .alarm-banner {
+.page.page-big-type .alarm-banner {
     font-size: 1.1rem;
     padding: 14px 18px;
     min-height: 52px;
 }
-main:has(.map-container.big-type) .alarm-banner strong {
+.page.page-big-type .alarm-banner strong {
     font-size: 1.2rem;
 }
-main:has(.map-container.big-type) .alarm-snooze,
-main:has(.map-container.big-type) .alarm-action {
+.page.page-big-type .alarm-snooze,
+.page.page-big-type .alarm-action {
     font-size: 1rem;
     padding: 8px 14px;
     min-height: 44px;
 }
-main:has(.map-container.big-type) .alarm-hold-hint {
+.page.page-big-type .alarm-hold-hint {
     font-size: 0.85rem;
-}
-/* Tiny exit chip, top-right. Big enough to tap in a swell but small
-   enough not to compete with the chart. env(safe-area-inset-*) keeps
-   the chip clear of the iPad notch / rounded corners when the map is
-   fullscreen. Solid background + blur so it stays readable over any
-   chart tile underneath (85%-alpha on slate-blue water failed AA). */
-.dark-ops-exit {
-    position: absolute;
-    top: calc(10px + env(safe-area-inset-top, 0px));
-    right: calc(10px + env(safe-area-inset-right, 0px));
-    z-index: var(--z-modal);
-    background: rgba(15, 17, 22, 0.95);
-    color: rgba(255, 255, 255, 0.95);
-    border: 1px solid rgba(255, 255, 255, 0.35);
-    border-radius: 4px;
-    padding: 6px 10px;
-    font-size: 0.8rem;
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-    -webkit-backdrop-filter: blur(4px);
-    backdrop-filter: blur(4px);
-}
-.dark-ops-exit:hover,
-.dark-ops-exit:focus {
-    background: rgba(30, 34, 44, 1);
-    border-color: rgba(255, 255, 255, 0.55);
-    outline: none;
-}
-@media (pointer: coarse) {
-    .dark-ops-exit { min-height: 40px; padding: 10px 14px; }
 }
 
 /* ===== Map Rotation (Course-up / Head-up) ===== */
@@ -7187,7 +7049,7 @@ html[data-slow-client="1"] #mapDiv {
        3-rem topbar) so the History page covers the same screen
        real estate Map does. flex-direction column then splits
        toolbar / body / controls vertically inside that. */
-    height: calc(100dvh - 3rem);
+    height: var(--content-height);
     width: 100%;
     overflow: hidden;
     /* isolation: isolate scopes child z-indexes (the history-top-bar
@@ -7233,8 +7095,6 @@ html[data-slow-client="1"] #mapDiv {
     z-index: 800;
     background: var(--panel-bg-strong);
     color: var(--panel-text);
-    -webkit-backdrop-filter: blur(8px);
-    backdrop-filter: blur(8px);
     border-radius: 10px;
     padding: 12px 16px;
     border: 1px solid var(--panel-border);
@@ -7585,7 +7445,7 @@ html[data-slow-client="1"] #mapDiv {
     top: 10px;
     left: 50%;
     transform: translateX(-50%);
-    z-index: 700;
+    z-index: var(--z-quick-bar);
     display: flex;
     gap: 4px;
     /* Wrap is the default everywhere now: take as much horizontal
@@ -7725,8 +7585,6 @@ html[data-slow-client="1"] #mapDiv {
     gap: 6px;
     align-items: center;
     background: rgba(15, 17, 22, 0.92);
-    -webkit-backdrop-filter: blur(6px);
-    backdrop-filter: blur(6px);
     border-radius: 8px;
     padding: 8px 12px;
     border: 1px solid rgba(167, 139, 250, 0.3);
@@ -7791,8 +7649,6 @@ html[data-slow-client="1"] #mapDiv {
        reads at AA contrast on a near-white surface; the dark-theme
        value is too pale on white and the silhouette dissolves. */
     border-color: rgba(109, 40, 217, 0.55);
-    -webkit-backdrop-filter: blur(6px);
-    backdrop-filter: blur(6px);
 }
 :root.theme-effective-light .route-edit-hint {
     /* Light tint of the violet identity rather than pure white so
@@ -8087,8 +7943,6 @@ html[data-slow-client="1"] #mapDiv {
        a deep-amber would carry. The dark-theme rule sets the same
        quiet neutral; both branches read as system chrome. */
     border-color: rgba(15, 23, 42, 0.25);
-    -webkit-backdrop-filter: blur(6px);
-    backdrop-filter: blur(6px);
 }
 :root.theme-high-contrast .anchor-edit-bar {
     background: #ffffff;
@@ -8114,11 +7968,13 @@ html[data-slow-client="1"] #mapDiv {
     top: 50px;
     left: 50%;
     transform: translateX(-50%);
-    z-index: 800;
-    background: rgba(167, 139, 250, 0.2);
+    z-index: var(--z-controls);
+    /* Violet tint over an opaque panel surface: legible over any
+       chart tile without a per-frame backdrop blur. */
+    background:
+        linear-gradient(rgba(var(--map-current-rgb), 0.2), rgba(var(--map-current-rgb), 0.2)),
+        var(--panel-bg-strong);
     color: #e0e7ff;
-    -webkit-backdrop-filter: blur(6px);
-    backdrop-filter: blur(6px);
     border-radius: 16px;
     padding: 6px 14px;
     font-size: 0.8rem;
@@ -8239,8 +8095,6 @@ html[data-slow-client="1"] #mapDiv {
        active interaction surface. */
     z-index: calc(var(--z-controls) + 10);
     background: rgba(15, 17, 22, 0.92);
-    -webkit-backdrop-filter: blur(6px);
-    backdrop-filter: blur(6px);
     border-radius: 8px;
     border: 1px solid rgba(167, 139, 250, 0.3);
     color: var(--sk-text);
@@ -8409,11 +8263,9 @@ html[data-slow-client="1"] #mapDiv {
 
 .map-context-menu {
     position: absolute;
-    z-index: 900;
+    z-index: var(--z-popup);
     background: var(--panel-bg-strong);
     color: var(--panel-text);
-    -webkit-backdrop-filter: blur(6px);
-    backdrop-filter: blur(6px);
     border-radius: 8px;
     border: 1px solid var(--panel-border);
     padding: 4px 0;
@@ -8456,11 +8308,9 @@ html[data-slow-client="1"] #mapDiv {
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    z-index: 900;
+    z-index: var(--z-popup);
     background: var(--panel-bg-strong);
     color: var(--panel-text);
-    -webkit-backdrop-filter: blur(6px);
-    backdrop-filter: blur(6px);
     border-radius: 8px;
     border: 1px solid var(--panel-border);
     padding: 16px 20px;
@@ -8593,17 +8443,7 @@ html[data-slow-client="1"] #mapDiv {
 }
 .note-popup-inner { padding: 2px 4px; min-width: 180px; }
 .note-popup-title { font-weight: 600; color: var(--ann-note); margin-bottom: 4px; }
-/* Coordinates line on waypoint popups. Dimmer + smaller than the
-   title so the name leads and the numbers sit underneath as
-   reference data. Tabular-nums keeps adjacent-waypoint coords
-   vertically aligned when the popup is compared by eye. */
-.note-popup-coords {
-    font-size: 0.72rem;
-    color: var(--panel-text-muted);
-    font-variant-numeric: tabular-nums;
-    margin-bottom: 8px;
-    line-height: 1.2;
-}
+
 .note-popup-body {
     color: var(--panel-text);
     font-size: 0.85rem;
@@ -8855,15 +8695,15 @@ html[data-slow-client="1"] #mapDiv {
    dark default = warm-amber chrome; light / high-contrast / system+
    prefers-light = cream-tinted card with dark amber text + border,
    so the popup reads on a bright basemap without losing the "warm
-   route" identity. !important is required to beat Leaflet's own
-   inline popup-wrapper background; var() through it works. */
+   route" identity. leaflet.css loads before app.css, so the extra
+   .route-popup class wins without !important. */
 .route-popup .leaflet-popup-content-wrapper {
-    background: var(--route-popup-bg) !important;
-    color: var(--route-popup-fg) !important;
+    background: var(--route-popup-bg);
+    color: var(--route-popup-fg);
     border-radius: 6px;
-    border: 1px solid var(--route-popup-border) !important;
+    border: 1px solid var(--route-popup-border);
 }
-.route-popup .leaflet-popup-tip { background: var(--route-popup-bg) !important; }
+.route-popup .leaflet-popup-tip { background: var(--route-popup-bg); }
 /* min-width 260 so the three action buttons (Deactivate / Edit /
    Delete) sit on a single row at coarse-pointer (touch) sizing.
    The previous 180 px forced a wrap onto two rows AND broke the
@@ -8921,16 +8761,16 @@ html[data-slow-client="1"] #mapDiv {
     background: rgba(var(--sk-accent-rgb), 0.15);
     border-color: rgba(var(--sk-accent-rgb), 0.8);
 }
-.route-delete-btn { border-color: rgba(239, 68, 68, 0.4); }
+.route-delete-btn { border-color: rgba(var(--sev-danger-rgb), 0.4); }
 .route-delete-btn:hover {
-    background: rgba(239, 68, 68, 0.15);
-    color: #f87171;
+    background: rgba(var(--sev-danger-rgb), 0.15);
+    color: var(--sev-danger);
     border-color: var(--sev-danger);
 }
 /* Two-step destructive-confirm styling matches notes/regions. */
 .route-delete-btn.confirming {
-    background: rgba(239, 68, 68, 0.25);
-    color: #fecaca;
+    background: rgba(var(--sev-danger-rgb), 0.25);
+    color: var(--route-popup-fg);
     border-color: var(--sev-danger);
 }
 @media (pointer: coarse) {
@@ -8963,8 +8803,6 @@ html[data-slow-client="1"] #mapDiv {
     border-radius: 10px;
     text-align: center;
     font-size: 0.9rem;
-    -webkit-backdrop-filter: blur(4px);
-    backdrop-filter: blur(4px);
     box-shadow: var(--panel-shadow);
 }
 .instrument-empty-state strong {
@@ -8997,9 +8835,8 @@ html[data-slow-client="1"] #mapDiv {
     font-size: 0.68rem;
     letter-spacing: 0.05em;
 }
-.instrument-badge-good   { border-color: rgba(var(--sev-ok-rgb), 0.55);   background: rgba(var(--sev-ok-rgb), 0.12); }
+
 .instrument-badge-warn   { border-color: rgba(var(--sev-warn-rgb), 0.55); background: rgba(var(--sev-warn-rgb), 0.12); }
-.instrument-badge-danger { border-color: rgba(var(--sev-danger-rgb), 0.55); background: rgba(var(--sev-danger-rgb), 0.12); }
 
 /* Horizontal fill meter used for VMG-to-target on SailSteer. The
    inner bar stretches 0..100% of actual/target. Full-width amber
@@ -9012,13 +8849,14 @@ html[data-slow-client="1"] #mapDiv {
     border-radius: 3px;
     overflow: hidden;
 }
+/* Full-width bar scaled by an inline scaleX(ratio): the transition
+   runs on the compositor instead of re-laying out the bar per tick. */
 .perf-meter-fill {
     position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
+    inset: 0;
     background: var(--sev-ok);
-    transition: width 0.4s ease-out, background 0.4s ease-out;
+    transform-origin: left center;
+    transition: transform 0.4s ease-out, background 0.4s ease-out;
 }
 .perf-meter-fill.off-polar { background: var(--sev-warn); }
 
@@ -9323,8 +9161,7 @@ html[data-slow-client="1"] #mapDiv {
     font-variant-numeric: tabular-nums;
     opacity: 0.85;
 }
-.wind-hero-unit,
-.wind-hero-label {
+.wind-hero-unit {
     font-size: 0.75rem;
     color: var(--sk-text-muted);
     text-transform: uppercase;
@@ -9394,14 +9231,6 @@ html[data-slow-client="1"] #mapDiv {
     outline: 2px solid var(--sk-accent);
     outline-offset: 2px;
 }
-/* Compact variant: shorter cells for inline placement next to a
-   chip / heading where vertical space is constrained. */
-.segmented.segmented-sm .btn,
-.segmented.segmented-sm label.btn {
-    padding: 2px 10px;
-    font-size: 0.72rem;
-    min-height: 22px;
-}
 
 /* TWD slope numeric headline. Always rendered (even when no signal)
    so the helm has a stable place to look for the tactical "is the
@@ -9453,32 +9282,7 @@ html[data-slow-client="1"] #mapDiv {
     flex-direction: column;
     gap: 0.5rem;
 }
-.wind-section-header {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-}
-.wind-section-title {
-    font-size: 1rem;
-    font-weight: 600;
-    margin: 0;
-    color: var(--sk-text);
-    letter-spacing: -0.005em;
-}
-.wind-section-meta {
-    margin: 0;
-    font-size: 0.75rem;
-    color: var(--sk-text-muted);
-}
-/* Sample count chip: pushed right of the section title + selector
-   so the helm sees "I have N samples" without it crowding the
-   selector. The previous one-line meta concatenated count + window
-   + legend, which mixed three orthogonal facts. */
-.wind-section-count {
-    margin-left: auto;
-    font-variant-numeric: tabular-nums;
-}
+
 .wind-history-svg {
     width: 100%;
     height: auto;
@@ -9730,18 +9534,22 @@ html[data-slow-client="1"] #mapDiv {
     border-radius: 50%;
     background: var(--map-bearing);
     border: 2px solid #fff;
-    /* Static glow - the animation is handled by ::before now. */
-    box-shadow: 0 0 8px rgba(var(--map-bearing-rgb), 0.65);
 }
+/* Bounded: eight pings (12 s) draw the eye when the marker is placed,
+   then the ring rests as a static outline so an hours-long passage
+   doesn't keep a compositor animation running. The marker is moved
+   with setLatLng on a leg advance (not recreated), so the pings do
+   not replay per waypoint. No will-change: a permanently promoted
+   layer for a marker that is static most of the time costs more
+   than it saves. */
 .active-wp-pulse::before {
     content: "";
     position: absolute;
     inset: -2px;
     border-radius: 50%;
     border: 2px solid rgba(var(--map-bearing-rgb), 0.9);
-    animation: wp-ping 1.5s ease-out infinite;
+    animation: wp-ping 1.5s ease-out 8;
     pointer-events: none;
-    will-change: transform, opacity;
 }
 
 @keyframes wp-ping {
@@ -9779,22 +9587,19 @@ html[data-slow-client="1"] #mapDiv {
    left-edge severity bar stays at AA contrast on both dark and light
    panels. The buddy hue (#facc15 amber-400 / #fde68a amber-200) is
    user-annotation, stays constant across themes. */
-.vessel-row { cursor: pointer; }
+/* AIS list can run to hundreds of rows in a busy harbour; off-screen
+   rows skip layout + paint (see .rawstream-entry). */
+.vessel-row {
+    cursor: pointer;
+    content-visibility: auto;
+    contain-intrinsic-size: auto 52px;
+}
 .vessel-row:hover { background: var(--sk-surface-hover); }
 .vessel-row.vessel-danger { border-left: 3px solid var(--sev-danger); padding-left: 5px; }
 .vessel-row.vessel-warn   { border-left: 3px solid var(--sev-warn); padding-left: 5px; }
 .vessel-row.vessel-buddy  { border-left: 3px solid #facc15; padding-left: 5px; }
 .vessel-row.vessel-buddy .chart-name { color: #fde68a; }
 .buddy-offline { opacity: 0.6; font-style: italic; }
-
-/* Section header with a trailing action button (Refresh on the Buddies
-   section). The header fills the row; the button parks on the right. */
-.section-with-action {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-.section-with-action > :first-child { flex: 1; min-width: 0; }
 
 /* COLREGS classification line under a vessel row.
    Routed through --sev-* tokens so the give-way / stand-on colours
@@ -9806,39 +9611,6 @@ html[data-slow-client="1"] #mapDiv {
 .colregs-role { font-weight: 600; }
 .colregs-giveway { color: var(--sev-danger); }   /* we must keep clear */
 .colregs-standon { color: var(--sev-ok); }       /* we hold course */
-
-/* Guard-ring distance labels. Tiny text-only chips placed at the
-   north of each ring (inner danger + outer dashed warning) so the
-   helm reads "what's my CPA radius?" at a glance without going to
-   Settings. Pure-text + no background by design - the rings
-   themselves carry the visual weight, the label is just a tag. */
-.guard-ring-label {
-    background: transparent !important;
-    border: none !important;
-    box-shadow: none !important;
-    color: var(--guard-warn, #f59e0b);
-    font-size: 10px;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-    letter-spacing: 0.02em;
-    padding: 0 !important;
-    /* Subtle text shadow so the label survives over both bright +
-       dark chart tiles without us painting a pill. Dual-stroke
-       trick: opaque dark stroke on a light theme chart, opaque
-       light stroke on a dark theme chart. */
-    text-shadow:
-        0 0 2px rgba(0, 0, 0, 0.55),
-        0 0 4px rgba(0, 0, 0, 0.35);
-    pointer-events: none;
-}
-.guard-ring-label::before { display: none !important; }
-.guard-ring-label-warn { opacity: 0.85; }
-.theme-effective-light .guard-ring-label {
-    color: #92400e;             /* amber-900 - AA on white tiles */
-    text-shadow:
-        0 0 2px rgba(255, 255, 255, 0.85),
-        0 0 4px rgba(255, 255, 255, 0.55);
-}
 
 /* Distance-ring labels. Same text-only chip pattern as the guard
    ring labels but neutral grey - the rings carry no alarm semantics
@@ -10015,13 +9787,6 @@ html[data-slow-client="1"] #mapDiv {
     box-sizing: content-box;
 }
 
-.anchor-radius-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 3px;
-    margin-top: 6px;
-}
-
 /* Dormant-rule hint. Amber so it reads as "something to action" but
    subtle enough that it doesn't scream for attention when the rule
    that's dormant isn't currently relevant to what the boat is doing. */
@@ -10035,33 +9800,28 @@ html[data-slow-client="1"] #mapDiv {
     border-radius: 3px;
     line-height: 1.3;
 }
-.anchor-radius-chips .map-btn {
-    font-size: 0.7rem;
-    padding: 3px 7px;
-    min-width: 0;
-    pointer-events: auto;
-}
-@media (pointer: coarse) {
-    .anchor-radius-chips .map-btn {
-        font-size: 0.78rem;
-        padding: 10px 14px;
-        min-height: 44px;
-        min-width: 44px;
-    }
-}
 
+/* Anchor-drag card: severity tint painted once, plus a pre-painted
+   ::after wash whose opacity pulses. .hud-card's contain:paint makes
+   the card a stacking context, so z-index:-1 keeps the wash above the
+   card background and below its text. */
 .anchor-alarm {
-    border: 1px solid rgba(239, 68, 68, 0.6) !important;
-    animation: anchor-alert 1s ease-in-out infinite;
+    border: 1px solid rgba(var(--sev-danger-rgb), 0.6) !important;
+    background:
+        linear-gradient(rgba(var(--sev-danger-rgb), 0.22), rgba(var(--sev-danger-rgb), 0.22)),
+        var(--hud-card-bg);
+    position: relative;
 }
-
-@keyframes anchor-alert {
-    0%, 100% { background: rgba(60, 10, 10, 0.85); }
-    50% { background: rgba(120, 20, 20, 0.9); }
-}
-
-.night-mode-global .anchor-panel {
-    background: rgba(30, 5, 5, 0.92);
+.anchor-alarm::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    background: rgba(var(--sev-danger-rgb), 0.3);
+    opacity: 0;
+    animation: glow-opacity-pulse 1s ease-in-out infinite;
+    pointer-events: none;
 }
 
 /* ===== Night-mode adjustments for chart overlays + chrome =====
@@ -10069,16 +9829,6 @@ html[data-slow-client="1"] #mapDiv {
    rules below patch surfaces that hard-code colour outside the token
    system (Bootstrap nav-tabs, the radar transmit chip, route-edit
    chrome, the speed-coloured server track polyline). */
-
-/* Server-track + local-trail polylines are coloured by speed bucket
-   through SpeedColor.Rgb (mirror in format.js); the C# canonical is
-   the contract so we don't touch the rgb() output. Instead, red-
-   shift the rendered SVG path via filter so the green/yellow speed
-   band reads inside the warm palette without losing the speed
-   gradient. */
-.night-mode-global .speed-track-line {
-    filter: hue-rotate(-95deg) saturate(0.8) brightness(0.9);
-}
 
 /* Radar status chip + Transmit power button. The chip palette
    (green for transmit, amber for preparing, etc.) reads through
@@ -10187,26 +9937,6 @@ html[data-slow-client="1"] #mapDiv {
     color: var(--sk-text);
 }
 
-/* ===== Slow-client perf overrides =====
-   leafletInterop.js stamps data-slow-client="1" on <html> when it
-   detects a Raspberry-Pi-class device (<= 4 logical cores, or 'arm'
-   in the UA). These overrides kill GPU-expensive effects that
-   made the whole UI feel sluggish on that hardware:
-     - backdrop-filter: each panel does a blur sample + composite pass
-       on every frame it's visible. 20+ panels x a blur kernel was
-       visibly stuttery on a Pi 4; the solid backgrounds read fine
-       without it.
-     - drop-shadow / blur() filters fall in the same bucket.
-     - Some keyframe animations that rely on box-shadow transitions
-       are replaced with transform-only pulses elsewhere; this block
-       handles the cross-cutting "kill all blurs" case.
-   Desktop and iPad keep the original effects for the crisper look
-   their GPUs can afford. */
-html[data-slow-client="1"] * {
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-}
-
 /* ===== Global confirmation modal =====
    Hosted once from MainLayout via ConfirmationDialog.razor. Triggered
    by any IConfirmationService.ConfirmAsync callsite; the service
@@ -10216,8 +9946,6 @@ html[data-slow-client="1"] * {
     inset: 0;
     background: rgba(0, 0, 0, 0.55);
     z-index: var(--z-modal);
-    -webkit-backdrop-filter: blur(2px);
-    backdrop-filter: blur(2px);
 }
 .confirm-dialog {
     position: fixed;
@@ -10296,6 +10024,7 @@ html[data-slow-client="1"] * {
 }
 .confirm-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     justify-content: flex-end;
 }
@@ -10334,7 +10063,9 @@ html[data-slow-client="1"] * {
     filter: brightness(1.1);
 }
 @media (pointer: coarse) {
-    .confirm-btn { min-height: 48px; min-width: 110px; padding: 12px 18px; }
+    /* Grow to share the row; three 110 px buttons wrap onto a second
+       row on a 390 px phone instead of overflowing the dialog. */
+    .confirm-btn { min-height: 48px; min-width: 110px; padding: 12px 18px; flex: 1 1 110px; }
     .confirm-dialog { padding: 22px 24px 20px; }
     .confirm-msg { font-size: 1rem; }
 }
@@ -10361,43 +10092,73 @@ html[data-slow-client="1"] * {
 
 /* ===== Reduced motion =====
    Users with vestibular disorders (and iPad users who've toggled
-   "Reduce Motion" in Accessibility Settings) should not see the full
-   suite of pulses, blinks, and breathing animations we use for
-   discovery cues. WCAG 2.3.3 (AAA) + 2.2.2 (A).
+   "Reduce Motion" in Accessibility Settings) should not see pulses,
+   blinks, pings or breathing animations. WCAG 2.3.3 (AAA) + 2.2.2 (A).
 
    Policy:
-   * Functional feedback that MUST animate (the hold-to-dismiss fill,
-     the route-edit "unsaved" pulse) keeps its animation because it
-     communicates state not decoration.
-   * Alarm banner flash, MOB ping, coachmark breathe, connection
-     pulse, value-change pulse, anchor-alert flash are all purely
-     decorative cues on top of visible state changes - safe to kill.
-   Uses `animation: none !important` to override keyframe rules that
-   already win on specificity against a plain reset. Keep this block
-   the LAST rule in the file so nothing else overrides it. */
+   * Functional progress that MUST animate (the hold-to-dismiss and
+     autopilot hold fills, loading spinners) keeps its animation: it
+     communicates state, not decoration.
+   * Every infinite / attention animation is listed below. Where the
+     animation is the alarm cue, a static outline replaces it so the
+     state stays obvious without motion.
+   When adding an infinite animation anywhere in this file, add its
+   selector here too.
+   `animation: none !important` beats the keyframe rules regardless of
+   specificity. */
 @media (prefers-reduced-motion: reduce) {
-    .alarm-flash,
-    .alarm-banner.alarm-danger,
-    .conn-pulse,
-    .value-pulse,
-    .mob-pulse,
-    .mob-glow,
+    .alarm-banner,
+    .hud-threshold.threshold-active,
+    .depth-danger,
+    .depth-warn-glyph,
+    .ctrl-btn-danger.active::after,
+    .ctrl-btn-confirming::after,
     .mob-icon .mob-pulse,
+    .sart-icon,
+    .boat-icon.cpa-pulse::after,
+    .active-wp-pulse::before,
+    .anchor-alarm::after,
+    .alarm-log-btn-active::after,
+    .update-available-chip::after,
+    .search-pin-dot,
+    .connection-status.stale .connection-dot,
+    .route-panel.route-stopping,
+    .region-delete-btn.confirming,
+    .loading-dots > span,
     .touch-coachmark,
     .welcome-card,
-    .anchor-alarm,
-    .cpa-pulse,
-    .depth-danger,
-    .hud-card-progress-alarm,
-    .ctrl-btn-confirming,
-    .alarm-log-btn-active {
+    .welcome-backdrop,
+    .toast-item,
+    .alarm-log-panel,
+    .ctrl-more-menu,
+    .confirm-dialog,
+    .form-label.settings-highlight {
         animation: none !important;
     }
-    /* Steady accent fill stand-in for the dropped blink animation -
-       the helm with reduce-motion enabled still needs a clear cue
-       that the topbar button is the urgent one. */
+    /* Static stand-ins for alarm cues: a solid outline in the
+       severity ink keeps "this is firing" legible without motion. */
+    .alarm-banner-stack > .alarm-banner:first-child {
+        outline: 3px solid currentColor;
+        outline-offset: -5px;
+    }
+    .hud-threshold.threshold-active,
+    .depth-warn-glyph {
+        outline: 2px solid var(--sev-danger);
+        outline-offset: 1px;
+        border-radius: 3px;
+    }
+    :root .ctrl-btn.ctrl-btn-danger.active,
+    :root .ctrl-btn.ctrl-btn-confirming {
+        outline: 2px solid var(--sev-danger);
+        outline-offset: 1px;
+    }
+    .anchor-alarm,
     .alarm-log-btn-active {
-        background: rgba(var(--sev-danger-rgb), 0.4);
+        outline: 2px solid var(--sev-danger);
+        outline-offset: -2px;
+    }
+    .boat-icon.cpa-pulse::after {
+        transform: scale(1.8);
     }
 
     /* Also cut scroll/transform smoothing that some users find

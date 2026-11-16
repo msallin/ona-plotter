@@ -15,8 +15,14 @@ public sealed class TrackBuffer
 
     public event Action? OnTrackUpdated;
 
-    public TrackBuffer(int capacity = 1000)
+    private readonly TimeProvider _time;
+
+    /// <summary>System clock; DI resolves <see cref="TrackBuffer(TimeProvider, int)"/>.</summary>
+    public TrackBuffer(int capacity = 1000) : this(TimeProvider.System, capacity) { }
+
+    public TrackBuffer(TimeProvider time, int capacity = 1000)
     {
+        _time = time;
         _buffer = new TrackPoint[capacity];
     }
 
@@ -82,7 +88,7 @@ public sealed class TrackBuffer
             if (_count < 2) return null;
             // Walk newest-to-oldest; collect the newest sample with a
             // depth, then the oldest-but-still-in-window sample.
-            var now = DateTime.UtcNow;
+            var now = _time.GetUtcNow().UtcDateTime;
             var cutoff = now - window;
             TrackPoint? newest = null;
             TrackPoint? oldestInWindow = null;

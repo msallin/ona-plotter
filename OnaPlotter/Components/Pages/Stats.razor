@@ -80,13 +80,13 @@
                     <input type="datetime-local" class="form-control form-control-sm"
                            style="width:auto;"
                            title="Start of window (local time)"
-                           value="@FormatLocalForInput(customFromLocal)"
+                           value="@Format.DateTimeLocalInput(customFromLocal)"
                            @onchange="OnCustomFromChanged" />
                     <span style="font-size:0.85rem; color:var(--sk-text-muted);">to</span>
                     <input type="datetime-local" class="form-control form-control-sm"
                            style="width:auto;"
                            title="End of window (local time)"
-                           value="@FormatLocalForInput(customToLocal)"
+                           value="@Format.DateTimeLocalInput(customToLocal)"
                            @onchange="OnCustomToChanged" />
                 }
                 <button class="btn btn-primary btn-sm" @onclick="Compute" disabled="@loading">
@@ -557,15 +557,6 @@
         if (DateTime.TryParse(e.Value?.ToString(), out var dt))
             customToLocal = DateTime.SpecifyKind(dt, DateTimeKind.Unspecified);
     }
-
-    /// <summary>Render <c>DateTime</c> in the format <c>datetime-local</c>
-    /// expects: <c>yyyy-MM-ddTHH:mm</c>. Invariant culture so the helm's
-    /// locale doesn't accidentally produce <c>05.06.2024</c>. Same helper
-    /// as History.razor; duplicated rather than extracted because the
-    /// History page is being refactored separately and lifting this
-    /// would have to wait for that refactor.</summary>
-    private static string FormatLocalForInput(DateTime t) =>
-        t.ToString("yyyy-MM-ddTHH:mm", CultureInfo.InvariantCulture);
 
     /// <summary>Coverage = (moving + stationary) / total window. Pulled
     /// out of markup because Razor doesn't allow <c>@{ }</c> blocks

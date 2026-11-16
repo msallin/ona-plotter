@@ -42,6 +42,11 @@ public sealed class RollingScalarSeries
     /// queries with a window past this return null.</summary>
     public TimeSpan MaxRetention { get; }
 
+    /// <summary>Increments whenever the retained sample set changes
+    /// (append, seed, eviction). Lets renderers cache a projection of
+    /// the buffer and skip rebuilding it while nothing changed.</summary>
+    public long Version { get; private set; }
+
     /// <param name="maxRetention">Longest window any consumer
     /// queries - e.g. 60 min for wind (covers WindRose's helm-picked
     /// 60 min chip) or 30 s for SOG (HUD's fixed window).</param>
@@ -62,6 +67,7 @@ public sealed class RollingScalarSeries
         if (!double.IsFinite(value)) return;
         var now = _time.GetUtcNow().UtcDateTime;
         _samples.Add((now, value));
+        Version++;
         EvictOlderThan(now - MaxRetention);
     }
 
@@ -138,6 +144,7 @@ public sealed class RollingScalarSeries
             _head = 0;
         }
         _samples.InsertRange(0, fresh);
+        Version++;
     }
 
     /// <summary>Number of samples retained. Useful for tests and
@@ -185,6 +192,38 @@ public sealed class RollingScalarSeries
             result.Add(new TimeSeriesSample(s.ts, s.value));
         }
         return result;
+    }
+
+    /// <summary>
+    /// Chart view of the trailing <paramref name="window"/>: at most
+    /// about <paramref name="maxVertices"/> stride-sampled vertices plus
+    /// min / max / mean over every in-window sample, read straight from
+    /// storage without copying the window. <paramref name="project"/>
+    /// converts each stored value to the display unit (m/s to kn) before
+    /// it is measured. Empty when nothing is in the window or the window
+    /// exceeds <see cref="MaxRetention"/>.
+    /// </summary>
+    public ChartSeries ChartIn(TimeSpan window, int maxVertices, Func<double, double>? project = null)
+    {
+        if (maxVertices < 2)
+            throw new ArgumentOutOfRangeException(nameof(maxVertices), maxVertices, "Need at least two vertices.");
+        if (window <= TimeSpan.Zero || window > MaxRetention) return ChartSeries.Empty;
+        var now = _time.GetUtcNow().UtcDateTime;
+        EvictOlderThan(now - MaxRetention);
+        var cutoff = now - window;
+        int firstIdx = _samples.Count;
+        for (int i = _samples.Count - 1; i >= _head; i--)
+        {
+            if (_samples[i].ts < cutoff) break;
+            firstIdx = i;
+        }
+        var builder = new ChartSeriesBuilder(_samples.Count - firstIdx, maxVertices);
+        for (int i = firstIdx; i < _samples.Count; i++)
+        {
+            var (ts, value) = _samples[i];
+            builder.Add(ts, project is null ? value : project(value));
+        }
+        return builder.Build();
     }
 
     /// <summary>
@@ -280,10 +319,12 @@ public sealed class RollingScalarSeries
     {
         // Advance head past dead samples - O(k) per call where k is
         // the number falling off the front (usually 0 or 1).
+        int before = _head;
         while (_head < _samples.Count && _samples[_head].ts < cutoff)
         {
             _head++;
         }
+        if (_head != before) Version++;
         // Compact when the dead prefix reaches half the list size -
         // amortises the O(N) shift to O(1) per eviction.
         if (_head > 0 && _head >= _samples.Count / 2)

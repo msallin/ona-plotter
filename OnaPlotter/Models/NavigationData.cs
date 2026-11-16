@@ -35,6 +35,38 @@ public sealed class NavigationData
     /// (no draft / transducer-offset bookkeeping required).</summary>
     public double? DepthBelowKeel { get; private set; }
 
+    /// <summary>Reading from <c>environment.depth.belowSurface</c>
+    /// (metres from the waterline to the seabed). The least conservative
+    /// depth for grounding decisions (it includes the draft), so it is
+    /// only used when neither keel nor transducer depth is available.</summary>
+    public double? DepthBelowSurface { get; private set; }
+
+    /// <summary>Per-source freshness stamps for the depth readings, so a
+    /// dead keel feed isn't masked by a live transducer feed (or vice
+    /// versa). <see cref="DepthUpdatedUtc"/> remains the "any depth"
+    /// stamp the HUD badges.</summary>
+    public DateTime? DepthBelowKeelUpdatedUtc { get; private set; }
+    public DateTime? DepthBelowTransducerUpdatedUtc { get; private set; }
+    public DateTime? DepthBelowSurfaceUpdatedUtc { get; private set; }
+
+    /// <summary>
+    /// Water depth for grounding decisions: the first non-dead reading
+    /// in order below-keel, below-transducer, below-surface (most to least
+    /// conservative), or null when every published source is
+    /// <see cref="FieldFreshness.Dead"/> or missing. A frozen sounder must
+    /// not keep feeding a shallow-water alarm its last value.
+    /// </summary>
+    public double? FreshGroundingDepth
+    {
+        get
+        {
+            if (DepthBelowKeel is double k && FreshnessOf(DepthBelowKeelUpdatedUtc) != FieldFreshness.Dead) return k;
+            if (Depth is double t && FreshnessOf(DepthBelowTransducerUpdatedUtc) != FieldFreshness.Dead) return t;
+            if (DepthBelowSurface is double s && FreshnessOf(DepthBelowSurfaceUpdatedUtc) != FieldFreshness.Dead) return s;
+            return null;
+        }
+    }
+
     // --- Per-field freshness timestamps ---
     // Safety-critical fields carry a UTC update time so HUDs can badge
     // "stale" / "Xs ago" rather than showing a frozen sensor value
@@ -50,18 +82,19 @@ public sealed class NavigationData
     public DateTime? PositionUpdatedUtc { get; private set; }
     public DateTime? AnchorRadiusUpdatedUtc { get; private set; }
 
-    /// <summary>Clock used for *UpdatedUtc stamps. Defaults to the
-    /// system UTC clock; tests inject a deterministic one.</summary>
-    private readonly Func<DateTime> _now;
+    /// <summary>Clock used for *UpdatedUtc stamps and freshness.</summary>
+    private readonly TimeProvider _time;
 
-    public NavigationData() : this(null) { }
+    /// <summary>System clock. DI and clock-sensitive tests use
+    /// <see cref="NavigationData(TimeProvider)"/>.</summary>
+    public NavigationData() : this(TimeProvider.System) { }
 
-    /// <summary>Primary ctor; the parameterless overload forwards here
-    /// with a null clock (falls back to <see cref="DateTime.UtcNow"/>).</summary>
-    public NavigationData(Func<DateTime>? now)
+    public NavigationData(TimeProvider time)
     {
-        _now = now ?? (() => DateTime.UtcNow);
+        _time = time;
     }
+
+    private DateTime UtcNow() => _time.GetUtcNow().UtcDateTime;
 
     /// <summary>
     /// Returns a freshness category for a timestamped field. Lets the
@@ -71,7 +104,7 @@ public sealed class NavigationData
     public FieldFreshness FreshnessOf(DateTime? updatedUtc)
     {
         if (updatedUtc is null) return FieldFreshness.Missing;
-        var age = _now() - updatedUtc.Value;
+        var age = UtcNow() - updatedUtc.Value;
         if (age < TimeSpan.FromSeconds(10)) return FieldFreshness.Live;
         if (age < TimeSpan.FromSeconds(30)) return FieldFreshness.Stale;
         return FieldFreshness.Dead;
@@ -134,6 +167,38 @@ public sealed class NavigationData
     public double? CourseOverGround => PreferMagneticCourse
         ? CourseOverGroundMagnetic ?? CourseOverGroundTrue
         : CourseOverGroundTrue ?? CourseOverGroundMagnetic;
+
+    /// <summary>Raw <c>navigation.magneticVariation</c> (radians, east
+    /// positive, so true = magnetic + variation). Null when the server
+    /// doesn't publish it.</summary>
+    public double? MagneticVariation { get; private set; }
+
+    /// <summary>True-north course over ground in radians (0..2π) for
+    /// geometry against other vessels: CPA, COLREGS, anything mixed with
+    /// AIS COG, which is always true. Independent of
+    /// <see cref="PreferMagneticCourse"/>, which only drives display.
+    /// Resolution order:
+    /// <list type="number">
+    /// <item><see cref="CourseOverGroundTrue"/> when published.</item>
+    /// <item><see cref="CourseOverGroundMagnetic"/> +
+    /// <see cref="MagneticVariation"/> when both are known.</item>
+    /// <item><see cref="CourseOverGroundMagnetic"/> uncorrected, as a last
+    /// resort: off by the local variation, but a slightly-wrong course
+    /// still produces a collision warning where no course produces none.</item>
+    /// </list>
+    /// Null when no COG is published.</summary>
+    public double? CourseOverGroundTrueResolved
+    {
+        get
+        {
+            if (CourseOverGroundTrue is double t) return t;
+            if (CourseOverGroundMagnetic is not double m) return null;
+            if (MagneticVariation is not double v) return m;
+            const double TwoPi = 2 * Math.PI;
+            double r = (m + v) % TwoPi;
+            return r < 0 ? r + TwoPi : r;
+        }
+    }
 
     public double? WindAngleApparent { get; private set; }
     public double? WindSpeedApparent { get; private set; }
@@ -314,11 +379,11 @@ public sealed class NavigationData
     /// Applies a single SignalK path/value pair to the navigation state.
     /// Returns true if the value was recognized and applied.
     /// </summary>
-    public bool Apply(string path, object? rawValue)
+    public bool Apply(string path, DeltaValue rawValue)
     {
-        double? value = ConvertToDouble(rawValue);
-        if (value is null)
+        if (!rawValue.TryGetNumber(out var number))
             return false;
+        double? value = number;
 
         lock (_lock)
         {
@@ -346,9 +411,19 @@ public sealed class NavigationData
                 case OnaPlotter.Utilities.SkPaths.Navigation.HeadingMagnetic:
                     HeadingMagnetic = value;
                     break;
+                case "navigation.magneticVariation":
+                    // Non-finite variation would poison every true-COG
+                    // consumer; keep the previous value instead.
+                    if (!double.IsFinite(value.Value)) return false;
+                    MagneticVariation = value;
+                    break;
                 case "environment.depth.belowTransducer":
                     Depth = value;
-                    DepthUpdatedUtc = _now();
+                    DepthUpdatedUtc = DepthBelowTransducerUpdatedUtc = UtcNow();
+                    break;
+                case "environment.depth.belowSurface":
+                    DepthBelowSurface = value;
+                    DepthUpdatedUtc = DepthBelowSurfaceUpdatedUtc = UtcNow();
                     break;
                 case "environment.depth.belowKeel":
                     DepthBelowKeel = value;
@@ -357,7 +432,7 @@ public sealed class NavigationData
                     // the helm has only belowKeel (no belowTransducer
                     // on the bus) would show a fresh number badged
                     // "stale" because DepthUpdatedUtc never advanced.
-                    DepthUpdatedUtc = _now();
+                    DepthUpdatedUtc = DepthBelowKeelUpdatedUtc = UtcNow();
                     break;
                 case "design.draft.current":
                     // Current is the "as-loaded" draft figure; we prefer
@@ -387,11 +462,11 @@ public sealed class NavigationData
                     break;
                 case OnaPlotter.Utilities.SkPaths.Navigation.Anchor.MaxRadius:
                     AnchorMaxRadius = value;
-                    AnchorRadiusUpdatedUtc = _now();
+                    AnchorRadiusUpdatedUtc = UtcNow();
                     break;
                 case OnaPlotter.Utilities.SkPaths.Navigation.Anchor.CurrentRadius:
                     AnchorCurrentRadius = value;
-                    AnchorRadiusUpdatedUtc = _now();
+                    AnchorRadiusUpdatedUtc = UtcNow();
                     // Track the peak observed distance so the helm can
                     // tell at a glance "we drifted to N m at the worst,
                     // alarm is M m" without watching the live value
@@ -513,7 +588,7 @@ public sealed class NavigationData
         {
             Latitude = latitude;
             Longitude = longitude;
-            PositionUpdatedUtc = _now();
+            PositionUpdatedUtc = UtcNow();
         }
     }
 
@@ -527,7 +602,7 @@ public sealed class NavigationData
     {
         lock (_lock)
         {
-            LastReceivedUtc = _now();
+            LastReceivedUtc = UtcNow();
         }
     }
 
@@ -639,6 +714,41 @@ public sealed class NavigationData
     }
 
     /// <summary>
+    /// Clears the active-route identity and route totals while keeping
+    /// the next point: the server switched from a route to a single
+    /// go-to waypoint. Returns true when anything was set before.
+    /// </summary>
+    public bool ClearActiveRoute()
+    {
+        lock (_lock)
+        {
+            bool had = ActiveRouteHref is not null || ActiveRouteName is not null
+                || ActiveRoutePointIndex is not null || ActiveRoutePointTotal is not null
+                || ActiveRouteDistanceRemaining is not null || ActiveRouteTimeToGo is not null;
+            ActiveRouteHref = null;
+            ActiveRouteName = null;
+            ActiveRoutePointIndex = null;
+            ActiveRoutePointTotal = null;
+            ActiveRouteDistanceRemaining = null;
+            ActiveRouteTimeToGo = null;
+            return had;
+        }
+    }
+
+    /// <summary>Clears the previous-point position. Returns true when it
+    /// was set before.</summary>
+    public bool ClearCoursePreviousPoint()
+    {
+        lock (_lock)
+        {
+            bool had = HasPreviousPoint;
+            CoursePreviousPointLatitude = null;
+            CoursePreviousPointLongitude = null;
+            return had;
+        }
+    }
+
+    /// <summary>
     /// Applies a boolean-valued SignalK path. Returns true if recognised.
     /// Used for <c>perpendicularPassed</c> / <c>arrivalCircleEntered</c>
     /// from the course-provider plugin, where the wire type is a plain
@@ -729,15 +839,4 @@ public sealed class NavigationData
         return DateTime.SpecifyKind(dt, DateTimeKind.Utc);
     }
 
-    private static double? ConvertToDouble(object? raw)
-    {
-        if (raw is null) return null;
-        if (raw is double d) return d;
-        if (raw is int i) return i;
-        if (raw is long l) return l;
-        if (raw is float f) return f;
-        if (raw is System.Text.Json.JsonElement je && je.ValueKind == System.Text.Json.JsonValueKind.Number)
-            return je.GetDouble();
-        return null;
-    }
 }

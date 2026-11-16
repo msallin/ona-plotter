@@ -29,6 +29,7 @@ public class SignalkClientAtonTests
         var c = new SignalkClient(
             baseUrl: new FakeBaseUrl(),
             logger: NullLogger<SignalkClient>.Instance,
+            data: new OnaPlotter.Models.NavigationData(),
             track: new TrackBuffer(),
             ais: ais,
             http: new HttpClient(),
@@ -55,12 +56,12 @@ public class SignalkClientAtonTests
         // NOT match or atons would steal deltas meant for other
         // stores. shore.basestations.* would naturally be a sibling
         // here in a future commit; today the store stays atons-only.
-        await Assert.That(SignalkClient.IsAtonContext("atons.urn:mrn:imo:mmsi:992111234")).IsTrue();
-        await Assert.That(SignalkClient.IsAtonContext("atons.")).IsTrue();
-        await Assert.That(SignalkClient.IsAtonContext("vessels.urn:mrn:imo:mmsi:1")).IsFalse();
-        await Assert.That(SignalkClient.IsAtonContext("shore.basestations.foo")).IsFalse();
-        await Assert.That(SignalkClient.IsAtonContext("")).IsFalse();
-        await Assert.That(SignalkClient.IsAtonContext(null)).IsFalse();
+        await Assert.That(OnaPlotter.Services.Signalk.AtonDeltaHandler.IsAtonContext("atons.urn:mrn:imo:mmsi:992111234")).IsTrue();
+        await Assert.That(OnaPlotter.Services.Signalk.AtonDeltaHandler.IsAtonContext("atons.")).IsTrue();
+        await Assert.That(OnaPlotter.Services.Signalk.AtonDeltaHandler.IsAtonContext("vessels.urn:mrn:imo:mmsi:1")).IsFalse();
+        await Assert.That(OnaPlotter.Services.Signalk.AtonDeltaHandler.IsAtonContext("shore.basestations.foo")).IsFalse();
+        await Assert.That(OnaPlotter.Services.Signalk.AtonDeltaHandler.IsAtonContext("")).IsFalse();
+        await Assert.That(OnaPlotter.Services.Signalk.AtonDeltaHandler.IsAtonContext(null)).IsFalse();
     }
 
     [Test]

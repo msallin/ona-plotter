@@ -26,6 +26,7 @@ namespace OnaPlotter.Services.Alarms;
 /// </summary>
 public sealed class AnchorDragAlarmRule : IAlarmRule
 {
+    public AlarmRuleId Id => AlarmRuleId.AnchorDrag;
     public string Title => "ANCHOR DRAG";
 
     /// <summary>Highest priority after grounding / shallow / tide - a
@@ -102,6 +103,7 @@ public sealed class AnchorDragAlarmRule : IAlarmRule
     }
 
     private AlarmInfo BuildInfo(double cur, double max) => new(
+        RuleId: Id,
         Title: Title,
         Message: $"Dragging: {cur:F0}m / {max:F0}m radius",
         Severity: AlarmSeverity.Danger,

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using OnaPlotter.Utilities;
 
 namespace OnaPlotter.Models;
 
@@ -94,6 +95,24 @@ public sealed class AisVessel
     /// </summary>
     public DateTime LastAisSeen { get; set; }
 
+    /// <summary>
+    /// Client-clock instant the current <see cref="Latitude"/> /
+    /// <see cref="Longitude"/> fix was applied. Null when the position
+    /// was never set through <see cref="Apply"/> (hand-built fixtures).
+    /// Receive time rather than the SK update timestamp on purpose: the
+    /// server clock can be skewed against the browser clock, and an
+    /// over-aged fix would push the target down its track (or past the
+    /// projection cap) for no reason. Receive time only under-ages a fix
+    /// by the relay latency. Consumed by
+    /// <see cref="OnaPlotter.Utilities.AisDeadReckoning.PositionAt"/>.
+    /// </summary>
+    public DateTime? PositionUpdatedUtc { get; set; }
+
+    /// <summary>Client-clock instant this entry was created. Lets the
+    /// store's prune sweep skip a vessel whose first delta is still
+    /// being applied.</summary>
+    public DateTime CreatedUtc { get; }
+
     /// <summary>One-shot guard for the wire-side `buddy` delta drop
     /// log. Per-vessel field so one offender doesn't suppress the
     /// log for other contexts; first hit per vessel logs, subsequent
@@ -126,10 +145,16 @@ public sealed class AisVessel
         "design.beam",
     };
 
-    public AisVessel(string context)
+    private readonly TimeProvider _time;
+
+    /// <summary>System clock; <see cref="AisStore"/> passes its own.</summary>
+    public AisVessel(string context) : this(context, TimeProvider.System) { }
+
+    public AisVessel(string context, TimeProvider time)
     {
         Context = context;
-        LastSeen = DateTime.UtcNow;
+        _time = time;
+        LastSeen = CreatedUtc = UtcNow();
         // Default MinValue so the FIRST AIS-evidence delta always sets
         // the clock, even if its wire timestamp is in the past (typical:
         // ~hundreds of ms of network + SK-server lag). A `now` default
@@ -145,16 +170,16 @@ public sealed class AisVessel
     /// Applies a SignalK path/value pair. Returns true if the value was recognized.
     /// </summary>
     /// <param name="path">SK path of the value being applied.</param>
-    /// <param name="rawValue">Value payload (boxed primitive or JsonElement).</param>
+    /// <param name="rawValue">Value payload.</param>
     /// <param name="skTimestamp">Wall-clock instant from the parent SK update's
     /// <c>timestamp</c> field, when available. Used as the source of truth for
     /// <see cref="LastAisSeen"/> so the staleness clock tracks when the AIS
     /// transponder transmitted, not when the delta happened to arrive at the
     /// plotter. Pass null when the wire didn't carry one (radar legacy
-    /// shape, test fixtures); the gate falls back to <c>DateTime.UtcNow</c>.</param>
-    public bool Apply(string path, object? rawValue, DateTime? skTimestamp = null)
+    /// shape, test fixtures); the gate falls back to the vessel's clock.</param>
+    public bool Apply(string path, DeltaValue rawValue, DateTime? skTimestamp = null)
     {
-        LastSeen = DateTime.UtcNow;
+        LastSeen = UtcNow();
 
         // Only advance the staleness clock when this delta carries actual AIS
         // evidence (see AisEvidencePaths). The empty-path identity-object
@@ -171,7 +196,7 @@ public sealed class AisVessel
         // delta on a different field can't drag the clock backward.
         if (AisEvidencePaths.Contains(path))
         {
-            var ts = skTimestamp ?? DateTime.UtcNow;
+            var ts = skTimestamp ?? UtcNow();
             if (ts > LastAisSeen) LastAisSeen = ts;
         }
 
@@ -182,7 +207,7 @@ public sealed class AisVessel
         // identity hasn't been published as separate per-path deltas. Flatten
         // and recurse so names / MMSIs show up without waiting for a
         // separate delta that may never come.
-        if (path.Length == 0 && rawValue is JsonElement identityEl
+        if (path.Length == 0 && rawValue.TryGetElement(out var identityEl)
             && identityEl.ValueKind == JsonValueKind.Object)
         {
             return FlattenAndApply("", identityEl, depth: 0, skTimestamp);
@@ -196,14 +221,11 @@ public sealed class AisVessel
             // so every consumer downstream sees a uniform target shape.
             case OnaPlotter.Utilities.SkPaths.Navigation.Position:
             case "position":
-                if (rawValue is JsonElement posEl && posEl.ValueKind == JsonValueKind.Object
-                    && posEl.TryGetProperty("latitude", out var lat)
-                    && posEl.TryGetProperty("longitude", out var lon)
-                    && lat.ValueKind == JsonValueKind.Number
-                    && lon.ValueKind == JsonValueKind.Number)
+                if (rawValue.TryGetLatLon(out var lat, out var lon))
                 {
-                    Latitude = lat.GetDouble();
-                    Longitude = lon.GetDouble();
+                    Latitude = lat;
+                    Longitude = lon;
+                    PositionUpdatedUtc = UtcNow();
                     return true;
                 }
                 return false;
@@ -274,28 +296,20 @@ public sealed class AisVessel
                 //                                    to the existing value).
                 //   "Sailing"                     -> plain string
                 //   number (enum id only)         -> no human label; skip
-                if (rawValue is JsonElement typeEl)
+                if (rawValue.TryGetElement(out var typeEl)
+                    && typeEl.ValueKind == JsonValueKind.Object
+                    && typeEl.TryGetProperty("name", out var n)
+                    && n.ValueKind == JsonValueKind.String)
                 {
-                    if (typeEl.ValueKind == JsonValueKind.Object
-                        && typeEl.TryGetProperty("name", out var n)
-                        && n.ValueKind == JsonValueKind.String)
-                    {
-                        ShipType = n.GetString();
-                        return true;
-                    }
-                    if (typeEl.ValueKind == JsonValueKind.String)
-                    {
-                        ShipType = typeEl.GetString();
-                        return true;
-                    }
-                    return false; // unrecognised shape - don't clobber with raw JSON text
+                    ShipType = n.GetString();
+                    return true;
                 }
-                if (rawValue is string s)
+                if (rawValue.TryGetString(out var s))
                 {
                     ShipType = s;
                     return true;
                 }
-                return false;
+                return false; // unrecognised shape - don't clobber with raw JSON text
 
             case "design.length":
                 // SignalK schema shape: { overall, hull, waterline }.
@@ -306,25 +320,18 @@ public sealed class AisVessel
                 // and the rare server that hand-publishes a flat
                 // length. `overall` is the canonical sub-key per
                 // the SignalK schema.
-                if (rawValue is JsonElement lenEl)
+                if (rawValue.TryGetElement(out var lenEl)
+                    && lenEl.ValueKind == JsonValueKind.Object
+                    && lenEl.TryGetProperty("overall", out var overallEl)
+                    && overallEl.ValueKind == JsonValueKind.Number)
                 {
-                    if (lenEl.ValueKind == JsonValueKind.Object
-                        && lenEl.TryGetProperty("overall", out var overallEl)
-                        && overallEl.ValueKind == JsonValueKind.Number)
-                    {
-                        LengthOverallMeters = overallEl.GetDouble();
-                        return true;
-                    }
-                    if (lenEl.ValueKind == JsonValueKind.Number)
-                    {
-                        LengthOverallMeters = lenEl.GetDouble();
-                        return true;
-                    }
+                    LengthOverallMeters = overallEl.GetDouble();
+                    return true;
                 }
-                else
+                if (rawValue.TryGetNumber(out var flatLength))
                 {
-                    var d = ToDouble(rawValue);
-                    if (d is not null) { LengthOverallMeters = d; return true; }
+                    LengthOverallMeters = flatLength;
+                    return true;
                 }
                 return false;
 
@@ -394,13 +401,10 @@ public sealed class AisVessel
         return context[(idx + prefix.Length)..];
     }
 
-    private static double? ToDouble(object? raw)
-    {
-        if (raw is null) return null;
-        if (raw is double d) return d;
-        if (raw is JsonElement je && je.ValueKind == JsonValueKind.Number) return je.GetDouble();
-        return null;
-    }
+    private DateTime UtcNow() => _time.GetUtcNow().UtcDateTime;
+
+    private static double? ToDouble(DeltaValue raw) =>
+        raw.TryGetNumber(out var d) ? d : null;
 
     // Returns the string value if rawValue is genuinely a string; null
     // for null / undefined / non-string shapes. Used by identity fields
@@ -409,18 +413,14 @@ public sealed class AisVessel
     // { name: null, mmsi: "..." } occasionally on partial identity
     // updates, which the previous .ToString() fallback turned into
     // the literal string "null".
-    private static string? TryGetString(object? raw)
+    // A numeric identity (mmsi published as 211234567) is rendered in
+    // invariant round-trip form, e.g. 211234567 -> "211234567".
+    private static string? TryGetString(DeltaValue raw) => raw.Kind switch
     {
-        if (raw is null) return null;
-        if (raw is string s) return s;
-        if (raw is JsonElement je)
-        {
-            if (je.ValueKind == JsonValueKind.String) return je.GetString();
-            if (je.ValueKind == JsonValueKind.Number) return je.GetRawText();
-            // Null / Undefined / objects / arrays all fall through as null.
-        }
-        return null;
-    }
+        DeltaValueKind.String or DeltaValueKind.Number => raw.ToString(),
+        // Null / bool / objects / arrays all fall through as null.
+        _ => null,
+    };
 
     // Max depth the identity-flattener will recurse into. SK identity
     // payloads in the wild have been observed at depth 1 (communication.

@@ -89,31 +89,11 @@ public partial class Map
             catch (Exception ex) { Toasts.LogException(ex, $"Save waypoint '{name}'"); return; }
             if (!ru.Success) { Toasts.Error($"Save waypoint '{name}' failed: {ru.Error ?? "server rejected"}"); return; }
 
-            loadedWaypoints = loadedWaypoints.Select(w =>
-            {
-                if (w.Id != editingId) return w;
-                return new SignalkWaypoint
-                {
-                    Id = w.Id,
-                    Name = name,
-                    Description = description,
-                    Feature = w.Feature,
-                    Latitude = w.Latitude,
-                    Longitude = w.Longitude,
-                    CreatedAt = w.CreatedAt,
-                };
-            }).ToList();
-            if (module is not null && existing.Latitude is double elat && existing.Longitude is double elon)
-            {
-                try
-                {
-                    await module.InvokeVoidAsync("removeWaypointMarker", editingId);
-                    await module.InvokeVoidAsync("addWaypointMarker",
-                        editingId, elat, elon, name,
-                        existing.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture));
-                }
-                catch (JSDisconnectedException) { }
-            }
+            // Clone keeps every other field (MOB flags, alarm id,
+            // feature) so the redraw renders the same marker variant.
+            var updated = existing.WithText(name, description);
+            loadedWaypoints = loadedWaypoints.Select(w => w.Id == editingId ? updated : w).ToList();
+            if (_resources is not null) await _resources.RedrawWaypointAsync(updated);
             Toasts.Success($"Saved waypoint '{name}'");
             return;
         }
@@ -130,19 +110,19 @@ public partial class Map
         }
         string id = r.Value;
 
-        if (module is not null)
+        if (_resources is not null)
         {
-            // Stamp createdAt with the same instant we just sent on
-            // the POST so the marker popup shows the right value
-            // immediately. The server's round-trip on next reload
-            // will agree (resources-fs preserves the body verbatim).
-            string createdAtIso = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture);
-            try
+            // CreatedAt is stamped now so the popup shows it right away;
+            // resources-fs keeps the body verbatim, so a reload agrees.
+            await _resources.RedrawWaypointAsync(new SignalkWaypoint
             {
-                await module.InvokeVoidAsync("addWaypointMarker",
-                    id, contextMenuLat, contextMenuLon, name, createdAtIso);
-            }
-            catch (JSDisconnectedException) { }
+                Id = id,
+                Name = name,
+                Description = description,
+                Latitude = contextMenuLat,
+                Longitude = contextMenuLon,
+                CreatedAt = Time.GetUtcNow().UtcDateTime,
+            });
         }
         loadedWaypoints = await SafeLoad(() => WaypointApi.GetAllAsync(), "waypoints") ?? loadedWaypoints;
         Toasts.Success($"Saved waypoint '{name}'");
@@ -184,9 +164,7 @@ public partial class Map
         catch (Exception ex) { Toasts.LogException(ex, $"Delete waypoint '{label}'"); return; }
         if (!r.Success) { Toasts.Error($"Delete waypoint '{label}' failed: {r.Error ?? "server rejected"}"); return; }
 
-        if (module is not null)
-            try { await module.InvokeVoidAsync("removeWaypointMarker", id); }
-            catch (JSDisconnectedException) { }
+        if (_resources is not null) await _resources.DropWaypointAsync(id);
         loadedWaypoints.RemoveAll(w => w.Id == id);
         Toasts.Info($"Waypoint '{label}' deleted");
     }
@@ -324,32 +302,10 @@ public partial class Map
             catch (Exception ex) { Toasts.LogException(ex, $"Save note '{title}'"); return; }
             if (!ru.Success) { Toasts.Error($"Save note '{title}' failed: {ru.Error ?? "server rejected"}"); return; }
 
-            loadedNotes = loadedNotes.Select(x =>
-            {
-                if (x.Id != editingId) return x;
-                return new SignalkNote
-                {
-                    Id = x.Id,
-                    Title = title,
-                    Description = description,
-                    Position = x.Position,
-                    MimeType = x.MimeType,
-                    Url = x.Url,
-                    CreatedAt = x.CreatedAt,
-                };
-            }).ToList();
-            if (module is not null && existing.Position is not null)
-            {
-                try
-                {
-                    await module.InvokeVoidAsync("removeNoteMarker", editingId);
-                    await module.InvokeVoidAsync("addNoteMarker",
-                        editingId, existing.Position.Latitude, existing.Position.Longitude,
-                        title, description,
-                        existing.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture));
-                }
-                catch (JSDisconnectedException) { }
-            }
+            var updated = existing.WithText(title, description);
+            loadedNotes = loadedNotes.Select(x => x.Id == editingId ? updated : x).ToList();
+            // Redraw honours the hidden-notes layer.
+            if (_resources is not null) await _resources.RedrawNoteAsync(updated);
             Toasts.Success($"Saved note '{title}'");
             return;
         }
@@ -366,20 +322,17 @@ public partial class Map
         }
         string id = r.Value;
 
-        if (module is not null)
+        if (_resources is not null)
         {
-            // CreatedAt: stamp with the same instant the server saw
-            // (close enough to the server's actual createdAt that the
-            // round-trip on next reload will agree). The marker
-            // popup formats this for display; ISO-8601 round-trips
-            // through JSInterop without DateTime fuzz.
-            string createdAtIso = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture);
-            try
+            // CreatedAt is stamped now so the popup shows it right away.
+            await _resources.RedrawNoteAsync(new SignalkNote
             {
-                await module.InvokeVoidAsync("addNoteMarker",
-                    id, contextMenuLat, contextMenuLon, title, description, createdAtIso);
-            }
-            catch (JSDisconnectedException) { }
+                Id = id,
+                Title = title,
+                Description = description,
+                Position = new NotePosition { Latitude = contextMenuLat, Longitude = contextMenuLon },
+                CreatedAt = Time.GetUtcNow().UtcDateTime,
+            });
         }
         loadedNotes = await SafeLoad(() => NoteApi.GetAllAsync(), "notes") ?? loadedNotes;
         Toasts.Success($"Saved note '{title}'");
@@ -403,9 +356,7 @@ public partial class Map
         catch (Exception ex) { Toasts.LogException(ex, $"Delete note '{label}'"); return; }
         if (!r.Success) { Toasts.Error($"Delete note '{label}' failed: {r.Error ?? "server rejected"}"); return; }
 
-        if (module is not null)
-            try { await module.InvokeVoidAsync("removeNoteMarker", id); }
-            catch (JSDisconnectedException) { }
+        if (_resources is not null) await _resources.DropNoteAsync(id);
         loadedNotes.RemoveAll(n => n.Id == id);
         Toasts.Info("Note deleted");
     }
@@ -484,7 +435,7 @@ public partial class Map
 
     private async Task FocusNote(SignalkNote note)
     {
-        if (module is null || note.Position is null) return;
+        if (_controlsJs is null || _resourceJs is null || note.Position is null) return;
         chartPanelOpen = false;
         // Un-hide first so the pin's popup actually has something to
         // open - hidden notes have no marker instance in the JS side
@@ -494,13 +445,8 @@ public partial class Map
             await ToggleNotesVisible(true);
         }
         await DisableFollowAsync();
-        try
-        {
-            await module.InvokeVoidAsync("panTo", note.Position.Latitude, note.Position.Longitude);
-            await module.InvokeVoidAsync("openNotePopup", note.Id);
-        }
-        catch (JSDisconnectedException) { }
-        catch (ObjectDisposedException) { }
+        await _controlsJs.PanToAsync(note.Position.Latitude, note.Position.Longitude);
+        await _resourceJs.OpenNotePopupAsync(note.Id);
     }
 
     private async Task ToggleNotesVisible(bool visible)
@@ -575,20 +521,14 @@ public partial class Map
 
     private async Task UpdateCirclePreview()
     {
-        if (module is null) return;
-        try
-        {
-            await module.InvokeVoidAsync("setCirclePreview",
-                contextMenuLat, contextMenuLon, newRegionRadiusMeters);
-        }
-        catch (JSDisconnectedException) { }
+        if (_resourceJs is null) return;
+        await _resourceJs.SetCirclePreviewAsync(contextMenuLat, contextMenuLon, newRegionRadiusMeters);
     }
 
     private async Task ClearCirclePreview()
     {
-        if (module is null) return;
-        try { await module.InvokeVoidAsync("clearCirclePreview"); }
-        catch (JSDisconnectedException) { }
+        if (_resourceJs is null) return;
+        await _resourceJs.ClearCirclePreviewAsync();
     }
 
     // Cancel button path. Close the dialog AND clear the preview so we
@@ -649,9 +589,7 @@ public partial class Map
         catch (Exception ex) { Toasts.LogException(ex, $"Delete region '{label}'"); return; }
         if (!r.Success) { Toasts.Error($"Delete region '{label}' failed: {r.Error ?? "server rejected"}"); return; }
 
-        if (module is not null)
-            try { await module.InvokeVoidAsync("removeRegion", id); }
-            catch (JSDisconnectedException) { }
+        if (_resources is not null) await _resources.DropRegionAsync(id);
         loadedRegions.RemoveAll(rg => rg.Id == id);
         Toasts.Info($"Region '{label}' deleted");
     }
@@ -773,9 +711,7 @@ public partial class Map
         if (enabledRoutes.Remove(id))
             await Settings.SetEnabledRoutesAsync(enabledRoutes);
 
-        if (module is not null)
-            try { await module.InvokeVoidAsync("removeRoute", id); }
-            catch (JSDisconnectedException) { }
+        if (_routeJs is not null) await _routeJs.RemoveRouteAsync(id);
 
         availableRoutes.RemoveAll(rt => rt.Id == id);
         Toasts.Info("Route deleted");
@@ -831,7 +767,7 @@ public partial class Map
                 }
                 // Force an immediate route draw instead of waiting for
                 // the next delta tick to notice the href change. The
-                // href-diff lives in ActiveRouteSync; invalidate its
+                // href-diff lives in ActiveRouteController; invalidate its
                 // cached href so the next tick is guaranteed to
                 // refetch, and kick the sync synchronously so the user
                 // sees the polyline appear right away.
@@ -846,7 +782,7 @@ public partial class Map
 
     private async Task FocusRegion(SignalkRegion region)
     {
-        if (module is null || region.OuterRings.Count == 0) return;
+        if (region.OuterRings.Count == 0) return;
         chartPanelOpen = false;
         // If the user hid regions via the Show toggle, clicking Focus
         // on a region row should still land them at it. Un-hide first
@@ -857,12 +793,7 @@ public partial class Map
             await ToggleRegionsVisible(true);
         }
         await DisableFollowAsync();
-        try
-        {
-            await module.InvokeVoidAsync("focusRegion", region.Id, region.OuterRings[0]);
-        }
-        catch (JSDisconnectedException) { }
-        catch (ObjectDisposedException) { }
+        if (_resourceJs is not null) await _resourceJs.FocusRegionAsync(region.Id, region.OuterRings[0]);
     }
 
     /// <summary>
@@ -878,9 +809,7 @@ public partial class Map
         if (!follow) return;
         follow = false;
         await Settings.SetFollowBoatAsync(false);
-        if (module is not null)
-            try { await module.InvokeVoidAsync("setFollow", false); }
-            catch (JSDisconnectedException) { }
+        if (_controlsJs is not null) await _controlsJs.SetFollowAsync(false);
     }
 
     private async Task ToggleRegionsVisible(bool visible)

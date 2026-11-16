@@ -28,9 +28,10 @@
     <meta name="apple-mobile-web-app-title" content="OnaPlotter" />
     <meta name="referrer" content="strict-origin-when-cross-origin" />
     <base href="/" />
-    <!-- Pre-mount theme seed. Reads the same "ona.theme" key that
-         AppSettingsService persists and sets data-bs-theme + the
-         matching theme-* class on <html> before Bootstrap CSS first
+    <!-- Pre-mount theme seed. Reads the same "ona.theme.v1" key that
+         AppSettingsService persists (falling back to the unversioned
+         spelling that AppSettingsService migrates on its first load)
+         and sets data-bs-theme + the matching theme-* class on <html> before Bootstrap CSS first
          parses. Mirrors the fold logic in themeApply.js::setTheme:
          dark stays dark, light + high-contrast collapse to Bootstrap's
          "light" palette (Bootstrap only ships two), system resolves
@@ -41,13 +42,17 @@
     <script>
         (function () {
             try {
-                var raw = localStorage.getItem('ona.theme');
+                var read = function (name) {
+                    var v = localStorage.getItem('ona.' + name + '.v1');
+                    return v !== null ? v : localStorage.getItem('ona.' + name);
+                };
+                var raw = read('theme');
                 var known = ['light', 'dark', 'system', 'high-contrast'];
                 var safe = known.indexOf(raw) >= 0 ? raw : 'system';
                 // Night-mode renders as dark + red-shift regardless of the stored
                 // theme; mirror MainLayout.EffectiveTheme here so first paint after
                 // a cold boot doesn't flash the light theme before Blazor takes over.
-                var night = localStorage.getItem('ona.nightMode') === 'true';
+                var night = read('nightMode') === 'true';
                 if (night) safe = 'dark';
                 var bs;
                 if (safe === 'dark') bs = 'dark';
@@ -59,16 +64,27 @@
                 var html = document.documentElement;
                 html.setAttribute('data-bs-theme', bs);
                 html.classList.add('theme-' + safe);
+                // Same rule as themeApply.js::applyEffectiveLight; the
+                // light token block in app.css keys off this class.
+                if (bs === 'light') html.classList.add('theme-effective-light');
                 if (night) html.classList.add('night-mode-global');
             } catch (_) {
                 document.documentElement.setAttribute('data-bs-theme', 'dark');
             }
         })();
     </script>
-    <link rel="stylesheet" href="lib/bootstrap/dist/css/bootstrap.min.css" />
+    <!-- Bootstrap cut down to the rules the app uses (PurgeCSS, see
+         scripts/purge-bootstrap.config.mjs; ~50 KB instead of ~230 KB).
+         leaflet.css loads before app.css so app overrides of Leaflet's
+         popup / control chrome win on source order, not !important. -->
+    <link rel="stylesheet" href="css/bootstrap/bootstrap.min.css" />
+    <link rel="stylesheet" href="lib/leaflet/dist/leaflet.css" />
     <link rel="stylesheet" href="css/app.css" />
     <link rel="stylesheet" href="OnaPlotter.styles.css" />
-    <link rel="stylesheet" href="lib/leaflet/dist/leaflet.css" />
+    <!-- The HUD font is referenced from app.css, so without a preload
+         the browser only discovers it after CSS parse + first HUD
+         render. Same relative URL as the @font-face src. -->
+    <link rel="preload" href="fonts/InterVariable.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <link rel="manifest" href="manifest.json" />
     <!-- iPad / iOS home-screen install: Safari rejects SVG for the

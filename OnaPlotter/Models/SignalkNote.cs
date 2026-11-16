@@ -43,6 +43,16 @@ public sealed class SignalkNote
     /// rather than a fake "now".</summary>
     [JsonPropertyName("createdAt")]
     public DateTime? CreatedAt { get; set; }
+
+    /// <summary>Copy with a new title and description; every other field
+    /// carries over.</summary>
+    public SignalkNote WithText(string? title, string? description)
+    {
+        var copy = (SignalkNote)MemberwiseClone();
+        copy.Title = title;
+        copy.Description = description;
+        return copy;
+    }
 }
 
 public sealed class NotePosition

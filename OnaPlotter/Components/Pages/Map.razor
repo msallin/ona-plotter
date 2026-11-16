@@ -8,6 +8,7 @@
 @using Microsoft.JSInterop
 @using System.Text.Json
 @implements IAsyncDisposable
+@implements IMapShortcutHandler
 @inject SignalkClient SignalkClient
 @inject TrackBuffer TrackBuffer
 @inject AisStore AisStore
@@ -59,7 +60,7 @@
        IsMapRoute is true. ZoomIn / ZoomOut methods kept below in
        case keyboard / pinch alternatives want to reuse them. *@
 
-    <MapHud Data="Data" Autopilot="AutopilotApi"
+    <MapHud @ref="_hud" Data="Data" Autopilot="AutopilotApi"
             LastHeadingRad="lastHeading" AnchorDragging="AnchorDragging"
             DepthAlarmThreshold="Settings.DepthAlarmThreshold"
             DepthTrendMetersPerMinute="depthTrendMpm"
@@ -625,11 +626,11 @@
     private System.Threading.Timer? aisTimer;
     // Active-route session state (href / wpIdx diff, geometry cache,
     // regular-polyline suppression id, course-stop watchdog) lives in
-    // ActiveRouteSync so the page stays a wiring layer. Page accesses
+    // ActiveRouteController so the page stays a wiring layer. Page accesses
     // a few read-only views (CourseStopPending / ActiveRouteDistanceTotal
     // / ActiveRouteRegularSuppressed) for HUD bindings.
     private OnaPlotter.Services.Js.MapRouteJs? _routeJs;
-    private OnaPlotter.Services.Map.ActiveRouteSync? _activeRouteSync;
+    private OnaPlotter.Services.Map.ActiveRouteController? _activeRouteSync;
 
     // AIS / AtoN payload builders + pushers. Page kicks PushAsync
     // off the 3 s timer / AtonStore event; controllers own the
@@ -965,8 +966,8 @@
         catch (Exception ex) { Toasts.LogException(ex, $"Delete waypoint '{label}'"); return; }
         if (!r.Success) { Toasts.Error($"Delete waypoint '{label}' failed: {r.Error ?? "server rejected"}"); return; }
 
-        if (_resourceJs is not null)
-            await _resourceJs.RemoveWaypointMarkerAsync(wp.Id);
+        if (_resources is not null)
+            await _resources.DropWaypointAsync(wp.Id);
         loadedWaypoints.RemoveAll(w => w.Id == wp.Id);
         Toasts.Info($"Waypoint '{label}' deleted");
     }
@@ -1142,168 +1143,14 @@
     private Task OnToggleRouteCallback((SignalkRoute route, bool enabled) t) =>
         ToggleRoute(t.route, t.enabled);
 
-    /// <summary>Cached <see cref="BuildVesselList"/> result. The markup
-    /// binding fires on every render of the Map page while the Layers
-    /// panel is open, so without a cache the helm pays an O(N) build
-    /// + per-vessel CPA classify on every HandleDataChanged tick. The
-    /// cache key fingerprints every input the build consumes; a miss
-    /// rebuilds, a hit returns the same reference (Blazor's diff
-    /// short-circuits the LayersPanel re-render too).</summary>
-    private IReadOnlyList<VesselListEntry>? _vesselListCache;
-    private VesselListCacheKey _vesselListCacheKey;
+    /// <summary>Layers-panel vessel list, cached on quantised inputs
+    /// (see <see cref="OnaPlotter.Services.Map.VesselListBuilder"/>). The
+    /// markup binding runs on every page render while the panel is open;
+    /// the AIS tick re-renders the page so the list follows the targets.</summary>
+    private readonly OnaPlotter.Services.Map.VesselListBuilder _vesselList = new();
 
-    /// <summary>Fingerprint of every value <see cref="BuildVesselList"/>
-    /// reads. <c>AisVersion</c> increments whenever any vessel in
-    /// <see cref="AisStore"/> mutates (delta, prune); the rest cover
-    /// own-ship state and the helm-tunable thresholds that drive the
-    /// CPA / threat / COLREGS gate. Equality is by-value (record struct)
-    /// so the cache check is one CPU op per field.</summary>
-    private readonly record struct VesselListCacheKey(
-        int AisVersion,
-        double? OwnLat, double? OwnLon, double? OwnCog, double? OwnSog,
-        bool AnchorActive, double? AnchorMaxRadius,
-        double CpaAlarmNm, double TcpaAlarmMin,
-        double CpaAwarenessNm, double TcpaAwarenessMin);
-
-    /// <summary>
-    /// Snapshot of every known AIS vessel sorted by threat: vessels with a
-    /// valid TCPA first (ascending), then the rest by raw distance. Built on
-    /// demand from <see cref="AisStore"/> so the layers panel always reflects
-    /// the latest fixes without subscribing to AIS updates directly.
-    /// <para>Cached by <see cref="_vesselListCacheKey"/>: a re-render of the
-    /// page where own-ship + AIS store version + threshold settings are
-    /// unchanged returns the previous list reference unchanged. The COLREGS
-    /// per-vessel classify is gated on the same threat band <see cref="AisPushService.ComputeVesselThreat"/>
-    /// uses (in / outside the guard zone + lookahead), so non-converging
-    /// vessels skip the per-vessel Colregs.Classify trig.</para>
-    /// </summary>
-    private IReadOnlyList<VesselListEntry> BuildVesselList()
-    {
-        var vessels = AisStore.GetVessels();
-        if (vessels.Length == 0) return [];
-
-        var ownLat = Data.Latitude;
-        var ownLon = Data.Longitude;
-        var ownCog = Data.CourseOverGround;
-        var ownSog = Data.SpeedOverGround;
-        bool anchorActive = Data.AnchorActive;
-        double? anchorMaxRadius = Data.AnchorMaxRadius;
-        double cpaAlarmNm = Settings.CpaAlarmNm;
-        double tcpaAlarmMin = Settings.TcpaAlarmMin;
-        double cpaAwarenessNm = Settings.CpaAwarenessNm;
-        double tcpaAwarenessMin = Settings.TcpaAwarenessMin;
-
-        var key = new VesselListCacheKey(
-            AisVersion: AisStore.Version,
-            OwnLat: ownLat, OwnLon: ownLon, OwnCog: ownCog, OwnSog: ownSog,
-            AnchorActive: anchorActive, AnchorMaxRadius: anchorMaxRadius,
-            CpaAlarmNm: cpaAlarmNm, TcpaAlarmMin: tcpaAlarmMin,
-            CpaAwarenessNm: cpaAwarenessNm, TcpaAwarenessMin: tcpaAwarenessMin);
-        if (_vesselListCache is { } cached && _vesselListCacheKey == key)
-        {
-            return cached;
-        }
-
-        // Pre-compute own-ship sin/cos of COG ONCE for the per-vessel
-        // CPA pass below. Skips the trig + null-checks N times per
-        // BuildVesselList tick. Null is fine - inner loop's
-        // ownLat-null guard already handles the missing-own-ship case.
-        var ownSnap = (ownLat is not null && ownLon is not null)
-            ? Cpa.PrecomputeOwn(ownLat.Value, ownLon.Value, ownCog, ownSog)
-            : null;
-
-        // Two-tier CPA thresholds drive the same threat band the
-        // chart-side ComputeVesselThreat uses. COLREGS for a vessel
-        // outside this band has no helm-actionable meaning - the
-        // rules apply to closing encounters. Hoisted out of the per-
-        // vessel loop because all inputs are own-ship-invariant.
-        double cpaAlarmEff = Cpa.EffectiveCpaRadiusNm(
-            cpaAlarmNm, anchorActive, anchorMaxRadius);
-        double cpaAwarenessEff = Cpa.EffectiveCpaRadiusNm(
-            cpaAwarenessNm, anchorActive, anchorMaxRadius);
-
-        var entries = new List<VesselListEntry>(vessels.Length);
-        foreach (var v in vessels)
-        {
-            if (v.Latitude is null || v.Longitude is null) continue;
-
-            double? distNm = null, brgDeg = null;
-            if (ownLat is not null && ownLon is not null)
-            {
-                distNm = HaversineNm(ownLat.Value, ownLon.Value, v.Latitude.Value, v.Longitude.Value);
-                brgDeg = BearingDeg(ownLat.Value, ownLon.Value, v.Latitude.Value, v.Longitude.Value);
-            }
-
-            Cpa.Result? cpa = null;
-            Colregs.Result? colregs = null;
-            if (ownLat is not null && ownLon is not null)
-            {
-                cpa = ownSnap is not null
-                    ? Cpa.Compute(
-                        ownSnap.Value,
-                        v.Latitude.Value, v.Longitude.Value,
-                        v.CourseOverGround, v.SpeedOverGround)
-                    : null;
-
-                // Threat-gate COLREGS: only classify vessels actually
-                // in a closing encounter inside the guard zone. On a
-                // 200-vessel harbour the typical hit rate is < 5%, so
-                // the gate drops ~190 of 200 Colregs.Classify calls
-                // per render of the LayersPanel.
-                if (cpa is { } c
-                    && ownCog is not null && ownSog is not null
-                    && v.CourseOverGround is not null && v.SpeedOverGround is not null)
-                {
-                    var threat = Cpa.ClassifyThreat(
-                        c.CpaNm, c.TcpaMin,
-                        cpaAlarmEff, tcpaAlarmMin,
-                        cpaAwarenessEff, tcpaAwarenessMin,
-                        v.IsBuddy);
-                    if (threat != Cpa.Threat.None)
-                    {
-                        colregs = Colregs.Classify(
-                            ownLat.Value, ownLon.Value, ownCog.Value, ownSog.Value,
-                            v.Latitude.Value, v.Longitude.Value, v.CourseOverGround.Value, v.SpeedOverGround.Value);
-                    }
-                }
-            }
-
-            string? colregsLabel = colregs is { Category: var cat and not Colregs.Category.Indeterminate }
-                ? Colregs.ShortLabel(cat) : null;
-            string? colregsRole = colregs is { Role: var role and not Colregs.Role.None }
-                ? Colregs.RoleLabel(role) : null;
-
-            entries.Add(new VesselListEntry(
-                Context: v.Context,
-                DisplayName: v.Name ?? v.Callsign ?? (v.Mmsi is not null ? $"MMSI {v.Mmsi}" : v.Context),
-                Mmsi: v.Mmsi,
-                CpaNm: cpa?.CpaNm,
-                TcpaMin: cpa?.TcpaMin,
-                DistanceNm: distNm,
-                BearingDeg: brgDeg,
-                SogKn: v.SpeedOverGround is not null ? v.SpeedOverGround * Format.MsToKnots : null,
-                ShipType: v.ShipType,
-                IsBuddy: v.IsBuddy,
-                ColregsLabel: colregsLabel,
-                ColregsRole: colregsRole,
-                LengthOverallMeters: v.LengthOverallMeters,
-                BeamMeters: v.BeamMeters));
-        }
-
-        // TCPA-sorted; non-converging vessels fall to the bottom, sorted by distance.
-        entries.Sort((a, b) =>
-        {
-            bool aHas = a.TcpaMin is not null;
-            bool bHas = b.TcpaMin is not null;
-            if (aHas && bHas) return a.TcpaMin!.Value.CompareTo(b.TcpaMin!.Value);
-            if (aHas) return -1;
-            if (bHas) return 1;
-            return (a.DistanceNm ?? double.MaxValue).CompareTo(b.DistanceNm ?? double.MaxValue);
-        });
-        _vesselListCacheKey = key;
-        _vesselListCache = entries;
-        return entries;
-    }
+    private IReadOnlyList<VesselListEntry> BuildVesselList() =>
+        _vesselList.Get(AisStore, Data, Settings, Time.GetUtcNow().UtcDateTime);
 
     /// <summary>
     /// Calls a SignalK resources-API loader and swallows HTTP/network
@@ -1361,28 +1208,6 @@
                 await _controlsJs.SetFollowAsync(true);
             }
         }
-    }
-
-    private static double HaversineNm(double lat1, double lon1, double lat2, double lon2)
-    {
-        const double R = 6371000;
-        double dLat = (lat2 - lat1) * Math.PI / 180;
-        double dLon = (lon2 - lon1) * Math.PI / 180;
-        double a = Math.Sin(dLat / 2) * Math.Sin(dLat / 2) +
-                   Math.Cos(lat1 * Math.PI / 180) * Math.Cos(lat2 * Math.PI / 180) *
-                   Math.Sin(dLon / 2) * Math.Sin(dLon / 2);
-        double meters = R * 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
-        return meters / 1852.0;
-    }
-
-    private static double BearingDeg(double lat1, double lon1, double lat2, double lon2)
-    {
-        double rad1 = lat1 * Math.PI / 180, rad2 = lat2 * Math.PI / 180;
-        double dLon = (lon2 - lon1) * Math.PI / 180;
-        double y = Math.Sin(dLon) * Math.Cos(rad2);
-        double x = Math.Cos(rad1) * Math.Sin(rad2) - Math.Sin(rad1) * Math.Cos(rad2) * Math.Cos(dLon);
-        double deg = Math.Atan2(y, x) * 180.0 / Math.PI;
-        return (deg + 360) % 360;
     }
 
     private void RebuildFilteredLayers()
@@ -1493,13 +1318,13 @@
         TrackBuffer.GetDepthTrendMetersPerMinute(TimeSpan.FromMinutes(1));
 
     // Server anchor visualisation + raise-confirmation watchdog live in
-    // ServerAnchorSync; the page hands the controller per-tick deltas
+    // ServerAnchorController; the page hands the controller per-tick deltas
     // and the manual-clear callback. Created in OnAfterRenderAsync once
     // the JS module is loaded.
     private OnaPlotter.Services.Js.MapAnchorJs? _anchorJs;
-    private OnaPlotter.Services.Map.ServerAnchorSync? _anchorSync;
+    private OnaPlotter.Services.Map.ServerAnchorController? _anchorSync;
 
-    // Course-stop watchdog state lives on ActiveRouteSync. The page
+    // Course-stop watchdog state lives on ActiveRouteController. The page
     // reads CourseStopPending for HUD-card binding and calls
     // MarkCourseStopPending() from the StopNavigation flow.
 
@@ -1583,7 +1408,7 @@
         // implicitly on page unload via the JS wrappers' MarkDisposed
         // hooks that the page calls in DisposeAsync.
         _anchorJs = new OnaPlotter.Services.Js.MapAnchorJs(module);
-        _anchorSync = new OnaPlotter.Services.Map.ServerAnchorSync(
+        _anchorSync = new OnaPlotter.Services.Map.ServerAnchorController(
             _anchorJs,
             isSignalKConnected: () => SignalkClient.IsConnected,
             raiseTimeoutWarning: msg => Toasts.Warning(msg));
@@ -1593,7 +1418,7 @@
         // bottom-centre range scale while the route HUD card sits
         // in that slot. Other wrappers stay in their current order.
         _controlsJs = new OnaPlotter.Services.Js.MapControlsJs(module);
-        _activeRouteSync = new OnaPlotter.Services.Map.ActiveRouteSync(
+        _activeRouteSync = new OnaPlotter.Services.Map.ActiveRouteController(
             _routeJs,
             _controlsJs,
             RouteApi,
@@ -1679,7 +1504,10 @@
         // the C# perf gates use.
         await ClientCaps.InitializeAsync();
         await module.InvokeVoidAsync("initMap", "mapDiv", lat, lon, zoom, dotNetRef,
-            ClientCaps.IsSlowClient);
+            ClientCaps.IsSlowClient,
+            new OnaPlotter.Services.Js.MapInitOptions(
+                MaxZoom: ChartUpscale.MapMaxZoom,
+                SpeedPalette: SpeedColor.PaletteFor(Settings.NightMode)));
         mapInitialized = true;
 
         // Tell the JS side where the SignalK server lives so its
@@ -1963,14 +1791,12 @@
         await Task.Yield();
 
         aisTimer = new System.Threading.Timer(_ => _ = PushAisTargets(), null, AisPushInitialDelayMs, AisPushIntervalMs);
-        // AtoNs are static enough not to need a timer - push on
-        // store-change events plus once after init. AtonsVisible
-        // setting is honoured by setAtonsVisible JS-side.
+        // AtoNs push once after init, then on the AIS tick whenever the
+        // store changed. AtonsVisible is honoured by setAtonsVisible
+        // JS-side.
         Atons.OnAtonsUpdated += HandleAtonsUpdated;
         await _aisJs.SetAtonsVisibleAsync(Settings.AtonsVisible);
         await _aisJs.SetAisLabelsVisibleAsync(Settings.AisLabelsVisible);
-        _cachedAisInactiveMinutes = Settings.AisInactiveMinutes;
-        await _aisJs.SetAisInactiveMinutesAsync(_cachedAisInactiveMinutes);
         _ = _atonPush!.PushAsync();
 
         // Marine-POI overlay: push initial visibility (= "any category
@@ -1988,7 +1814,7 @@
         // RTT (or one reconnect cycle for offline-edits). The previous
         // 60 s REST poll is now redundant.
 
-        await _controlsJs.EnableKeyboardShortcutsAsync(dotNetRef);
+        await _controlsJs.EnableKeyboardShortcutsAsync(dotNetRef, MapKeyboardShortcuts.Keys);
 
         // Welcome card takes precedence over the touch coachmark on
         // first-ever visit since it covers long-press explicitly.
@@ -2097,11 +1923,6 @@
     private double _cachedRadarBearingCorrection;
     private bool _cachedAtonsVisible;
     private bool _cachedAisLabelsVisible;
-    // Helm-configured AIS-inactive threshold. Tracked here so a Settings-
-    // page change reaches the JS layer without a Map-page refresh, the
-    // same pattern as the visibility caches above. Default mirrors the
-    // AppSettings default so the first sync after init is a no-op.
-    private double _cachedAisInactiveMinutes = 5.0;
     private (int Contrast, int Saturation, int Brightness) _cachedChartFilter;
 
     // Fire-and-forget on the settings-changed event. Each push compares
@@ -2184,16 +2005,6 @@
                 _cachedAisLabelsVisible = Settings.AisLabelsVisible;
                 _ = _aisJs.SetAisLabelsVisibleAsync(_cachedAisLabelsVisible);
             }
-            // AIS inactive threshold: drives both the staleness-fade
-            // floor and the per-target label suppression on the JS side.
-            // Compared with a small epsilon so float round-trip noise
-            // (storage <-> double parse) doesn't trigger a spurious
-            // re-push every render pass.
-            if (Math.Abs(Settings.AisInactiveMinutes - _cachedAisInactiveMinutes) > 0.001)
-            {
-                _cachedAisInactiveMinutes = Settings.AisInactiveMinutes;
-                _ = _aisJs.SetAisInactiveMinutesAsync(_cachedAisInactiveMinutes);
-            }
         }
 
         // Chart-display CSS filter: only re-push when a slider commit
@@ -2267,42 +2078,47 @@
     [JSInvokable]
     public async Task OnKeyShortcut(string key)
     {
-        switch (key)
-        {
-            case "m": await ToggleMob(); break;
-            case "n": await ToggleNightMode(); break;
-            case "f": await ToggleFollow(); break;
-            case "a": await ToggleAnchor(); break;
-            case "t": await ZoomToTrack(); break;
-            case "l": await OnToggleLaylinesPersist(!Settings.LaylinesVisible); break;
-            case "o": await CycleMapOrientation(); break;
-            case "r": ToggleRaceTimer(); break;
-            case "d": await ToggleMeasure(); break;
-            case "?":
-                // "?" only opens the shortcuts card when keyboard hints
-                // are enabled in Settings. Default off so touch-only
-                // users don't land on an unexpected modal if they
-                // connect a keyboard and brush the key.
-                // InitializeAsync is idempotent (semaphore-guarded
-                // _initialized flag); awaiting here closes the race
-                // where the JS keyboard handler attaches before
-                // MainLayout's first-render Settings load completes
-                // and a fast helm hits '?' inside that gap.
-                await Settings.InitializeAsync();
-                if (Settings.ShowKeyboardHints) shortcutsVisible = !shortcutsVisible;
-                break;
-            case "escape":
-                if (measureActive) { await ToggleMeasure(); }
-                // Esc also cancels in-progress route / polygon edits so
-                // the user can bail without reaching for the mouse.
-                if (routeEditMode) { await CancelRouteEdit(); }
-                if (polygonEditMode) { await CancelPolygonEdit(); }
-                if (fabMenuOpen) { fabMenuOpen = false; }
-                if (legendOpen) { legendOpen = false; }
-                shortcutsVisible = false;
-                break;
-        }
+        if (!MapKeyboardShortcuts.TryParse(key, out var action)) return;
+        await MapKeyboardShortcuts.DispatchAsync(action, this);
         await InvokeAsync(StateHasChanged);
+    }
+
+    Task IMapShortcutHandler.ToggleFollowAsync() => ToggleFollow();
+    Task IMapShortcutHandler.CycleOrientationAsync() => CycleMapOrientation();
+    Task IMapShortcutHandler.ToggleNightAsync() => ToggleNightMode();
+    Task IMapShortcutHandler.ToggleAnchorAsync() => ToggleAnchor();
+    Task IMapShortcutHandler.ToggleMobAsync() => ToggleMob();
+    Task IMapShortcutHandler.FitTrackAsync() => ZoomToTrack();
+    Task IMapShortcutHandler.ToggleLaylinesAsync() => OnToggleLaylinesPersist(!Settings.LaylinesVisible);
+    Task IMapShortcutHandler.ToggleMeasureAsync() => ToggleMeasure();
+
+    Task IMapShortcutHandler.ToggleRaceTimerAsync()
+    {
+        ToggleRaceTimer();
+        return Task.CompletedTask;
+    }
+
+    async Task IMapShortcutHandler.ToggleHelpAsync()
+    {
+        // "?" opens the card only with keyboard hints enabled (default
+        // off), so a touch helm who brushes the key on a connected
+        // keyboard doesn't land on an unexpected modal. InitializeAsync
+        // is idempotent; awaiting it closes the race where the key
+        // handler attaches before MainLayout's first Settings load.
+        await Settings.InitializeAsync();
+        if (Settings.ShowKeyboardHints) shortcutsVisible = !shortcutsVisible;
+    }
+
+    async Task IMapShortcutHandler.DismissAsync()
+    {
+        if (measureActive) await ToggleMeasure();
+        // Esc also cancels in-progress route / polygon edits so the
+        // helm can bail without reaching for the mouse.
+        if (routeEditMode) await CancelRouteEdit();
+        if (polygonEditMode) await CancelPolygonEdit();
+        fabMenuOpen = false;
+        legendOpen = false;
+        shortcutsVisible = false;
     }
 
     [JSInvokable]
@@ -2417,72 +2233,29 @@
         return [.. coords];
     }
 
-    // Cached HUD values for change detection. Only re-render when these
-    // actually change. The previous implementation built an interpolated
-    // string with 22 fields each tick; on a 1 Hz feed (well-instrumented
-    // boats burst higher) that allocated ~200 bytes plus the double
-    // formatting cost on every delta. The struct holds the same fields
-    // in their native form, gets value-equality for free, and is a stack-
-    // local on the comparison path - zero per-tick heap traffic.
-    //
-    // Quantisation is tuned to "below the helm's visible threshold" for
-    // each channel: angles to ~0.6° (Q rad 2 = 0.01 rad), speeds to
-    // ~0.2 kt (Q m/s 1 = 0.1 m/s). Tighter resolution makes the gate
-    // fire on every tick under typical sensor noise (a fluxgate compass
-    // wobbles ~0.1°, GPS-derived SOG jitters ~0.02 kt at rest), forcing
-    // a full MapHud re-render and its SVG dial / compass rose paint for
-    // changes the helm cannot see. On a Raspi at idle in harbor this
-    // was the dominant GPU consumer; coarsening here collapses most
-    // ticks to a no-render no-op.
-    private HudSnapshot _lastHudSnapshot;
+    /// <summary>MapHud repaints itself from <see cref="HandleDataChanged"/>
+    /// (see <see cref="OnaPlotter.Components.Map.MapHud.RefreshAsync"/>);
+    /// the page only re-renders when something its own markup reads
+    /// changed.</summary>
+    private OnaPlotter.Components.Map.MapHud? _hud;
 
-    private readonly record struct HudSnapshot(
-        long Sog, long Cog, long Hdg, long Depth,
-        long Awa, long Aws, long Twa, long Tws, long Twd,
-        long NextDist, long NextBrg, long NextVmg, long NextTtg,
-        long AnchorCur, long AnchorMax, long AnchorLat,
-        long Xte, string? RouteHref,
-        int? RoutePtIdx, int? RoutePtTotal,
-        long RouteDistRem, long RouteTtg);
+    /// <summary>The page-level values that need a full page render: the
+    /// Stop Navigation affordances, the anchor button, and (only while
+    /// the anchor panel is open) the HUD data its auto-radius preview
+    /// reads.</summary>
+    private readonly record struct MapPageSnapshot(
+        bool HasActiveCourse, bool AnchorActive,
+        OnaPlotter.Components.Map.HudSnapshot AnchorPanelData);
 
-    // Quantises a nullable double so equality comparison fires at the
-    // same granularity as the old string key's :Fn formatting, without
-    // allocating a string. long.MinValue stands in for null so the
-    // record's value-equality stays correct. Inlined hot path: this
-    // runs ~22 times per HandleDataChanged tick.
-    private static long Q(double? v, int decimals)
-    {
-        if (v is null) return long.MinValue;
-        return (long)Math.Round(v.Value * Math.Pow(10, decimals));
-    }
+    private MapPageSnapshot _lastPageSnapshot;
 
-    private HudSnapshot BuildHudSnapshot() => new(
-        Q(Data.SpeedOverGround, 1),
-        Q(Data.CourseOverGround, 2),
-        Q(Data.Heading, 2),
-        Q(Data.Depth, 1),
-        Q(Data.WindAngleApparent, 2),
-        Q(Data.WindSpeedApparent, 1),
-        Q(Data.WindAngleTrue, 2),
-        Q(Data.WindSpeedTrue, 1),
-        Q(Data.WindDirectionTrue, 2),
-        Q(Data.CourseNextPointDistance, 0),
-        Q(Data.CourseNextPointBearing, 2),
-        Q(Data.CourseNextPointVmg, 1),
-        Q(Data.CourseNextPointTimeToGo, 0),
-        Q(Data.AnchorCurrentRadius, 1),
-        Q(Data.AnchorMaxRadius, 1),
-        Q(Data.AnchorLatitude, 6),
-        Q(Data.CrossTrackError, 1),
-        Data.ActiveRouteHref,
-        // Route-level fields: progress chip + route-total row on the
-        // active-route card. Without them in the snapshot, a waypoint
-        // advance would show new leg numbers but the "WP 3 of 7" chip
-        // would lag until another field changed.
-        Data.ActiveRoutePointIndex,
-        Data.ActiveRoutePointTotal,
-        Q(Data.ActiveRouteDistanceRemaining, 0),
-        Q(Data.ActiveRouteTimeToGo, 0));
+    private OnaPlotter.Components.Map.HudLiveInputs BuildHudLive() => new(
+        LastHeadingRad: lastHeading,
+        AnchorDragging: AnchorDragging,
+        DepthTrendMetersPerMinute: depthTrendMpm,
+        WaypointArrivalRadiusMeters: Data.CourseArrivalCircleMeters ?? 0.0,
+        CourseStopping: _activeRouteSync?.CourseStopPending ?? false,
+        ActiveRouteDistanceTotal: _activeRouteSync?.ActiveRouteDistanceTotal);
 
     // One-time flag so we only push the own MMSI to JS once per
     // session. Self context resolves asynchronously via the hello
@@ -2511,75 +2284,26 @@
     /// </summary>
     private void KickInitialDataSyncAfterSubscribe()
     {
-        // Seed the throttle's last-fire timestamp so the FIRST delta
-        // after this kick still respects the trailing-fire window
-        // rather than firing a redundant immediate pass on the very
-        // next OnDataChanged. Without this seed the throttle would
-        // fire twice in quick succession on first connect (the kick,
-        // then the next delta inside the leading-edge window).
-        _lastHandleDataTicks = Environment.TickCount64;
-        HandleDataChanged();
+        // Through the throttle so the next delta inside the window
+        // coalesces into the trailing fire instead of a second pass.
+        _dataThrottle.Request();
     }
 
     /// <summary>
-    /// Min ms between full HandleDataChanged passes. SignalK deltas
-    /// land per-path at policy=ideal, so a well-instrumented vessel
-    /// publishing position + SOG + COG + heading + wind + depth fires
-    /// 5-10 separate <c>OnDataChanged</c> events per second even when
-    /// nothing visible is moving. Each pass crosses the JS bridge for
-    /// <c>applyFrame</c>, runs the anchor / active-route diff-and-push
-    /// pipeline, and may trigger a Blazor re-render. 150 ms is below
-    /// the helm's "felt" responsiveness threshold (the COG vector and
-    /// compass needle don't move faster than ~6 Hz visibly anyway) and
-    /// collapses the typical burst to one paint per window.
-    /// <para>
-    /// The throttle is page-local: MainLayout (stale check), Alarm
-    /// pipeline, and NavigationAverages subscribe to OnDataChanged
-    /// directly and stay snappy. Only the Map page's heavyweight
-    /// render fan-out is gated.
-    /// </para>
+    /// Leading + trailing throttle around <see cref="HandleDataChanged"/>.
+    /// SignalK deltas land per path, so a well-instrumented vessel fires
+    /// 5-10 <c>OnDataChanged</c> events a second while nothing visible
+    /// moves; each pass crosses the JS bridge for <c>applyFrame</c> and
+    /// runs the anchor / active-route sync. 150 ms is below the helm's
+    /// felt responsiveness threshold. Page-local: MainLayout, the alarm
+    /// pipeline and NavigationAverages subscribe directly and stay
+    /// unthrottled.
     /// </summary>
-    private const long HandleDataChangedThrottleMs = 150;
-    private long _lastHandleDataTicks;
-    private int _handleDataPending;
+    private RenderThrottle? _dataThrottleInstance;
+    private RenderThrottle _dataThrottle =>
+        _dataThrottleInstance ??= new RenderThrottle(TimeSpan.FromMilliseconds(150), HandleDataChanged);
 
-    /// <summary>
-    /// Leading + trailing throttle wrapper around <see cref="HandleDataChanged"/>.
-    /// First delta in a quiet period fires immediately; subsequent deltas
-    /// inside the <see cref="HandleDataChangedThrottleMs"/> window are
-    /// coalesced into a single trailing fire that lands at the end of
-    /// the window. <see cref="_handleDataPending"/> is an
-    /// <see cref="Interlocked"/>-guarded CAS flag so only one trailing
-    /// scheduler is parked at a time even if the SignalK receive loop
-    /// surfaces multiple deltas concurrently.
-    /// </summary>
-    private void HandleDataChangedThrottled()
-    {
-        long now = Environment.TickCount64;
-        long elapsed = now - _lastHandleDataTicks;
-        if (elapsed >= HandleDataChangedThrottleMs)
-        {
-            _lastHandleDataTicks = now;
-            HandleDataChanged();
-            return;
-        }
-        if (Interlocked.CompareExchange(ref _handleDataPending, 1, 0) != 0) return;
-        _ = ScheduleTrailingHandleDataAsync((int)(HandleDataChangedThrottleMs - elapsed));
-    }
-
-    private async Task ScheduleTrailingHandleDataAsync(int delayMs)
-    {
-        try { await Task.Delay(delayMs); }
-        catch { /* clock weirdness; drain anyway below */ }
-        _handleDataPending = 0;
-        // Page may have torn down while the delay was parked. The
-        // existing entry guard in HandleDataChanged would bail too,
-        // but checking here avoids spinning up an async void for
-        // nothing.
-        if (!mapInitialized) return;
-        _lastHandleDataTicks = Environment.TickCount64;
-        HandleDataChanged();
-    }
+    private void HandleDataChangedThrottled() => _dataThrottle.Request();
 
     private async void HandleDataChanged()
     {
@@ -2601,7 +2325,7 @@
         {
             anchorEditMode = false;
             anchorEditBusy = false;
-            // Anchor is gone - ServerAnchorSync will tear the on-
+            // Anchor is gone - ServerAnchorController will tear the on-
             // map ring down (clearAnchor also drops the JS move
             // handle + dragged-position stash), so just clear the
             // C#-side flags so a subsequent re-open starts clean and
@@ -2733,13 +2457,17 @@
             // PrevLon).
             await SyncRouteActiveServerTrackAsync();
 
-            // Only re-render Blazor component if HUD values actually changed.
-            // The snapshot is a record struct - equality is by value, no
-            // string allocation per tick.
-            var hudSnap = BuildHudSnapshot();
-            if (!hudSnap.Equals(_lastHudSnapshot))
+            // The HUD repaints itself when its quantised snapshot moves;
+            // the page renders only for what its own markup reads.
+            var live = BuildHudLive();
+            if (_hud is not null) await _hud.RefreshAsync(live);
+            var pageSnap = new MapPageSnapshot(
+                Data.HasActiveCourse,
+                Data.AnchorActive,
+                anchorEditMode ? OnaPlotter.Components.Map.HudSnapshot.From(Data, live) : default);
+            if (!pageSnap.Equals(_lastPageSnapshot))
             {
-                _lastHudSnapshot = hudSnap;
+                _lastPageSnapshot = pageSnap;
                 await InvokeAsync(StateHasChanged);
             }
         }
@@ -2876,16 +2604,28 @@
     private Task PushAisTargets()
     {
         if (!mapInitialized || _aisPush is null) return Task.CompletedTask;
-        return _aisPush.PushAsync(Data);
+        return PushAisAndAtonsAsync(_aisPush, _atonPush);
+    }
+
+    private async Task PushAisAndAtonsAsync(
+        OnaPlotter.Services.Map.AisPushService ais, OnaPlotter.Services.Map.AtonPushService? atons)
+    {
+        await ais.PushAsync(Data);
+        if (atons is not null) await atons.PushIfDirtyAsync();
+        // The vessel list in the open Layers panel follows the AIS tick
+        // (the page no longer re-renders for every HUD change).
+        if (chartPanelOpen)
+        {
+            try { await InvokeAsync(StateHasChanged); }
+            catch (ObjectDisposedException) { }
+        }
     }
 
     private void HandleAtonsUpdated()
     {
-        // AtonStore.OnAtonsUpdated fires from the websocket thread on
-        // every delta-affecting change. WASM is single-threaded so
-        // there's no thread-marshal needed; we just kick off the JS
-        // push and let it await on its own.
-        if (mapInitialized) _ = (_atonPush?.PushAsync() ?? Task.CompletedTask);
+        // Fires per AtoN delta (a reconnect replays them all); the AIS
+        // tick pushes once for the whole burst.
+        _atonPush?.MarkDirty();
     }
 
     private async Task ToggleFollow()
@@ -3430,7 +3170,7 @@
         // Pure-helper path: the in-flight guard + ClearAsync call live
         // in StopNavigationFlow so the contract is unit-testable
         // without bUnit / JS interop. Map.razor still owns the visual
-        // side-effects (route-stopping CSS, undo toast); ActiveRouteSync
+        // side-effects (route-stopping CSS, undo toast); ActiveRouteController
         // owns the pending-stop timestamp.
         DateTime? pendingSince = (_activeRouteSync?.CourseStopPending ?? false)
             ? DateTime.UtcNow
@@ -3451,7 +3191,7 @@
         // server-side failure (PUT 200 but the plugin didn't actually
         // clear) AND race the next delta tick that would re-establish
         // the cleared course from the server's still-stale state. Let
-        // ActiveRouteSync drive the truth; dim the on-map elements
+        // ActiveRouteController drive the truth; dim the on-map elements
         // so the helm sees their tap landed.
         _activeRouteSync?.MarkCourseStopPending();
         if (_routeJs is not null)
@@ -3623,7 +3363,7 @@
             // Suppress the regular polyline if this route is the active
             // course - the active overlay handles the visual and a
             // duplicate polyline underneath reads as a stuck progress
-            // bar. Same logic as ActiveRouteSync.
+            // bar. Same logic as ActiveRouteController.
             if (_activeRouteSync?.ActiveRouteRegularSuppressed != route.Id)
             {
                 await AddRouteToMap(route);
@@ -3803,7 +3543,7 @@
         }
 
         // If the changed route is the helm's active course, force the
-        // ActiveRouteSync to refetch + redraw. Without this the dashed-
+        // ActiveRouteController to refetch + redraw. Without this the dashed-
         // leg overlay stays on the pre-edit cached coords (the diff-
         // skip logic short-circuits when href hasn't changed).
         if (_activeRouteSync is not null
@@ -3881,7 +3621,7 @@
 
                 // Active-route deactivation. If the currently-active
                 // route is among the removed ids, kick the
-                // ActiveRouteSync once - the overlay would otherwise
+                // ActiveRouteController once - the overlay would otherwise
                 // point at a no-longer-existent destination until the
                 // next nextPoint-null tick.
                 if (_activeRouteSync is not null
@@ -5094,7 +4834,7 @@
             // a numeric chip when they committed numeric).
             _anchorLastSetViaAuto = commit.FromAuto;
             // Preview reconciles with reality on the next server delta;
-            // ServerAnchorSync diffs MaxRadius against _lastPushedRadius
+            // ServerAnchorController diffs MaxRadius against _lastPushedRadius
             // and pushes the authoritative value. Clear the preview
             // flag so a subsequent panel-close doesn't try to revert.
             _anchorPreviewActive = false;
@@ -5204,6 +4944,7 @@
         // console.
         mapInitialized = false;
         SignalkClient.OnDataChanged -= HandleDataChangedThrottled;
+        _dataThrottleInstance?.Dispose();
         SignalkClient.OnConnectionChanged -= HandleConnectionChanged;
         ResourceStore.OnRouteChanged -= HandleRouteChangedFromStore;
         ResourceStore.OnRouteRemoved -= HandleRouteRemovedFromStore;

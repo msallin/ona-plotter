@@ -147,13 +147,13 @@ public sealed class ServerTrackController
 
     /// <summary>
     /// Fetches the server track for the current duration and pushes
-    /// it to the JS layer as <c>[lat, lon, sogMs]</c> triples so the
-    /// renderer can colour by speed bucket (same scheme as the
-    /// local own-track polyline). The rich fetch carries SOG; nulls
-    /// (e.g. early-cruise samples before SK derived SOG from the
-    /// position delta) collapse to 0 m/s, which the JS speed bucket
-    /// bins as the slowest band, visually consistent with "we did
-    /// not see the boat moving fast" without dropping the segment.
+    /// it to the JS layer as <c>[lat, lon, speedBucket]</c> triples so
+    /// the renderer can colour runs from SpeedColor.BucketPalette (same
+    /// scheme as the local own-track polyline). Null SOG (e.g.
+    /// early-cruise samples before SK derived SOG from the position
+    /// delta) lands in bucket 0, the slowest band, visually consistent
+    /// with "we did not see the boat moving fast" without dropping the
+    /// segment.
     /// "all" maps to a 100-year ISO duration (P36500D) because the
     /// SignalK History API doesn't define an "everything" shape -
     /// a span larger than any plausible cruise is the pragmatic
@@ -175,13 +175,13 @@ public sealed class ServerTrackController
             pathSet: TrackFetchPathSet.MapTrack);
         if (points is not null && points.Length > 0)
         {
-            // Project to [lat, lon, sogMs] triples for the JS speed-
-            // colour renderer.
+            // Project to [lat, lon, speedBucket] triples for the JS
+            // speed-colour renderer.
             var triples = new double[points.Length][];
             for (int i = 0; i < points.Length; i++)
             {
                 triples[i] = [points[i].Latitude, points[i].Longitude,
-                              points[i].SpeedOverGround ?? 0];
+                              OnaPlotter.Utilities.SpeedBuckets.Bucket(points[i].SpeedOverGround)];
             }
             await _overlaysJs.SetServerTrackAsync(triples, _withinBounds);
             return true;

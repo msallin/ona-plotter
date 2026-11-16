@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Net;
 using OnaPlotter.Services.Api;
 
@@ -24,7 +25,7 @@ public class NoteApiTests
                 Content = new StringContent("\"note-new-42\"")
             };
         });
-        var api = new NoteApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new NoteApi(http, ApiTestHelpers.FixedBaseUrl(), TimeProvider.System, NullLogger<NoteApi>.Instance);
 
         var r = await api.CreateAsync("Kelp patch", "Watch the prop here", 47.4, 8.5);
 
@@ -53,7 +54,7 @@ public class NoteApiTests
         }
         """;
         var http = ApiTestHelpers.JsonClient(_ => body);
-        var api = new NoteApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new NoteApi(http, ApiTestHelpers.FixedBaseUrl(), TimeProvider.System, NullLogger<NoteApi>.Instance);
 
         var notes = await api.GetAllAsync();
 
@@ -80,7 +81,7 @@ public class NoteApiTests
             capturedUrl = req.RequestUri?.AbsoluteUri;
             return new HttpResponseMessage(HttpStatusCode.NoContent);
         });
-        var api = new NoteApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new NoteApi(http, ApiTestHelpers.FixedBaseUrl(), TimeProvider.System, NullLogger<NoteApi>.Instance);
 
         var r = await api.DeleteAsync("id with space");
 

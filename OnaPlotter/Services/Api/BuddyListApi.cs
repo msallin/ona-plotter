@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Http.Json;
 using System.Text.Json;
 using OnaPlotter.Models;
 
@@ -11,7 +10,9 @@ namespace OnaPlotter.Services.Api;
 /// <see cref="OnaPlotter.Services.AisStore.UpdateBuddies"/> can stamp
 /// the IsBuddy flag on every tracked vessel. Best-effort: returns null
 /// when the plugin isn't installed or the request fails - the AIS
-/// pipeline continues with an empty buddy set.</summary>
+/// pipeline continues with an empty buddy set. Transport and error
+/// policy is <see cref="ResourceHttp"/>'s; this class only adds the
+/// installed / not-installed cache behind <see cref="IsAvailableAsync"/>.</summary>
 public sealed class BuddyListApi : IBuddyListApi
 {
     private readonly HttpClient _http;
@@ -45,88 +46,68 @@ public sealed class BuddyListApi : IBuddyListApi
 
     public async Task<IReadOnlyList<SignalkBuddy>?> GetAllAsync(CancellationToken ct = default)
     {
-        var url = _baseUrl.Combine(SignalKUrls.BuddiesPath);
-        try
+        // The plugin returns an object keyed by URN:
+        //   { "urn:mrn:imo:mmsi:1234": { "name": "Friend boat" }, ... }
+        var result = await ResourceHttp.GetJsonAsync<Dictionary<string, JsonElement>>(
+            _http, _baseUrl.Combine(SignalKUrls.BuddiesPath), _logger, ct, JsonSerializerOptions.Web);
+        if (!result.Success)
         {
-            using var res = await _http.GetAsync(url, ct);
-            if (res.StatusCode == HttpStatusCode.NotFound)
-            {
-                _available = false;
-                return null;
-            }
-            res.EnsureSuccessStatusCode();
-            _available = true;
-
-            // The plugin returns an object keyed by URN:
-            //   { "urn:mrn:imo:mmsi:1234": { "name": "Friend boat" }, ... }
-            var dict = await res.Content.ReadFromJsonAsync<Dictionary<string, JsonElement>>(cancellationToken: ct);
-            if (dict is null) return Array.Empty<SignalkBuddy>();
-
-            var list = new List<SignalkBuddy>(dict.Count);
-            foreach (var (urn, body) in dict)
-            {
-                string? name = null;
-                if (body.ValueKind == JsonValueKind.Object
-                    && body.TryGetProperty("name", out var n)
-                    && n.ValueKind == JsonValueKind.String)
-                {
-                    name = n.GetString();
-                }
-                list.Add(new SignalkBuddy(urn, name ?? urn));
-            }
-            return list;
-        }
-        catch (HttpRequestException ex)
-        {
-            _logger.LogDebug(ex, "Buddy list probe failed; treating plugin as not installed");
-            _available = false;
+            NoteAvailability(result.StatusCode);
             return null;
         }
+        _available = true;
+        if (result.Value is null) return Array.Empty<SignalkBuddy>();
+
+        var list = new List<SignalkBuddy>(result.Value.Count);
+        foreach (var (urn, body) in result.Value)
+        {
+            string? name = null;
+            if (body.ValueKind == JsonValueKind.Object
+                && body.TryGetProperty("name", out var n)
+                && n.ValueKind == JsonValueKind.String)
+            {
+                name = n.GetString();
+            }
+            list.Add(new SignalkBuddy(urn, name ?? urn));
+        }
+        return list;
     }
 
     public void Invalidate() => _available = null;
 
     public async Task<ApiResult> AddAsync(string urn, string name, CancellationToken ct = default)
     {
-        var url = _baseUrl.Combine(SignalKUrls.BuddiesPath);
-        try
-        {
-            using var res = await _http.PostAsJsonAsync(url, new { urn, name }, ct);
-            if (res.IsSuccessStatusCode) { _available = true; return ApiResult.Ok; }
-            if (res.StatusCode == HttpStatusCode.NotFound)
-            {
-                _available = false;
-                return ApiResult.Fail("buddy-list plugin not installed");
-            }
-            _logger.LogWarning("Buddy add rejected with {Status}", res.StatusCode);
-            return ApiResult.Fail($"HTTP {(int)res.StatusCode}");
-        }
-        catch (HttpRequestException ex)
-        {
-            _logger.LogWarning(ex, "Buddy add failed");
-            return ApiResult.Fail(ex.Message);
-        }
+        var result = await ResourceHttp.PostAsync(
+            _http, _baseUrl.Combine(SignalKUrls.BuddiesPath), new { urn, name }, ct);
+        return MapWriteResult(result, "add");
     }
 
     public async Task<ApiResult> RemoveAsync(string urn, CancellationToken ct = default)
     {
-        var url = _baseUrl.Combine(SignalKUrls.Buddy(urn));
-        try
+        var result = await ResourceHttp.DeleteAsync(_http, _baseUrl.Combine(SignalKUrls.Buddy(urn)), ct);
+        return MapWriteResult(result, "delete");
+    }
+
+    /// <summary>A 2xx proves the plugin is installed; a 404 proves it
+    /// isn't. Any other failure (transport, timeout, 5xx, 401) says
+    /// nothing about installation, so the cache stays as it was and
+    /// the next probe asks again.</summary>
+    private void NoteAvailability(int? failedStatus)
+    {
+        if (failedStatus == (int)HttpStatusCode.NotFound) _available = false;
+    }
+
+    private ApiResult MapWriteResult(ApiResult result, string verb)
+    {
+        if (result.Success)
         {
-            using var res = await _http.DeleteAsync(url, ct);
-            if (res.IsSuccessStatusCode) { _available = true; return ApiResult.Ok; }
-            if (res.StatusCode == HttpStatusCode.NotFound)
-            {
-                _available = false;
-                return ApiResult.Fail("buddy-list plugin not installed");
-            }
-            _logger.LogWarning("Buddy delete rejected with {Status}", res.StatusCode);
-            return ApiResult.Fail($"HTTP {(int)res.StatusCode}");
+            _available = true;
+            return result;
         }
-        catch (HttpRequestException ex)
-        {
-            _logger.LogWarning(ex, "Buddy delete failed");
-            return ApiResult.Fail(ex.Message);
-        }
+        NoteAvailability(result.StatusCode);
+        if (result.StatusCode == (int)HttpStatusCode.NotFound)
+            return ApiResult.Fail("buddy-list plugin not installed", result.StatusCode);
+        _logger.LogWarning("Buddy {Verb} failed: {Error} (HTTP {Status})", verb, result.Error, result.StatusCode);
+        return result;
     }
 }

@@ -30,12 +30,12 @@ public sealed class AlarmManager : IAlarmManager
     public const int EvaluationIntervalMs = 1_000;
 
     /// <summary>Fallback snooze duration used when no IAppSettings is wired
-    /// (legacy test ctors). Production callers override via IAppSettings
+    /// (test ctors). Production callers override via IAppSettings
     /// so the user can set a shorter / longer snooze to match the
     /// passage style - loitering fishing fleet vs. a distant freighter.</summary>
     public const int SnoozeMinutes = 10;
 
-    /// <summary>After a dismiss, suppress re-firing the same (title, target)
+    /// <summary>After a dismiss, suppress re-firing the same (rule, target)
     /// for this many seconds unless the severity escalates. Sized at 30s so
     /// a persistent threat re-asserts soon enough to matter, but the helm
     /// gets a chance to process / act / call on VHF without mashing dismiss
@@ -74,12 +74,12 @@ public sealed class AlarmManager : IAlarmManager
 
     private readonly IReadOnlyList<IAlarmRule> _rules;
     private readonly Dictionary<string, SnoozedTarget> _snoozed = [];
-    private readonly Func<DateTime> _now;
+    private readonly TimeProvider _time;
     private readonly IKeyValueStore? _kv;
     private readonly IAppSettings? _settings;
     private bool _initialized;
 
-    // Active alarms keyed by (Title, TargetKey) so the same rule firing on
+    // Active alarms keyed by (RuleId, TargetKey) so the same rule firing on
     // a different target counts as a different alarm (two CPA threats, or
     // SHALLOW plus CPA coexisting). Value remembers the originating rule
     // so auto-clear / latch behaviour survives severity/message updates.
@@ -268,46 +268,43 @@ public sealed class AlarmManager : IAlarmManager
         // race). Clamp at 1 min minimum - zero would snooze forever.
         (_settings?.SnoozeDurationMinutes is int m && m > 0) ? m : SnoozeMinutes;
 
-    private IReadOnlyList<string>? _ruleTitlesCache;
-    public IReadOnlyList<string> RegisteredRuleTitles =>
+    private IReadOnlyList<AlarmRuleId>? _ruleIdsCache;
+    public IReadOnlyList<AlarmRuleId> RegisteredRuleIds =>
         // _rules is set once in the ctor (sorted by Priority) and
-        // never mutated, so cache the title projection on first read.
+        // never mutated, so cache the id projection on first read.
         // Settings -> Alarms reads this on every render of the panel.
-        _ruleTitlesCache ??= _rules.Select(r => r.Title).ToArray();
+        _ruleIdsCache ??= _rules.Select(r => r.Id).ToArray();
 
     public event Action<AlarmInfo?>? OnAlarmChanged;
     public event Action? OnAlarmsChanged;
 
-    public AlarmManager(IEnumerable<IAlarmRule> rules, IKeyValueStore kv, IAppSettings settings)
-        : this(rules, () => DateTime.UtcNow, kv, settings) { }
+    public AlarmManager(IEnumerable<IAlarmRule> rules, IKeyValueStore kv, IAppSettings settings,
+        TimeProvider time)
+        : this(rules, time, kv, settings) { }
 
-    // Two-arg overload for tests that don't care about persistence.
-    // Production wiring uses the public 3-arg ctor above; this and
-    // the 3-arg internal sibling below let the test fixtures call
-    // `new AlarmManager(rules, () => clock.Now)` (and `+ kv`) without
-    // having to thread a settings object through every test.
-    internal AlarmManager(IEnumerable<IAlarmRule> rules, Func<DateTime> now)
-        : this(rules, now, null, null) { }
+    // Overloads for tests that don't care about persistence or
+    // settings, so fixtures don't have to thread them through.
+    internal AlarmManager(IEnumerable<IAlarmRule> rules, TimeProvider time)
+        : this(rules, time, null, null) { }
 
-    internal AlarmManager(IEnumerable<IAlarmRule> rules, Func<DateTime> now,
+    internal AlarmManager(IEnumerable<IAlarmRule> rules, TimeProvider time,
         IKeyValueStore? kv)
-        : this(rules, now, kv, null) { }
+        : this(rules, time, kv, null) { }
 
-    // Full-arg internal ctor. Cross-plotter ack used to inject an
-    // INotificationsApi here; that responsibility now lives on the
-    // per-alarm IAlarmAcknowledger handle that the bridge rule attaches
-    // to AlarmInfo, so the manager no longer depends on the SignalK
-    // REST surface at all. Removing the API param simplifies the
-    // construction story (one less field, one less ctor overload) and
-    // matches ARCH-001's goal of keeping the manager transport-neutral.
-    internal AlarmManager(IEnumerable<IAlarmRule> rules, Func<DateTime> now,
+    // Full-arg internal ctor. The manager is transport-neutral:
+    // cross-plotter ack goes through the per-alarm IAlarmAcknowledger
+    // handle the bridge rule attaches to AlarmInfo, not through a
+    // SignalK API held here.
+    internal AlarmManager(IEnumerable<IAlarmRule> rules, TimeProvider time,
         IKeyValueStore? kv, IAppSettings? settings)
     {
         _rules = rules.OrderBy(r => r.Priority).ToList();
-        _now = now;
+        _time = time;
         _kv = kv;
         _settings = settings;
     }
+
+    private DateTime UtcNow() => _time.GetUtcNow().UtcDateTime;
 
     public async Task InitializeAsync()
     {
@@ -320,7 +317,7 @@ public sealed class AlarmManager : IAlarmManager
             if (string.IsNullOrWhiteSpace(raw)) return;
             var loaded = System.Text.Json.JsonSerializer.Deserialize(raw, OnaJsonContext.Default.SnoozedTargetArray);
             if (loaded is null) return;
-            var now = _now();
+            var now = UtcNow();
             foreach (var s in loaded)
             {
                 // Drop already-expired entries so they don't linger.
@@ -369,10 +366,14 @@ public sealed class AlarmManager : IAlarmManager
     }
 
     public void Evaluate(NavigationData data, IReadOnlyCollection<AisVessel> vessels, IAppSettings settings)
+        => Evaluate(data, () => vessels, settings);
+
+    public void Evaluate(NavigationData data, Func<IReadOnlyCollection<AisVessel>> vesselsProvider, IAppSettings settings)
     {
-        var now = _now();
+        var now = UtcNow();
         if ((now - _lastEvaluation).TotalMilliseconds < EvaluationIntervalMs) return;
         _lastEvaluation = now;
+        var vessels = vesselsProvider();
 
         SweepExpiredSnoozes(now);
         SweepExpiredDismissCooldowns(now);
@@ -396,14 +397,19 @@ public sealed class AlarmManager : IAlarmManager
             // having to remember a paused-mid-anchor sample. The
             // already-active drop loop below removes any alarms the
             // rule had raised before the helm flipped its toggle.
-            if (disabledRules.Contains(rule.Title)) continue;
+            if (rule.Id.IsDisabledIn(disabledRules)) continue;
             // CheckMany wraps Check by default (single rule -> one alarm),
             // so existing rules don't need to change. The
             // ServerNotificationsAlarmRule overrides it to surface every
             // active server notification on each tick.
             foreach (var alarm in rule.CheckMany(ctx))
             {
-                _thisTick[new AlarmKey(alarm.Title, alarm.TargetKey)] = (alarm, rule);
+                // Per-alarm check as well: the server-notification
+                // bridge emits alarms carrying a local rule's id (e.g.
+                // a course-provider arrival is APPROACH), and the
+                // helm's APPROACH toggle must silence both sources.
+                if (alarm.RuleId.IsDisabledIn(disabledRules)) continue;
+                _thisTick[new AlarmKey(alarm.RuleId, alarm.TargetKey)] = (alarm, rule);
             }
         }
 
@@ -427,7 +433,8 @@ public sealed class AlarmManager : IAlarmManager
         List<AlarmKey>? toDrop = null;
         foreach (var kv in _active)
         {
-            bool ruleDisabled = disabledRules.Contains(kv.Value.Rule.Title);
+            bool ruleDisabled = kv.Value.Rule.Id.IsDisabledIn(disabledRules)
+                || kv.Key.RuleId.IsDisabledIn(disabledRules);
             bool autoClearMissing = !_thisTick.ContainsKey(kv.Key) && kv.Value.Rule.AutoClear;
             if (ruleDisabled || autoClearMissing)
             {
@@ -466,7 +473,7 @@ public sealed class AlarmManager : IAlarmManager
             {
                 // New (or re-emerging) alarm. Check the dismiss-cooldown:
                 // the helmsman already told us they saw this exact
-                // (title, target); don't immediately re-fire, unless
+                // (rule, target); don't immediately re-fire, unless
                 // severity has escalated since then.
                 if (IsInDismissCooldown(key, info.Severity, now)) continue;
                 _active[key] = new ActiveEntry(info, rule);
@@ -481,7 +488,7 @@ public sealed class AlarmManager : IAlarmManager
     public Task DismissAsync()
     {
         if (_active.Count == 0) return Task.CompletedTask;
-        var now = _now();
+        var now = UtcNow();
         var pendingAcks = new List<IAlarmAcknowledger>();
         foreach (var (key, e) in _active)
         {
@@ -507,10 +514,10 @@ public sealed class AlarmManager : IAlarmManager
 
     public Task DismissAsync(AlarmInfo alarm)
     {
-        var key = new AlarmKey(alarm.Title, alarm.TargetKey);
+        var key = new AlarmKey(alarm.RuleId, alarm.TargetKey);
         if (!_active.Remove(key, out var removed)) return Task.CompletedTask;
         InvalidateActiveCache();
-        var now = _now();
+        var now = UtcNow();
         LogHistory(removed.Info, now, DismissReason.UserDismissed);
         RecordDismissCooldown(key, removed.Info.Severity, now);
         removed.Rule.OnDismissed(removed.Info, now);
@@ -557,7 +564,7 @@ public sealed class AlarmManager : IAlarmManager
         // to silence a beacon.
         if (!alarm.Snoozeable) return Task.CompletedTask;
         if (alarm.TargetKey is null) return Task.CompletedTask;
-        var now = _now();
+        var now = UtcNow();
         var label = alarm.TargetLabel ?? alarm.TargetKey;
         _snoozed[alarm.TargetKey] = new SnoozedTarget(
             alarm.TargetKey, label, now.AddMinutes(SnoozeDurationMinutes));
@@ -627,17 +634,17 @@ public sealed class AlarmManager : IAlarmManager
     {
         OnAlarmsChanged?.Invoke();
 
-        // Audio-relevant change = top alarm identity (Title+TargetKey+Severity)
-        // moved. Message-only updates on the same top alarm don't re-arm
-        // the audio (the danger/warn cadence doesn't change).
+        // Audio-relevant change = top alarm identity (RuleId + TargetKey)
+        // or severity moved. Message-only updates (live CPA distance /
+        // TCPA every tick) reach the banner through OnAlarmsChanged above
+        // and must not restart the audio cadence.
         var top = ActiveAlarm;
         bool topChanged =
             (_lastTop is null) != (top is null)
             || (_lastTop is not null && top is not null && (
-                _lastTop.Title != top.Title
+                _lastTop.RuleId != top.RuleId
                 || _lastTop.TargetKey != top.TargetKey
-                || _lastTop.Severity != top.Severity
-                || _lastTop.Message != top.Message));
+                || _lastTop.Severity != top.Severity));
 
         if (topChanged)
         {
@@ -671,24 +678,26 @@ public sealed class AlarmManager : IAlarmManager
     private bool IsSnoozed(string targetKey)
     {
         if (!_snoozed.TryGetValue(targetKey, out var s)) return false;
-        if (_now() < s.ExpiresAt) return true;
+        if (UtcNow() < s.ExpiresAt) return true;
         _snoozed.Remove(targetKey);
         return false;
     }
 
     private void RecordDismissCooldown(AlarmKey key, AlarmSeverity severity, DateTime now)
     {
-        // Per-title window: CPA gets 15 min instead of the default 30s
-        // (see CpaDismissCooldownSeconds for rationale). Other titles
-        // keep the default; add cases here as more long-cycle threats
-        // surface a similar "dismissing every 30s is noise" pattern.
-        int seconds = key.Title == "CPA" ? CpaDismissCooldownSeconds : DismissCooldownSeconds;
+        // Per-rule window: CPA gets 15 min instead of the default 30s
+        // (see CpaDismissCooldownSeconds for rationale). The key is
+        // (rule, target), so dismissing one CPA target never silences
+        // another. Other rules keep the default; add cases here as more
+        // long-cycle threats surface a similar "dismissing every 30s is
+        // noise" pattern.
+        int seconds = key.RuleId == AlarmRuleId.Cpa ? CpaDismissCooldownSeconds : DismissCooldownSeconds;
         _dismissCooldown[key] = new DismissCooldown(
             now.AddSeconds(seconds), severity);
     }
 
     /// <summary>True if the alarm should be suppressed this tick. Cooldown
-    /// silences re-fires of the same (title, target) at the same or lower
+    /// silences re-fires of the same (rule, target) at the same or lower
     /// severity; an escalation (Warning -> Danger) bypasses because the
     /// helmsman's earlier acknowledgment doesn't cover the worsened case.</summary>
     private bool IsInDismissCooldown(AlarmKey key, AlarmSeverity newSeverity, DateTime now)
@@ -722,7 +731,7 @@ public sealed class AlarmManager : IAlarmManager
         foreach (var k in expired) _dismissCooldown.Remove(k);
     }
 
-    private readonly record struct AlarmKey(string Title, string? TargetKey);
+    private readonly record struct AlarmKey(AlarmRuleId RuleId, string? TargetKey);
     private readonly record struct ActiveEntry(AlarmInfo Info, IAlarmRule Rule);
     private readonly record struct DismissCooldown(DateTime Until, AlarmSeverity DismissedAtSeverity);
 }

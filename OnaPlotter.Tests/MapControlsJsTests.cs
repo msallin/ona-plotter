@@ -1,5 +1,6 @@
 using Microsoft.JSInterop;
 using OnaPlotter.Services.Js;
+using OnaPlotter.Utilities;
 
 namespace OnaPlotter.Tests;
 
@@ -60,15 +61,19 @@ public class MapControlsJsTests
     }
 
     [Test]
-    public async Task SetNightModeAsync_PassesBool()
+    public async Task SetNightModeAsync_PassesBoolAndTrackPalette()
     {
         var fake = new RecordingJsRef();
         var sut = new MapControlsJs(fake);
 
         await sut.SetNightModeAsync(true);
+        await sut.SetNightModeAsync(false);
 
         await Assert.That(fake.Calls[0].id).IsEqualTo("setNightMode");
         await Assert.That((bool)fake.Calls[0].args[0]!).IsTrue();
+        await Assert.That(fake.Calls[0].args[1]).IsSameReferenceAs(SpeedColor.NightBucketPalette);
+        await Assert.That((bool)fake.Calls[1].args[0]!).IsFalse();
+        await Assert.That(fake.Calls[1].args[1]).IsSameReferenceAs(SpeedColor.BucketPalette);
     }
 
     [Test]
@@ -120,10 +125,13 @@ public class MapControlsJsTests
         // test class itself stands in for "any C# class".
         using var dotNetRef = DotNetObjectReference.Create(this);
 
-        await sut.EnableKeyboardShortcutsAsync(dotNetRef);
+        string[] keys = ["f", "escape"];
+
+        await sut.EnableKeyboardShortcutsAsync(dotNetRef, keys);
 
         await Assert.That(fake.Calls[0].id).IsEqualTo("enableKeyboardShortcuts");
         await Assert.That(fake.Calls[0].args[0]).IsSameReferenceAs(dotNetRef);
+        await Assert.That(fake.Calls[0].args[1]).IsSameReferenceAs(keys);
     }
 
     [Test]

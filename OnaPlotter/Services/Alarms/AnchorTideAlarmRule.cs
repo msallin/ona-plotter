@@ -33,6 +33,7 @@ namespace OnaPlotter.Services.Alarms;
 /// </summary>
 public sealed class AnchorTideAlarmRule : IAlarmRule
 {
+    public AlarmRuleId Id => AlarmRuleId.AnchorTide;
     public string Title => "ANCHOR TIDE";
 
     // Sits between SHALLOW (100) and CPA (200): SHALLOW is an
@@ -137,6 +138,7 @@ public sealed class AnchorTideAlarmRule : IAlarmRule
             // Keel hits bottom at LW.
             double shortfall = -clearance;
             return new AlarmInfo(
+                RuleId: Id,
                 Title: Title,
                 Message: $"Keel touches bottom at LW in {when} ({shortfall:F1}m short)",
                 Severity: AlarmSeverity.Danger,
@@ -144,6 +146,7 @@ public sealed class AnchorTideAlarmRule : IAlarmRule
         }
 
         return new AlarmInfo(
+            RuleId: Id,
             Title: Title,
             Message: $"Low clearance at LW in {when}: {clearance:F1}m under keel",
             Severity: AlarmSeverity.Warn,

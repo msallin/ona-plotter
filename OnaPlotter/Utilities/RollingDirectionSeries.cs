@@ -42,6 +42,11 @@ public sealed class RollingDirectionSeries
 
     public TimeSpan MaxRetention { get; }
 
+    /// <summary>Increments whenever the retained sample set changes
+    /// (append, seed, eviction). Lets renderers cache a projection of
+    /// the buffer and skip rebuilding it while nothing changed.</summary>
+    public long Version { get; private set; }
+
     public RollingDirectionSeries(TimeSpan maxRetention, TimeProvider? time = null)
     {
         if (maxRetention <= TimeSpan.Zero)
@@ -62,6 +67,7 @@ public sealed class RollingDirectionSeries
         if (!double.IsFinite(angleRadians) || !double.IsFinite(weight) || weight < 0) return;
         var now = _time.GetUtcNow().UtcDateTime;
         _samples.Add(new Sample(now, angleRadians, weight));
+        Version++;
         EvictOlderThan(now - MaxRetention);
     }
 
@@ -108,6 +114,7 @@ public sealed class RollingDirectionSeries
             _head = 0;
         }
         _samples.InsertRange(0, fresh);
+        Version++;
     }
 
     public int Count
@@ -152,6 +159,43 @@ public sealed class RollingDirectionSeries
             result.Add(new TimeSeriesSample(s.Ts, s.AngleRad));
         }
         return result;
+    }
+
+    /// <summary>
+    /// Chart view of the trailing <paramref name="window"/>: at most
+    /// about <paramref name="maxVertices"/> stride-sampled vertices plus
+    /// min / max / mean over every non-zero-weight in-window sample, read
+    /// straight from storage without copying the window.
+    /// <paramref name="project"/> converts the stored radians to the
+    /// display unit before it is measured; min / max / mean are linear
+    /// over the projected values, matching a compass-scale chart axis.
+    /// Empty when nothing is in the window or the window exceeds
+    /// <see cref="MaxRetention"/>.
+    /// </summary>
+    public ChartSeries ChartIn(TimeSpan window, int maxVertices, Func<double, double>? project = null)
+    {
+        if (maxVertices < 2)
+            throw new ArgumentOutOfRangeException(nameof(maxVertices), maxVertices, "Need at least two vertices.");
+        if (window <= TimeSpan.Zero || window > MaxRetention) return ChartSeries.Empty;
+        var now = _time.GetUtcNow().UtcDateTime;
+        EvictOlderThan(now - MaxRetention);
+        var cutoff = now - window;
+        int firstIdx = _samples.Count;
+        int count = 0;
+        for (int i = _samples.Count - 1; i >= _head; i--)
+        {
+            if (_samples[i].Ts < cutoff) break;
+            firstIdx = i;
+            if (_samples[i].Weight > 0) count++;
+        }
+        var builder = new ChartSeriesBuilder(count, maxVertices);
+        for (int i = firstIdx; i < _samples.Count; i++)
+        {
+            var s = _samples[i];
+            if (s.Weight <= 0) continue;
+            builder.Add(s.Ts, project is null ? s.AngleRad : project(s.AngleRad));
+        }
+        return builder.Build();
     }
 
     /// <summary>Circular mean over the trailing <paramref name="window"/>,
@@ -257,10 +301,12 @@ public sealed class RollingDirectionSeries
 
     private void EvictOlderThan(DateTime cutoff)
     {
+        int before = _head;
         while (_head < _samples.Count && _samples[_head].Ts < cutoff)
         {
             _head++;
         }
+        if (_head != before) Version++;
         if (_head > 0 && _head >= _samples.Count / 2)
         {
             _samples.RemoveRange(0, _head);

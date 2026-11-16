@@ -334,4 +334,147 @@ public class RollingScalarSeriesTests
         await Assert.That(s.Count).IsEqualTo(2);
         await Assert.That(s.Mean(TimeSpan.FromMinutes(60), warmupRatio: 0)).IsEqualTo(5.0);
     }
+
+    // - ChartIn ------------------------------------------------
+
+    [Test]
+    public async Task ChartIn_Empty_ReturnsEmpty()
+    {
+        var s = new RollingScalarSeries(TimeSpan.FromMinutes(1), NewClock());
+
+        var c = s.ChartIn(TimeSpan.FromSeconds(30), 600);
+
+        await Assert.That(c.Count).IsEqualTo(0);
+        await Assert.That(c.Vertices).IsEmpty();
+        await Assert.That(c.Span).IsEqualTo(TimeSpan.Zero);
+    }
+
+    [Test]
+    [Arguments(0)]
+    [Arguments(-1)]
+    [Arguments(61)]
+    public async Task ChartIn_WindowOutOfRange_ReturnsEmpty(int seconds)
+    {
+        var s = new RollingScalarSeries(TimeSpan.FromMinutes(1), NewClock());
+        s.Add(1);
+
+        await Assert.That(s.ChartIn(TimeSpan.FromSeconds(seconds), 600).Count).IsEqualTo(0);
+    }
+
+    [Test]
+    [Arguments(1)]
+    [Arguments(0)]
+    [Arguments(int.MinValue)]
+    public async Task ChartIn_FewerThanTwoVertices_Throws(int maxVertices)
+    {
+        var s = new RollingScalarSeries(TimeSpan.FromMinutes(1), NewClock());
+
+        await Assert.That(() => s.ChartIn(TimeSpan.FromSeconds(30), maxVertices))
+            .ThrowsExactly<ArgumentOutOfRangeException>();
+    }
+
+    [Test]
+    public async Task ChartIn_UnderLimit_EmitsEverySampleWithStats()
+    {
+        var clock = NewClock();
+        var s = new RollingScalarSeries(TimeSpan.FromMinutes(5), clock);
+        s.Add(100);                       // falls out of the 30 s window
+        clock.Advance(TimeSpan.FromSeconds(60));
+        foreach (var v in new[] { 2.0, 6.0, 4.0 })
+        {
+            s.Add(v);
+            clock.Advance(TimeSpan.FromSeconds(1));
+        }
+
+        var c = s.ChartIn(TimeSpan.FromSeconds(30), 600);
+
+        await Assert.That(c.Count).IsEqualTo(3);
+        await Assert.That(c.Vertices.Select(v => v.Value)).IsEquivalentTo(new[] { 2.0, 6.0, 4.0 });
+        await Assert.That(c.Min).IsEqualTo(2.0);
+        await Assert.That(c.Max).IsEqualTo(6.0);
+        await Assert.That(c.Mean).IsEqualTo(4.0);
+        await Assert.That(c.Span).IsEqualTo(TimeSpan.FromSeconds(2));
+    }
+
+    [Test]
+    public async Task ChartIn_MatchesSnapshotInContent()
+    {
+        var clock = NewClock();
+        var s = new RollingScalarSeries(TimeSpan.FromMinutes(5), clock);
+        for (int i = 0; i < 50; i++) { s.Add(i * 0.5); clock.Advance(TimeSpan.FromSeconds(1)); }
+
+        var snap = s.SnapshotIn(TimeSpan.FromSeconds(30));
+        var c = s.ChartIn(TimeSpan.FromSeconds(30), 600);
+
+        await Assert.That(c.Vertices).IsEquivalentTo(snap);
+    }
+
+    [Test]
+    public async Task ChartIn_OverLimit_DecimatesButStatsCoverAllSamples()
+    {
+        // Two hours of 1 Hz TWS: 7,200 samples with one 40 kn gust spike
+        // that the stride skips. The axis max must still see it.
+        var clock = NewClock();
+        var s = new RollingScalarSeries(TimeSpan.FromHours(3), clock);
+        for (int i = 0; i < 7200; i++)
+        {
+            s.Add(i == 1001 ? 40.0 : 10.0);
+            clock.Advance(TimeSpan.FromSeconds(1));
+        }
+
+        var c = s.ChartIn(TimeSpan.FromHours(2), 600);
+
+        await Assert.That(c.Count).IsEqualTo(7200);
+        await Assert.That(c.Vertices.Count).IsLessThanOrEqualTo(601);
+        await Assert.That(c.Vertices.Count).IsGreaterThanOrEqualTo(550);
+        await Assert.That(c.Vertices.Any(v => v.Value == 40.0)).IsFalse();
+        await Assert.That(c.Max).IsEqualTo(40.0);
+        await Assert.That(c.Span).IsEqualTo(TimeSpan.FromSeconds(7199));
+        // Endpoints anchored so the line spans the window.
+        var snap = s.SnapshotIn(TimeSpan.FromHours(2));
+        await Assert.That(c.Vertices[0]).IsEqualTo(snap[0]);
+        await Assert.That(c.Vertices[^1]).IsEqualTo(snap[^1]);
+    }
+
+    [Test]
+    public async Task ChartIn_ProjectsBeforeMeasuring()
+    {
+        var s = new RollingScalarSeries(TimeSpan.FromMinutes(1), NewClock());
+        s.Add(1.0);
+        s.Add(2.0);
+
+        var c = s.ChartIn(TimeSpan.FromSeconds(30), 600, v => v * 10);
+
+        await Assert.That(c.Vertices.Select(v => v.Value)).IsEquivalentTo(new[] { 10.0, 20.0 });
+        await Assert.That(c.Mean).IsEqualTo(15.0);
+    }
+
+    // - Version ------------------------------------------------
+
+    [Test]
+    public async Task Version_ChangesOnAddSeedAndEvictionOnly()
+    {
+        var clock = NewClock();
+        var s = new RollingScalarSeries(TimeSpan.FromMinutes(1), clock);
+        long v0 = s.Version;
+
+        s.Add(1);
+        long v1 = s.Version;
+        s.Add(double.NaN);                // dropped: no change
+        long v2 = s.Version;
+        _ = s.Mean(TimeSpan.FromSeconds(30), warmupRatio: 0);
+        _ = s.ChartIn(TimeSpan.FromSeconds(30), 600);
+        long v3 = s.Version;
+        s.Seed([(clock.GetUtcNow().UtcDateTime.AddSeconds(-10), 5.0)]);
+        long v4 = s.Version;
+        clock.Advance(TimeSpan.FromMinutes(2));
+        _ = s.Count;                      // evicts both samples
+        long v5 = s.Version;
+
+        await Assert.That(v1).IsGreaterThan(v0);
+        await Assert.That(v2).IsEqualTo(v1);
+        await Assert.That(v3).IsEqualTo(v2);
+        await Assert.That(v4).IsGreaterThan(v3);
+        await Assert.That(v5).IsGreaterThan(v4);
+    }
 }

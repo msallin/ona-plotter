@@ -3,12 +3,10 @@
 @using OnaPlotter.Services
 @using Microsoft.JSInterop
 @inject SignalkClient SignalkClient
-@inject AisStore AisStore
 @inject IAppSettings Settings
 @inject IToastService Toasts
 @inject IAlarmManager Alarms
-@inject OnaPlotter.Services.ServerNotifications.ServerNotificationStore ServerNotifications
-@inject OnaPlotter.Services.Api.ICourseApi CourseApi
+@inject AutoAdvanceService AutoAdvance
 @inject IJSRuntime JS
 @inject NavigationManager Nav
 @inject OnaPlotter.Services.UpdateChecker Updates
@@ -18,7 +16,7 @@
 @implements IAsyncDisposable
 
 <a href="#main-content" class="skip-link">Skip to content</a>
-<div class="page theme-@EffectiveTheme @(Settings.NightMode ? "night-mode-global" : "") @(Settings.SidebarCollapsed ? "sidebar-collapsed" : "")">
+<div class="page theme-@EffectiveTheme @(Settings.NightMode ? "night-mode-global" : "") @(Settings.SidebarCollapsed ? "sidebar-collapsed" : "") @PageRouteClass @(alarmLogOpen ? "page-alarm-log-open" : "")">
     <div class="sidebar">
         <NavMenu />
     </div>
@@ -269,8 +267,8 @@
                        long-press on an acknowledge triggers "Copy / Share"
                        instead of the hold-to-dismiss gesture, per field
                        report. *@
-                    <div class="alarm-banner @(a.Severity == AlarmSeverity.Danger ? "alarm-danger" : "alarm-warn")"
-                         @key="(a.Title, a.TargetKey)"
+                    <div class="alarm-banner @(a.Severity == AlarmSeverity.Danger ? "alarm-banner-danger" : "alarm-banner-warn")"
+                         @key="(a.RuleId, a.TargetKey)"
                          @oncontextmenu:preventDefault @oncontextmenu:stopPropagation
                          @oncontextmenu="NoOpContextMenu">
                         @if (a.Severity == AlarmSeverity.Danger)
@@ -302,14 +300,14 @@
                                 <strong>@a.Title</strong> @a.Message
                             </div>
                         }
-                        @if (a.Title == "APPROACH")
+                        @if (a.RuleId == AlarmRuleId.Approach)
                         {
                             @* One-tap "arrived, on to the next leg" for
                                multi-WP routes. Hits the SignalK /nextPoint
                                PUT which increments the server-side pointIndex;
                                the active-course delta flips to the new leg
                                and the banner auto-clears on the next tick. *@
-                            <button class="alarm-action" @onclick="() => NextWaypoint(a)" @onclick:stopPropagation
+                            <button class="alarm-action" @onclick="() => AutoAdvance.NextWaypointAsync(a)" @onclick:stopPropagation
                                     title="Advance the active route to the next waypoint">
                                 Next WP
                             </button>
@@ -346,7 +344,7 @@
            affordance is genuine. *@
         @if (snoozed.Count > 0)
         {
-            <div class="snooze-chips">
+            <div class="snooze-chips @(activeAlarms.Count > 0 ? "snooze-chips-below-banner" : "")">
                 @foreach (var s in snoozed)
                 {
                     <button class="snooze-chip" @onclick="() => UnsnoozeOne(s.TargetKey)" @key="s.TargetKey"
@@ -403,14 +401,14 @@
                         <ul class="alarm-log-list">
                             @foreach (var a in activeForOverlay)
                             {
-                                <li class="alarm-log-item alarm-log-active-item @(a.Severity == AlarmSeverity.Danger ? "alarm-danger" : "alarm-warn")"
-                                    @key="(a.Title, a.TargetKey)">
+                                <li class="alarm-log-item alarm-log-active-item @(a.Severity == AlarmSeverity.Danger ? "alarm-log-active-danger" : "alarm-log-active-warn")"
+                                    @key="(a.RuleId, a.TargetKey)">
                                     <span class="alarm-log-title">@a.Title</span>
                                     <span class="alarm-log-msg">@a.Message</span>
                                     <div class="alarm-log-active-actions">
-                                        @if (a.Title == "APPROACH")
+                                        @if (a.RuleId == AlarmRuleId.Approach)
                                         {
-                                            <button class="alarm-action" @onclick="() => NextWaypoint(a)" @onclick:stopPropagation
+                                            <button class="alarm-action" @onclick="() => AutoAdvance.NextWaypointAsync(a)" @onclick:stopPropagation
                                                     title="Advance the active route to the next waypoint">
                                                 Next WP
                                             </button>
@@ -467,7 +465,7 @@
                 else if (Alarms.DismissedHistory.Count > 0)
                 {
                     @* Coalesce consecutive entries that share the same
-                       (Title, Reason, TargetKey) so a noisy sensor
+                       (RuleId, Reason, TargetKey) so a noisy sensor
                        (e.g. depth flapping on every tide tick) doesn't
                        drown the rest of the log. One row per run with
                        a count chip and the latest timestamp; expand-
@@ -483,7 +481,7 @@
                             @foreach (var g in CoalesceDismissedHistory(Alarms.DismissedHistory))
                             {
                                 <li class="alarm-log-item alarm-log-@g.Latest.Reason.ToString().ToLowerInvariant()"
-                                    @key="(g.Latest.Alarm.Title, g.Latest.Alarm.TargetKey, g.Latest.Reason, g.Latest.At)">
+                                    @key="(g.Latest.Alarm.RuleId, g.Latest.Alarm.TargetKey, g.Latest.Reason, g.Latest.At)">
                                     <span class="alarm-log-time">@g.Latest.At.ToLocalTime().ToString("HH:mm:ss")</span>
                                     <span class="alarm-log-title">@g.Latest.Alarm.Title</span>
                                     @if (g.Count > 1)
@@ -653,14 +651,11 @@
     protected override void OnInitialized()
     {
         SignalkClient.OnConnectionChanged += HandleConnectionChanged;
+        // Alarm evaluation and waypoint auto-advance run in
+        // AlarmEvaluationDriver / AutoAdvanceService; the layout only
+        // renders. The data subscription here just clears the stale
+        // badge as soon as data flows again.
         SignalkClient.OnDataChanged += HandleDataChanged;
-        // Wake the alarm pipeline whenever a server notification
-        // mutates - including local synthetics produced by
-        // MobService. Subscribing directly to the store keeps the
-        // dependency direction honest (the alarm pipeline depends
-        // on the store, not the WS client) and avoids back-door
-        // OnDataChanged fires from non-WS sources.
-        ServerNotifications.OnPathChanged += HandleNotificationPathChanged;
         Toasts.OnChanged += HandleToastsChanged;
         Settings.OnSettingsChanged += HandleSettingsChanged;
         Alarms.OnAlarmChanged += HandleAlarmChanged;
@@ -872,7 +867,19 @@
     // doesn't allocate a new Uri per call (this layout re-renders
     // multiple times a second during alarm chatter).
     private bool _isMapRoute;
+    private bool _isHistoryRoute;
     private bool IsMapRoute => _isMapRoute;
+
+    // Route + mode classes on .page. app.css keys the full-bleed article
+    // (page-map / page-history) and Big-screen chrome (page-big-type:
+    // control bar, toasts, alarm banner) off these instead of
+    // descendant :has() queries that re-match on every DOM change.
+    // Big-screen mode only applies on the map, where Settings.BigType
+    // scales the chart chrome.
+    private string PageRouteClass =>
+        _isMapRoute ? (Settings.BigType ? "page-map page-big-type" : "page-map")
+        : _isHistoryRoute ? "page-history"
+        : "";
 
     private void RefreshIsMapRoute()
     {
@@ -882,6 +889,7 @@
         // needed.
         var path = new Uri(Nav.Uri).AbsolutePath.TrimEnd('/');
         _isMapRoute = path.EndsWith("/map", StringComparison.OrdinalIgnoreCase);
+        _isHistoryRoute = path.EndsWith("/history", StringComparison.OrdinalIgnoreCase);
     }
 
     // Topbar zoom buttons. Share the same leafletInterop.js module
@@ -1004,39 +1012,14 @@
         _alarmLogJustOpened = alarmLogOpen;
     }
 
-    /// <summary>Keyboard handler for the alarm-log modal dialog.
-    /// Escape closes. Tab / Shift-Tab cycles focus inside the panel
-    /// via a JS focus-trap helper so an external keyboard on iPad
-    /// can't tab into the chart underneath while the dialog is open
-    /// (the aria-modal attribute alone doesn't enforce this -
-    /// browsers don't trap focus, only assistive tech reads it).</summary>
-    private async Task OnAlarmLogKeyDown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    /// <summary>Keyboard handler for the alarm-log modal dialog: Escape
+    /// closes. Tab / Shift-Tab wrapping is a native listener installed by
+    /// viewport.js attachFocusTrap when the dialog opens, because only a
+    /// synchronous handler can stop the browser's own Tab move (the
+    /// aria-modal attribute alone doesn't trap focus).</summary>
+    private void OnAlarmLogKeyDown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
     {
-        if (!alarmLogOpen) return;
-        if (e.Key == "Escape")
-        {
-            alarmLogOpen = false;
-            return;
-        }
-        if (e.Key == "Tab")
-        {
-            try
-            {
-                await JS.InvokeVoidAsync("eval",
-                    "(function(panel, back){" +
-                    "if(!panel) return;" +
-                    "var focusables = panel.querySelectorAll('button,[href],input,select,textarea,[tabindex]:not([tabindex=\"-1\"])');" +
-                    "if(focusables.length===0){panel.focus();return;}" +
-                    "var first = focusables[0], last = focusables[focusables.length-1];" +
-                    "var active = document.activeElement;" +
-                    "if(back && active === first){last.focus();}" +
-                    "else if(!back && active === last){first.focus();}" +
-                    "})(arguments[0], arguments[1]);",
-                    _alarmLogPanelRef, e.ShiftKey);
-            }
-            catch (Microsoft.JSInterop.JSDisconnectedException) { }
-            catch (Microsoft.JSInterop.JSException) { }
-        }
+        if (alarmLogOpen && e.Key == "Escape") alarmLogOpen = false;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -1048,7 +1031,12 @@
         if (_alarmLogJustOpened)
         {
             _alarmLogJustOpened = false;
-            try { await _alarmLogPanelRef.FocusAsync(preventScroll: true); }
+            try
+            {
+                await _alarmLogPanelRef.FocusAsync(preventScroll: true);
+                if (viewportModule is not null)
+                    await viewportModule.InvokeVoidAsync("attachFocusTrap", _alarmLogPanelRef);
+            }
             catch (Microsoft.JSInterop.JSDisconnectedException) { }
             catch (Microsoft.JSInterop.JSException) { }
         }
@@ -1064,11 +1052,12 @@
             // the helm has toggled the chevron at least once.
             try
             {
-                var viewport = await JS.InvokeAsync<IJSObjectReference>(
+                // Kept for the app's lifetime: the alarm-log dialog uses
+                // its focus trap every time it opens.
+                viewportModule = await JS.InvokeAsync<IJSObjectReference>(
                     "import", "./js/platform/viewport.js");
-                bool isMobile = await viewport.InvokeAsync<bool>("isMobile");
+                bool isMobile = await viewportModule.InvokeAsync<bool>("isMobile");
                 await Settings.ApplyMobileFirstRunDefaultsAsync(isMobile);
-                await viewport.DisposeAsync();
             }
             catch (JSDisconnectedException) { }
             // Rehydrate snoozed targets from the KV store so a reload
@@ -1160,6 +1149,9 @@
     // Keep the wake-lock module reference alive for the app's lifetime.
     private IJSObjectReference? wakeLockModule;
 
+    // Viewport-shape check at first render + the alarm-log focus trap.
+    private IJSObjectReference? viewportModule;
+
     private void MaybeShowFirstRunOfflineToast()
     {
         if (firstRunOfflineToastShown) return;
@@ -1183,215 +1175,16 @@
 
     private void HandleDataChanged()
     {
-        try
-        {
-            // Clear the stale flag as soon as data flows again. The audio
-            // stops via HandleAlarmChanged when AlarmManager resolves.
-            if (wasStale)
-            {
-                wasStale = false;
-                _ = InvokeAsync(StateHasChanged);
-            }
-
-            Alarms.Evaluate(SignalkClient.Data, AisStore.GetVessels(), Settings);
-            MaybeAutoAdvanceWaypoint();
-        }
+        // Clear the stale flag as soon as data flows again.
+        if (!wasStale) return;
+        wasStale = false;
+        try { _ = InvokeAsync(StateHasChanged); }
         catch (ObjectDisposedException) { }
-    }
-
-    /// <summary>Re-evaluate alarms whenever a server notification mutates
-    /// the active set. Reuses HandleDataChanged's evaluate path so the
-    /// notification-driven re-evaluation behaves identically to the
-    /// WS-frame-driven one (no separate code path for ServerNotifications-
-    /// only changes). Path argument is unused - the rule pipeline reads
-    /// the entire store on every Evaluate.</summary>
-    private void HandleNotificationPathChanged(string _) => HandleDataChanged();
-
-    // --- Auto-advance -------------------------------------------------
-    //
-    // The SignalK course-provider plugin publishes
-    // perpendicularPassed / arrivalCircleEntered as booleans on every
-    // active leg. When either flips to true we POST to
-    // navigation/course/activeRoute/nextPoint so the boat flows through
-    // the route without requiring a tap per waypoint - matches the
-    // default behaviour of commercial chartplotters.
-    //
-    // Edge-triggered (_prevPerp / _prevArr): we only fire on the
-    // false -> true transition. If the server re-publishes true for
-    // the same leg without going false in between, the cooldown
-    // window (_lastAutoAdvanceUtc) prevents a double-advance that
-    // would skip a waypoint. 8 s is generous for the round-trip of
-    // advance -> new-leg delta -> reset; tighter values get racy
-    // on slow links.
-    private bool _prevPerp;
-    private bool _prevArr;
-    private DateTime _lastAutoAdvanceUtc = DateTime.MinValue;
-    private const int AutoAdvanceCooldownSec = 8;
-
-    private void MaybeAutoAdvanceWaypoint()
-    {
-        // Diagnostic toast on every firing decision path. When a user
-        // reports "auto-advance didn't work", we need to know which of
-        // four possible skip reasons hit: setting off, no active
-        // course, flag never went true, or cooldown window. Toasts are
-        // Debug-level so they appear in console logs without spamming
-        // the visible stack on every tick.
-        if (!Settings.AutoAdvanceWaypoints)
-        {
-            _prevPerp = false; _prevArr = false;
-            return;
-        }
-        var data = SignalkClient.Data;
-        if (!data.HasActiveCourse)
-        {
-            _prevPerp = false; _prevArr = false;
-            return;
-        }
-
-        bool perp = data.PerpendicularPassed == true;
-        bool arr = data.ArrivalCircleEntered == true;
-
-        bool perpEdge = perp && !_prevPerp;
-        bool arrEdge = arr && !_prevArr;
-        _prevPerp = perp;
-        _prevArr = arr;
-
-        if (!(perpEdge || arrEdge)) return;
-
-        double sinceLastSec = (DateTime.UtcNow - _lastAutoAdvanceUtc).TotalSeconds;
-        if (sinceLastSec < AutoAdvanceCooldownSec)
-        {
-            // Cooldown-skip happens on every delta tick during the
-            // 8 s window after a fire; logging it on each call put
-            // 8 string allocations + JS-interop console writes per
-            // advance into the OnDataChanged hot path on Pi 4.
-            return;
-        }
-
-        _lastAutoAdvanceUtc = DateTime.UtcNow;
-        _ = AutoAdvanceAsync(perpEdge ? "perpendicular passed" : "arrival circle");
-    }
-
-    private async Task AutoAdvanceAsync(string reason)
-    {
-        // Multi-plotter idempotency: when more than one chartplotter
-        // is wired to the same SK server (multiple ona-plotter tabs,
-        // or peer SignalK clients on a phone and the helm screen),
-        // every client sees the same arrival edge and fires
-        // concurrently. The relative "advance by 1" PUT
-        // (/activeRoute/nextPoint with {value:1}) is NOT idempotent:
-        // two racing PUTs both increment the server's pointIndex
-        // and silently skip a waypoint. The absolute form
-        // (PUT /activeRoute/pointIndex {value: N}) IS idempotent -
-        // the second PUT lands on a value that's already set and is
-        // a no-op.
-        //
-        // Last-leg exception: SetPointIndexAsync clamps out-of-range
-        // values, so PUT pointIndex=total does NOT clear the active
-        // course. Fall back to the relative call there - the race
-        // is inert on the final leg (nothing to skip to), and the
-        // relative call is what triggers the server's clear-on-arrive
-        // so the "Arrived at final waypoint" toast still fires.
-        var data = SignalkClient.Data;
-        bool hadCourseBefore = data.HasActiveCourse;
-        if (data.ActiveRoutePointIndex is not int currentIdx)
-        {
-            // No pointIndex means the SK server hasn't published v2
-            // course state for this leg; we'd be guessing the target.
-            // Fail loud rather than fall back to the relative call
-            // and reintroduce the multi-plotter race.
-            // Tell the helm what to do, not just that something failed.
-            // pointIndex is missing when the server hasn't published v2
-            // course state for the current leg; the manual relative
-            // advance is the workaround. Surface it as a one-tap action
-            // on the toast itself so the helm doesn't have to dig
-            // through the alarm banner for the same call.
-            Toasts.ShowAction(
-                "Auto-advance unavailable (route position unknown).",
-                "Next WP",
-                async () =>
-                {
-                    try
-                    {
-                        var r = await CourseApi.AdvanceActiveRouteAsync();
-                        if (!r.Success)
-                            Toasts.Error($"Next waypoint failed: {r.Error ?? "server rejected"}");
-                    }
-                    catch (Exception ex) { Toasts.LogException(ex, "Next waypoint"); }
-                },
-                ToastLevel.Warning, durationSec: 8);
-            return;
-        }
-        bool isLastLeg = data.ActiveRoutePointTotal is int total && currentIdx + 1 >= total;
-        try
-        {
-            var r = isLastLeg
-                ? await CourseApi.AdvanceActiveRouteAsync()
-                : await CourseApi.SetPointIndexAsync(currentIdx + 1);
-            if (!r.Success)
-            {
-                Toasts.Error($"Auto-advance failed: {r.Error ?? "server rejected"}");
-                return;
-            }
-            Toasts.Info($"Next waypoint ({reason})");
-            // Self-clear the latched APPROACH banner: the manual
-            // "Next WP" tap on the alarm dismisses the alarm as part
-            // of the same gesture (see NextWaypoint below); when the
-            // system auto-advances on the helm's behalf the banner
-            // should disappear too. Without this dismiss the helm
-            // sees a stale APPROACH for the just-passed waypoint
-            // until they exit the radius (and even then it stays
-            // because the rule is AutoClear=false). The rule's
-            // existing latch reset on coord change re-arms the
-            // detector for the new waypoint; this dismiss is just
-            // about clearing the on-screen banner.
-            foreach (var alarm in Alarms.AllActiveAlarms)
-            {
-                if (string.Equals(alarm.Title, "APPROACH", StringComparison.Ordinal))
-                {
-                    await Alarms.DismissAsync(alarm);
-                }
-            }
-            await Task.Delay(400);
-            if (hadCourseBefore && !SignalkClient.Data.HasActiveCourse)
-                Toasts.Success("Arrived at final waypoint");
-        }
-        catch (Exception ex) { Toasts.LogException(ex, "Auto-advance"); }
     }
 
     private async Task DismissOne(AlarmInfo alarm) => await Alarms.DismissAsync(alarm);
     private async Task SnoozeOne(AlarmInfo alarm) => await Alarms.SnoozeAsync(alarm);
     private async Task UnsnoozeOne(string targetKey) => await Alarms.UnsnoozeAsync(targetKey);
-
-    // Advance the active route one leg and dismiss the APPROACH alarm
-    // that prompted it. Both halves matter: if we don't dismiss, the
-    // alarm sits on the stack until the boat physically leaves the
-    // radius. Any failure toasts so a bad network blip is visible.
-    //
-    // End-of-route signal: some servers clear the active course on the
-    // last leg's arrival, others hold the final waypoint and refuse
-    // "nextPoint". We listen for either signal - SignalkClient fires
-    // NavigationData.HasActiveCourse -> false on route clear - and
-    // show an explicit "arrived at final WP" toast so the helm isn't
-    // left wondering whether the tap worked.
-    private async Task NextWaypoint(AlarmInfo alarm)
-    {
-        bool hadCourseBefore = SignalkClient.Data.HasActiveCourse;
-        try
-        {
-            var r = await CourseApi.AdvanceActiveRouteAsync();
-            if (!r.Success) { Toasts.Error($"Next waypoint failed: {r.Error ?? "server rejected"}"); return; }
-            await Alarms.DismissAsync(alarm);
-
-            // Brief settle window so the delta for the new leg (or the
-            // course-cleared signal) reaches NavigationData, then check
-            // whether we just consumed the last waypoint.
-            await Task.Delay(400);
-            if (hadCourseBefore && !SignalkClient.Data.HasActiveCourse)
-                Toasts.Success("Arrived at final waypoint");
-        }
-        catch (Exception ex) { Toasts.LogException(ex, "Next waypoint"); }
-    }
 
     // --- Hold-to-dismiss for Danger alarms ---
     // 600 ms matches the autopilot engage hold: long enough to defeat a
@@ -1402,7 +1195,7 @@
     private string? HoldingAlarmKey;
     private CancellationTokenSource? _alarmHoldCts;
 
-    private static string AlarmKeyOf(AlarmInfo a) => $"{a.Title}|{a.TargetKey}";
+    private static string AlarmKeyOf(AlarmInfo a) => $"{a.RuleId}|{a.TargetKey}";
 
     // Empty handler just so the @oncontextmenu:preventDefault directive
     // has something to attach to. Blazor registers the preventDefault
@@ -1570,7 +1363,7 @@
 
     /// <summary>One coalesced row in the rendered alarm history. Holds
     /// the latest sample of a run of consecutive entries that share
-    /// (Title, Reason, TargetKey) plus the run length so the UI can
+    /// (RuleId, Reason, TargetKey) plus the run length so the UI can
     /// surface "x3" without losing the most-recent timestamp.</summary>
     private sealed record DismissedAlarmGroup(
         OnaPlotter.Models.DismissedAlarm Latest, int Count);
@@ -1593,7 +1386,7 @@
         {
             var next = history[i];
             bool sameKey =
-                string.Equals(next.Alarm.Title, current.Alarm.Title, StringComparison.Ordinal)
+                next.Alarm.RuleId == current.Alarm.RuleId
                 && next.Reason == current.Reason
                 && string.Equals(next.Alarm.TargetKey, current.Alarm.TargetKey, StringComparison.Ordinal);
             if (sameKey)
@@ -1650,7 +1443,6 @@
     {
         SignalkClient.OnConnectionChanged -= HandleConnectionChanged;
         SignalkClient.OnDataChanged -= HandleDataChanged;
-        ServerNotifications.OnPathChanged -= HandleNotificationPathChanged;
         Toasts.OnChanged -= HandleToastsChanged;
         Settings.OnSettingsChanged -= HandleSettingsChanged;
         Alarms.OnAlarmChanged -= HandleAlarmChanged;
@@ -1699,6 +1491,11 @@
         if (themeModule is not null)
         {
             try { await themeModule.DisposeAsync(); }
+            catch (JSDisconnectedException) { }
+        }
+        if (viewportModule is not null)
+        {
+            try { await viewportModule.DisposeAsync(); }
             catch (JSDisconnectedException) { }
         }
         if (wakeLockModule is not null)

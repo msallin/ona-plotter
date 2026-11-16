@@ -13,20 +13,10 @@ namespace OnaPlotter.Services.Signalk;
 /// No v2 equivalent exists yet - v1 is the only source - so this
 /// stays on the v1 REST surface.
 ///
-/// <para>Architecture review (2026-04-28) ARCH-006 carved this out
-/// of <see cref="SignalkClient"/> as the first step toward splitting
-/// the 1761-line god service into role-focused collaborators
-/// (SignalkConnection / SignalkSubscriptionRegistry /
-/// SignalkDeltaRouter / SignalkRestSeeder). Each follow-on extract
-/// will follow the same shape: a class that owns ONE concern, takes
-/// only the dependencies it needs, and has its own tests. SignalkClient
-/// keeps its delta-routing role and orchestrates these collaborators.
-/// </para>
-///
-/// <para>The other three seed methods (vessel names, course, self
-/// context) follow next; they need additional helpers (ApplyRestVesselTree,
-/// SetSelfContext callback) that should land alongside them in their
-/// own class to keep this one focused.</para>
+/// <para>Started on every connect by
+/// <see cref="SignalkConnectSeeding"/>, alongside the vessel-names,
+/// course and self-context seeders; each owns one REST round-trip and
+/// its parsing rules.</para>
 /// </summary>
 public sealed class SignalkDraftSeeder
 {

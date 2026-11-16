@@ -131,7 +131,7 @@ test('settings page persists the depth-alarm threshold across reload', async ({ 
     // but 3 is stored as "3.0". The poll parses the string to a number
     // so the test doesn't care about the exact string form.
     const readDepthKv = () => page.evaluate(() =>
-        localStorage.getItem('ona.depthAlarmThreshold'));
+        localStorage.getItem('ona.depthAlarmThreshold.v1'));
     await expect.poll(async () => Number.parseFloat(await readDepthKv()),
         { timeout: 5_000 }).toBe(4.5);
 

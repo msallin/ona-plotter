@@ -1,4 +1,5 @@
 using System.Text.Json;
+using OnaPlotter.Utilities;
 using Microsoft.Extensions.Logging;
 using OnaPlotter.Models;
 using OnaPlotter.Services.Api;
@@ -27,11 +28,15 @@ namespace OnaPlotter.Services.Signalk;
 ///   "previousPoint": {"position": {...}}
 /// }
 /// </code>
-/// activeRoute / nextPoint / previousPoint are nulls when no course
-/// is active; we no-op in that case. calcValues.* numbers are NOT in
-/// this body - they come from the delta stream which the
-/// course-provider plugin re-emits every tick as the boat moves, so
-/// they trickle in normally.
+/// activeRoute / nextPoint / previousPoint are null (or absent) when no
+/// course is active. The seed is authoritative for those three: a field
+/// that is absent or null clears the matching local state, because a
+/// course cleared on the server while this plotter was offline produces
+/// no delta to replay. calcValues.* numbers are NOT in this body - they
+/// come from the delta stream which the course-provider plugin re-emits
+/// every tick as the boat moves, so they trickle in normally; they are
+/// left untouched while a course stays active so the auto-advance edge
+/// detector doesn't see a reset leg flag as a fresh edge.
 /// </para>
 /// </summary>
 public sealed class SignalkCourseSeeder
@@ -87,8 +92,9 @@ public sealed class SignalkCourseSeeder
             // activeRoute: an object when a route is active, null when
             // cleared. Members mirror the SK v2 spec above; OnaPlotter
             // tracks href / name / pointIndex / pointTotal.
-            if (doc.RootElement.TryGetProperty("activeRoute", out var ar)
-                && ar.ValueKind == JsonValueKind.Object)
+            bool hasActiveRoute = doc.RootElement.TryGetProperty("activeRoute", out var ar)
+                && ar.ValueKind == JsonValueKind.Object;
+            if (hasActiveRoute)
             {
                 if (ar.TryGetProperty("href", out var href) && href.ValueKind == JsonValueKind.String)
                     seeded |= _data.ApplyString(OnaPlotter.Utilities.SkPaths.Navigation.Course.ActiveRouteHref, href.GetString());
@@ -103,29 +109,20 @@ public sealed class SignalkCourseSeeder
             // nextPoint / previousPoint: objects carrying position and
             // a type discriminator ("RoutePoint" / "Waypoint" / ...).
             // Only position matters to the HUD; type is informational.
+            bool hasNext = false, hasPrevious = false;
             if (doc.RootElement.TryGetProperty("nextPoint", out var np)
-                && np.ValueKind == JsonValueKind.Object
-                && np.TryGetProperty("position", out var npPos)
-                && npPos.ValueKind == JsonValueKind.Object
-                && npPos.TryGetProperty("latitude", out var npLat)
-                && npPos.TryGetProperty("longitude", out var npLon)
-                && npLat.ValueKind == JsonValueKind.Number
-                && npLon.ValueKind == JsonValueKind.Number)
+                && np.TryGetLatLon(out var npLat, out var npLon))
             {
-                _data.ApplyCourseNextPointPosition(npLat.GetDouble(), npLon.GetDouble());
+                _data.ApplyCourseNextPointPosition(npLat, npLon);
+                hasNext = true;
                 seeded = true;
             }
 
             if (doc.RootElement.TryGetProperty("previousPoint", out var pp)
-                && pp.ValueKind == JsonValueKind.Object
-                && pp.TryGetProperty("position", out var ppPos)
-                && ppPos.ValueKind == JsonValueKind.Object
-                && ppPos.TryGetProperty("latitude", out var ppLat)
-                && ppPos.TryGetProperty("longitude", out var ppLon)
-                && ppLat.ValueKind == JsonValueKind.Number
-                && ppLon.ValueKind == JsonValueKind.Number)
+                && pp.TryGetLatLon(out var ppLat, out var ppLon))
             {
-                _data.ApplyCoursePreviousPointPosition(ppLat.GetDouble(), ppLon.GetDouble());
+                _data.ApplyCoursePreviousPointPosition(ppLat, ppLon);
+                hasPrevious = true;
                 seeded = true;
             }
 
@@ -139,6 +136,26 @@ public sealed class SignalkCourseSeeder
             {
                 seeded |= _data.Apply(
                     OnaPlotter.Utilities.SkPaths.Navigation.Course.ArrivalCircle, ac);
+            }
+
+            // Absent course fields clear local state (see class summary).
+            // No next point means no course at all: drop everything,
+            // calcValues included. Otherwise clear only the parts the
+            // server no longer reports.
+            if (!hasNext)
+            {
+                bool hadCourse = _data.HasActiveCourse || _data.HasPreviousPoint
+                    || _data.ActiveRouteHref is not null || _data.ActiveRoutePointIndex is not null;
+                if (hadCourse)
+                {
+                    _data.ClearCourse();
+                    seeded = true;
+                }
+            }
+            else
+            {
+                if (!hasActiveRoute) seeded |= _data.ClearActiveRoute();
+                if (!hasPrevious) seeded |= _data.ClearCoursePreviousPoint();
             }
 
             if (seeded)

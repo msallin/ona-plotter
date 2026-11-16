@@ -5,11 +5,14 @@
 // water - e.g. wreck warnings) get a dashed outline so the helm
 // doesn't go looking for an actual buoy.
 //
-// AtoNs are static enough that the C# side pushes the full set on
-// store-change rather than per-update. setAtons replaces the entire
-// marker layer; ids that go away in the new payload are removed.
+// AtoNs are static enough that the C# side (AtonPushService) pushes
+// the full set, at most once per AIS tick and only when the store
+// changed. setAtons diffs each mark against what it last drew, so an
+// unchanged buoy costs no DOM work; ids missing from the payload are
+// removed.
 
 import { MarkerLayer } from './markerLayer.js';
+import { esc } from './popupHelpers.js';
 
 // IALA Region A palette. Cardinal marks use yellow + black bands;
 // lateral red = port (Region A), green = starboard. Other marks
@@ -129,34 +132,25 @@ function makeAtonIcon(symbol, side, isVirtual) {
     return icon;
 }
 
-function buildAtonPopupHtml(a) {
-    const titleParts = [];
-    if (a.name) titleParts.push(a.name);
-    else if (a.mmsi) titleParts.push(a.mmsi);
-    else titleParts.push('AtoN');
-    if (a.virtual) titleParts.push('(virtual)');
-    const title = titleParts.join(' ');
-    const subtitle = a.typeName || (a.typeId != null ? `Type ${a.typeId}` : '');
+// Popup text is resolved C#-side (AtonPushService); escaped here
+// because names come off the air.
+export function buildAtonPopupHtml(a) {
     return `<div class="aton-popup">
-        <strong>${title}</strong>
-        ${subtitle ? `<div class="aton-popup-sub">${subtitle}</div>` : ''}
-        ${a.mmsi && a.name ? `<div class="aton-popup-mmsi">MMSI ${a.mmsi}</div>` : ''}
+        <strong>${esc(a.title)}</strong>
+        ${a.subtitle ? `<div class="aton-popup-sub">${esc(a.subtitle)}</div>` : ''}
+        ${a.detail ? `<div class="aton-popup-mmsi">${esc(a.detail)}</div>` : ''}
     </div>`;
 }
 
 /**
- * Replace the rendered AtoN set. Adds new ids, updates moved entries
- * (rare - AtoNs don't usually move), removes ids missing from the
- * payload. Caller (Map.razor) pushes the whole snapshot from
- * AtonStore on each OnAtonsUpdated event; the layer is small enough
- * (typical harbour 10-50 entries, big port maybe 200) that a full
- * rebuild on every change isn't a perf problem.
+ * Replace the rendered AtoN set. Adds new ids, updates changed entries
+ * (position, icon, popup text each only when they differ from what was
+ * drawn), removes ids missing from the payload.
  *
  * @param {Array<{
- *   context: string, name?: string, mmsi?: string,
- *   lat: number, lon: number,
- *   typeId?: number, typeName?: string,
- *   symbol: string, side: string, virtual?: boolean
+ *   context: string, lat: number, lon: number,
+ *   symbol: string, side: string, virtual: boolean,
+ *   title: string, subtitle?: string, detail?: string
  * }>} atons
  */
 export function setAtons(atons) {
@@ -167,20 +161,22 @@ export function setAtons(atons) {
             || !isFinite(a.lat) || !isFinite(a.lon)) continue;
         seen.add(a.context);
         const icon = makeAtonIcon(a.symbol, a.side, !!a.virtual);
+        const html = buildAtonPopupHtml(a);
         const existing = atonMarkers.get(a.context);
         if (existing) {
-            existing.setLatLng([a.lat, a.lon]);
-            // Identity check against the cached divIcon. setIcon does a
-            // DOM detach + re-attach; on a 200-buoy harbour push at
-            // every WS reconnect-replay that's measurable layout work
-            // for visuals that didn't change. The cache returns the
-            // same ref for the same (symbol, side, virtual) tuple, so
-            // strict-equality is the right test.
+            const ll = existing.getLatLng();
+            if (ll.lat !== a.lat || ll.lng !== a.lon) existing.setLatLng([a.lat, a.lon]);
+            // The icon cache returns the same instance per (symbol, side,
+            // virtual), so identity means "nothing to rebuild"; setIcon
+            // would detach and re-attach the DOM.
             if (existing._lastIcon !== icon) {
                 existing.setIcon(icon);
                 existing._lastIcon = icon;
             }
-            existing.setPopupContent(buildAtonPopupHtml(a));
+            if (existing._lastPopupHtml !== html) {
+                existing.setPopupContent(html);
+                existing._lastPopupHtml = html;
+            }
         } else {
             // Honour the visibility flag on creation. Without this
             // guard a setAtons that runs while atonsVisible=false
@@ -188,10 +184,9 @@ export function setAtons(atons) {
             // hides the layer, a reconnect repopulates the store, and
             // the buoys reappear despite the toggle being off.
             const m = L.marker([a.lat, a.lon], { icon })
-                .bindPopup(buildAtonPopupHtml(a), { autoPan: false });
-            // Stash the icon ref so the per-tick path's identity check
-            // (above) skips redundant setIcon calls.
+                .bindPopup(html, { autoPan: false });
             m._lastIcon = icon;
+            m._lastPopupHtml = html;
             if (atonsVisible) m.addTo(mapRef);
             atonMarkers.set(a.context, m);
         }

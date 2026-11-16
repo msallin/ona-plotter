@@ -2,12 +2,11 @@ namespace OnaPlotter.Utilities;
 
 /// <summary>
 /// Maps a speed-over-ground (m/s) into a CSS rgb(...) string for
-/// track-segment colouring, plus a discrete bucket index used to
-/// group consecutive same-speed segments so the renderer doesn't
-/// emit one polyline per fix. JS layer mirrors this via
-/// <c>wwwroot/js/format.js</c>; tests here pin the exact rgb tuples
-/// at the boundary speeds (0 / 3 / 6 / 8+ knots) so a future tweak
-/// to the ramp updates the JS in lockstep with C#.
+/// track-segment colouring. Track renderers group points by
+/// <see cref="SpeedBuckets.Bucket"/> and colour each run with
+/// <see cref="BucketPalette"/>, which the map receives once at
+/// <c>initMap</c>; the JS side only indexes the palette. Tests pin the
+/// exact rgb tuples at the boundary speeds (0 / 3 / 6 / 8+ knots).
 ///
 /// <para>Two-stage linear interpolation:
 /// <list type="bullet">
@@ -15,6 +14,10 @@ namespace OnaPlotter.Utilities;
 ///   <item>3-8 knots (t in [0.5, 1.0]): green (34,197,94) -&gt; yellow (234,179,8)</item>
 ///   <item>&gt;=8 knots: clamps at the yellow endpoint.</item>
 /// </list></para>
+///
+/// <para>Night mode swaps in <see cref="NightBucketPalette"/>: the same
+/// ramp shape in the red family (dim crimson -&gt; red -&gt; amber), so
+/// the speed gradient survives without a per-path CSS filter.</para>
 /// </summary>
 public static class SpeedColor
 {
@@ -22,46 +25,46 @@ public static class SpeedColor
     /// "no data" blue used elsewhere on the chart).</summary>
     public const string DefaultRgb = "#3b82f6";
 
-    /// <summary>Per-bucket lower bound in m/s. Index into this table
-    /// is the bucket id used by <see cref="Bucket"/> - 0 = stopped,
-    /// 5 = fast. Matches the JS SPEED_BUCKETS constant.</summary>
-    public static readonly double[] Buckets = [0, 1, 2, 3, 5, 8];
+    /// <summary>Track colour per speed bucket: entry <c>i</c> is the
+    /// colour of <see cref="SpeedBuckets.Buckets"/>[i], the bucket's
+    /// lower bound. Indexed by the bucket ids that the own-track runs,
+    /// live track points and server-track samples carry.</summary>
+    public static readonly string[] BucketPalette =
+        SpeedBuckets.Buckets.Select(b => Rgb(b)).ToArray();
 
-    /// <summary>Bucket index (0..5) for grouping consecutive same-
-    /// speed segments. Returns the highest index whose threshold
-    /// is &lt;= sog, or 0 when sog is null.</summary>
-    public static int Bucket(double? sogMs)
-    {
-        if (sogMs is null) return 0;
-        for (int i = Buckets.Length - 1; i >= 0; i--)
-        {
-            if (sogMs.Value >= Buckets[i]) return i;
-        }
-        return 0;
-    }
+    /// <summary>Night-mode colour when SOG is unknown.</summary>
+    public const string NightDefaultRgb = "rgb(150,40,40)";
+
+    /// <summary>Night-mode counterpart of <see cref="BucketPalette"/>.</summary>
+    public static readonly string[] NightBucketPalette =
+        SpeedBuckets.Buckets.Select(b => NightRgb(b)).ToArray();
+
+    /// <summary>The palette the map should draw tracks with.</summary>
+    public static string[] PaletteFor(bool nightMode) =>
+        nightMode ? NightBucketPalette : BucketPalette;
 
     /// <summary>CSS rgb(r,g,b) string for the given SOG in m/s.
     /// Returns <see cref="DefaultRgb"/> when sog is null.</summary>
-    public static string Rgb(double? sogMs)
+    public static string Rgb(double? sogMs) =>
+        sogMs is null ? DefaultRgb : Ramp(sogMs.Value, (59, 130, 246), (34, 197, 94), (234, 179, 8));
+
+    /// <summary>Night-mode rgb(r,g,b) for the given SOG in m/s: dim
+    /// crimson (stopped) -&gt; red (4 kn) -&gt; amber (8+ kn).
+    /// Returns <see cref="NightDefaultRgb"/> when sog is null.</summary>
+    public static string NightRgb(double? sogMs) =>
+        sogMs is null ? NightDefaultRgb : Ramp(sogMs.Value, (110, 30, 45), (190, 45, 35), (235, 120, 45));
+
+    // Two-stage linear ramp over 0..8 kn: start -> mid at 4 kn, mid ->
+    // end at 8 kn, clamped above.
+    private static string Ramp(double sogMs, (int R, int G, int B) start,
+        (int R, int G, int B) mid, (int R, int G, int B) end)
     {
-        if (sogMs is null) return DefaultRgb;
-        double kn = sogMs.Value * Format.MsToKnots;
+        double kn = sogMs * Format.MsToKnots;
         double t = Math.Min(kn / 8.0, 1.0);
-        if (t < 0.5)
-        {
-            double f = t * 2.0;
-            int r = (int)Math.Round(59 + f * (34 - 59));
-            int g = (int)Math.Round(130 + f * (197 - 130));
-            int b = (int)Math.Round(246 + f * (94 - 246));
-            return $"rgb({r},{g},{b})";
-        }
-        else
-        {
-            double f = (t - 0.5) * 2.0;
-            int r = (int)Math.Round(34 + f * (234 - 34));
-            int g = (int)Math.Round(197 + f * (179 - 197));
-            int b = (int)Math.Round(94 + f * (8 - 94));
-            return $"rgb({r},{g},{b})";
-        }
+        var (from, to, f) = t < 0.5 ? (start, mid, t * 2.0) : (mid, end, (t - 0.5) * 2.0);
+        int r = (int)Math.Round(from.R + f * (to.R - from.R));
+        int g = (int)Math.Round(from.G + f * (to.G - from.G));
+        int b = (int)Math.Round(from.B + f * (to.B - from.B));
+        return $"rgb({r},{g},{b})";
     }
 }

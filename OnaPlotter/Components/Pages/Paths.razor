@@ -435,11 +435,19 @@
         await InvokeAsync(StateHasChanged);
     }
 
-    private async void HandleDataChanged()
+    /// <summary>The value column is a live readout, not a steering aid:
+    /// ~3 Hz keeps it current without re-rendering the whole path table
+    /// on each of the 25-35 self deltas per second.</summary>
+    private readonly RenderThrottle _renderThrottle;
+
+    public Paths()
     {
-        try { await InvokeAsync(StateHasChanged); }
-        catch (ObjectDisposedException) { }
+        _renderThrottle = new RenderThrottle(TimeSpan.FromMilliseconds(300), RequestRender);
     }
+
+    private void HandleDataChanged() => _renderThrottle.Request();
+
+    private async void RequestRender() => await SafeStateHasChanged();
 
     private async void HandleResourceChanged(string _) => await SafeStateHasChanged();
     private async void HandleResourceReloaded() => await SafeStateHasChanged();
@@ -470,6 +478,7 @@
     public void Dispose()
     {
         SignalkClient.OnDataChanged -= HandleDataChanged;
+        _renderThrottle.Dispose();
         ResourceStore.OnRouteChanged -= HandleResourceChanged;
         ResourceStore.OnRouteRemoved -= HandleResourceChanged;
         ResourceStore.OnWaypointChanged -= HandleResourceChanged;

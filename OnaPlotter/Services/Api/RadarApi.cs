@@ -1,4 +1,3 @@
-using System.Net.Http.Json;
 using System.Text.Json;
 using OnaPlotter.Models;
 
@@ -15,6 +14,7 @@ public sealed class RadarApi : IRadarApi
 {
     private readonly HttpClient _http;
     private readonly ISignalKBaseUrl _baseUrl;
+    private readonly ILogger<RadarApi> _logger;
 
     // One reusable options bag. The legend-color converter is
     // registered on the DTOs via attribute; no options-level setup
@@ -28,33 +28,21 @@ public sealed class RadarApi : IRadarApi
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
     };
 
-    public RadarApi(HttpClient http, ISignalKBaseUrl baseUrl)
+    public RadarApi(HttpClient http, ISignalKBaseUrl baseUrl, ILogger<RadarApi> logger)
     {
         _http = http;
         _baseUrl = baseUrl;
+        _logger = logger;
     }
 
     public async Task<IReadOnlyList<RadarInfo>> GetAllAsync(CancellationToken ct = default)
     {
-        var url = _baseUrl.Combine(SignalKUrls.RadarsPath);
-        HttpResponseMessage response;
-        try { response = await _http.GetAsync(url, ct); }
-        catch (HttpRequestException) { return []; }        // server / plugin missing
-        using (response)
-        {
-            if (!response.IsSuccessStatusCode) return [];
-
-            // Three shapes in the wild; parse the JSON once and branch.
-            // A malformed body just means "no radars visible right now"
-            // rather than an error toast - the UI polls again later.
-            try
-            {
-                using var stream = await response.Content.ReadAsStreamAsync(ct);
-                using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
-                return ParseRadarList(doc.RootElement);
-            }
-            catch (JsonException) { return []; }
-        }
+        // A missing plugin (404), an unreachable server or a malformed
+        // body all mean "no radars visible right now" rather than an
+        // error toast; the UI polls again later.
+        var result = await ResourceHttp.GetJsonAsync<IReadOnlyList<RadarInfo>>(
+            _http, _baseUrl.Combine(SignalKUrls.RadarsPath), _logger, ParseRadarList, ct);
+        return result.Success && result.Value is not null ? result.Value : [];
     }
 
     // Internal for unit testing; production callers use GetAllAsync.
@@ -64,7 +52,7 @@ public sealed class RadarApi : IRadarApi
     //   (B) Dict:    { "nav1034A": {...}, "nav1034B": {...}} (radar_api.md REST example)
     //   (C) Wrapped: { "version": "3.1", "radars": { ... } } (radar_api.md TypeScript spec)
     // The wrapped form nests either form (A) or (B) under "radars".
-    internal static List<RadarInfo> ParseRadarList(JsonElement root)
+    internal static IReadOnlyList<RadarInfo> ParseRadarList(JsonElement root)
     {
         // Unwrap the versioned envelope if present, then dispatch on
         // the shape of the payload. Missing "radars" property falls
@@ -109,77 +97,28 @@ public sealed class RadarApi : IRadarApi
     public async Task<RadarCapabilities?> GetCapabilitiesAsync(string radarId, CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(radarId)) return null;
-        var url = _baseUrl.Combine(SignalKUrls.RadarCapabilities(radarId));
-        try
-        {
-            using var response = await _http.GetAsync(url, ct);
-            if (!response.IsSuccessStatusCode) return null;
-            return await response.Content.ReadFromJsonAsync<RadarCapabilities>(s_json, ct);
-        }
-        catch (HttpRequestException) { return null; }
-        catch (JsonException) { return null; }             // malformed / mid-upgrade
+        var result = await ResourceHttp.GetJsonAsync<RadarCapabilities>(
+            _http, _baseUrl.Combine(SignalKUrls.RadarCapabilities(radarId)), _logger, ct, s_json);
+        return result.Success ? result.Value : null;
     }
 
     public async Task<Dictionary<string, ControlValue>?> GetControlsAsync(string radarId, CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(radarId)) return null;
-        var url = _baseUrl.Combine(SignalKUrls.RadarControls(radarId));
-        try
-        {
-            using var response = await _http.GetAsync(url, ct);
-            if (!response.IsSuccessStatusCode) return null;
-            return await response.Content.ReadFromJsonAsync<Dictionary<string, ControlValue>>(s_json, ct);
-        }
-        catch (HttpRequestException) { return null; }
-        catch (JsonException) { return null; }
+        var result = await ResourceHttp.GetJsonAsync<Dictionary<string, ControlValue>>(
+            _http, _baseUrl.Combine(SignalKUrls.RadarControls(radarId)), _logger, ct, s_json);
+        return result.Success ? result.Value : null;
     }
 
-    public async Task<ApiResult> SetControlAsync(string radarId, string controlId, ControlValue value, CancellationToken ct = default)
+    /// <summary>Writes one control. On rejection the server answers
+    /// <c>{"success":false,"error":"...","controlId":"range"}</c>;
+    /// <see cref="ResourceHttp"/> surfaces the <c>error</c> field as
+    /// <see cref="ApiResult.Error"/>.</summary>
+    public Task<ApiResult> SetControlAsync(string radarId, string controlId, ControlValue value, CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(radarId) || string.IsNullOrEmpty(controlId))
-            return ApiResult.Fail("missing radar or control id");
+            return Task.FromResult(ApiResult.Fail("missing radar or control id"));
         var url = _baseUrl.Combine(SignalKUrls.RadarControl(radarId, controlId));
-        try
-        {
-            using var response = await _http.PutAsJsonAsync(url, value, s_json, ct);
-            if (response.IsSuccessStatusCode) return ApiResult.Ok;
-            return ApiResult.Fail(await ReadErrorBodyAsync(response, ct)
-                ?? $"HTTP {(int)response.StatusCode}");
-        }
-        catch (HttpRequestException ex) { return ApiResult.Fail(ex.Message); }
+        return ResourceHttp.PutAsync(_http, url, value, ct, s_json);
     }
-
-    /// <summary>
-    /// Parses the server's failure envelope (<c>{"success":false,
-    /// "error":"...","controlId":"range"}</c>) and returns the
-    /// <c>error</c> field when present. Falls back to the raw body
-    /// (truncated) on malformed JSON, or null if reading the body
-    /// itself throws. Centralised so other endpoints can adopt the
-    /// same error-surfacing path.
-    /// </summary>
-    private static async Task<string?> ReadErrorBodyAsync(HttpResponseMessage response, CancellationToken ct)
-    {
-        try
-        {
-            var body = await response.Content.ReadAsStringAsync(ct);
-            if (string.IsNullOrWhiteSpace(body)) return null;
-            try
-            {
-                using var doc = JsonDocument.Parse(body);
-                if (doc.RootElement.ValueKind == JsonValueKind.Object &&
-                    doc.RootElement.TryGetProperty("error", out var e) &&
-                    e.ValueKind == JsonValueKind.String)
-                {
-                    return e.GetString();
-                }
-            }
-            catch (JsonException)
-            {
-                return body.Length > 200 ? body[..200] : body;
-            }
-        }
-        catch { /* body read failed - caller falls back to status code */ }
-        return null;
-    }
-
 }

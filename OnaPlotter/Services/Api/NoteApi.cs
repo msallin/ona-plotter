@@ -13,17 +13,21 @@ public sealed class NoteApi : INoteApi
 {
     private readonly HttpClient _http;
     private readonly ISignalKBaseUrl _baseUrl;
+    private readonly TimeProvider _time;
+    private readonly ILogger<NoteApi> _logger;
 
-    public NoteApi(HttpClient http, ISignalKBaseUrl baseUrl)
+    public NoteApi(HttpClient http, ISignalKBaseUrl baseUrl, TimeProvider time, ILogger<NoteApi> logger)
     {
         _http = http;
         _baseUrl = baseUrl;
+        _time = time;
+        _logger = logger;
     }
 
     public async Task<List<SignalkNote>> GetAllAsync(CancellationToken ct = default)
     {
         var dict = await ResourceHttp.GetDictAsync<SignalkNote>(
-            _http, _baseUrl.Combine(SignalKUrls.NotesPath), ct);
+            _http, _baseUrl.Combine(SignalKUrls.NotesPath), _logger, ct);
         if (dict is null) return [];
 
         var notes = new List<SignalkNote>(dict.Count);
@@ -51,7 +55,7 @@ public sealed class NoteApi : INoteApi
             title,
             description,
             position = new { latitude = lat, longitude = lon },
-            createdAt = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+            createdAt = _time.GetUtcNow().UtcDateTime.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
         };
         var url = _baseUrl.Combine(SignalKUrls.NotesPath);
         return ResourceHttp.PostCreateAsync(_http, url, body, ct);

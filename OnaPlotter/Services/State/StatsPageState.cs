@@ -20,12 +20,19 @@ namespace OnaPlotter.Services.State;
 /// </summary>
 public sealed class StatsPageState
 {
+    public StatsPageState(TimeProvider time)
+    {
+        var now = DateTime.SpecifyKind(time.GetLocalNow().DateTime, DateTimeKind.Local);
+        CustomFromLocal = now.Date.AddDays(-7);
+        CustomToLocal = now;
+    }
+
     // Defaults match the page's first-visit defaults so an empty
     // cache + the page binding read the same values.
     public string RangeMode { get; set; } = "preset";
     public string SelectedTimespan { get; set; } = "7d";
-    public DateTime CustomFromLocal { get; set; } = DateTime.Now.Date.AddDays(-7);
-    public DateTime CustomToLocal { get; set; } = DateTime.Now;
+    public DateTime CustomFromLocal { get; set; }
+    public DateTime CustomToLocal { get; set; }
     public string Resolution { get; set; } = "5m";
 
     /// <summary>True when the helm tapped Compute at least once

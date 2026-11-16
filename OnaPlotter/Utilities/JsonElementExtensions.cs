@@ -89,6 +89,54 @@ public static class JsonElementExtensions
         return any ? (minLat, maxLat, minLon, maxLon) : null;
     }
 
+    /// <summary>
+    /// Reads a SignalK position object. Two shapes are accepted, because
+    /// SignalK publishes both depending on the path:
+    /// <code>
+    /// bare   (navigation.position, navigation.anchor.position, AIS):
+    ///   {"latitude": 59.91, "longitude": 10.75, "altitude": 2.1}  -> (59.91, 10.75)
+    /// nested (navigation.course.nextPoint, notifications with a fix):
+    ///   {"type": "RoutePoint", "position": {"latitude": 59.91, "longitude": 10.75}}
+    ///                                                            -> (59.91, 10.75)
+    /// </code>
+    /// The bare form wins when an object carries both. Only one level of
+    /// <c>position</c> nesting is followed. Both coordinates must be
+    /// finite JSON numbers; anything else (missing field, string, null,
+    /// a lone latitude) returns false and zeros, so callers never see a
+    /// half-parsed fix.
+    /// </summary>
+    public static bool TryGetLatLon(this JsonElement element, out double latitude, out double longitude)
+    {
+        if (TryReadBareLatLon(element, out latitude, out longitude)) return true;
+        if (element.ValueKind == JsonValueKind.Object
+            && element.TryGetProperty("position", out var nested)
+            && TryReadBareLatLon(nested, out latitude, out longitude))
+        {
+            return true;
+        }
+        latitude = 0;
+        longitude = 0;
+        return false;
+    }
+
+    private static bool TryReadBareLatLon(JsonElement element, out double latitude, out double longitude)
+    {
+        latitude = 0;
+        longitude = 0;
+        return element.ValueKind == JsonValueKind.Object
+            && TryReadFinite(element, "latitude", out latitude)
+            && TryReadFinite(element, "longitude", out longitude);
+
+        static bool TryReadFinite(JsonElement obj, string name, out double value)
+        {
+            value = 0;
+            return obj.TryGetProperty(name, out var el)
+                && el.ValueKind == JsonValueKind.Number
+                && el.TryGetDouble(out value)
+                && double.IsFinite(value);
+        }
+    }
+
     private static bool TryReadLonLat(JsonElement point, out double lon, out double lat)
     {
         lon = 0; lat = 0;

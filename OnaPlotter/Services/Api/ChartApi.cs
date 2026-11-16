@@ -1,4 +1,4 @@
-using System.Net.Http.Json;
+using System.Text.Json;
 using OnaPlotter.Models;
 using OnaPlotter.Utilities;
 
@@ -14,11 +14,13 @@ public sealed class ChartApi : IChartApi
 {
     private readonly HttpClient _http;
     private readonly ISignalKBaseUrl _baseUrl;
+    private readonly ILogger<ChartApi> _logger;
 
-    public ChartApi(HttpClient http, ISignalKBaseUrl baseUrl)
+    public ChartApi(HttpClient http, ISignalKBaseUrl baseUrl, ILogger<ChartApi> logger)
     {
         _http = http;
         _baseUrl = baseUrl;
+        _logger = logger;
     }
 
     /// <summary>
@@ -28,8 +30,9 @@ public sealed class ChartApi : IChartApi
     /// every chart published by the SignalK server's charts API. The
     /// built-ins always appear regardless of SK-server reachability so
     /// the helm has a basemap available even on a failed first boot.
-    /// SK-server failure surfaces as JSON / HTTP exceptions to the
-    /// caller (Map.razor's SafeLoad wrapper toasts them).
+    /// An SK-server failure (transport, timeout, non-2xx, malformed
+    /// body) is logged and yields just the built-ins; only a caller
+    /// cancellation propagates.
     /// </summary>
     public async Task<List<SignalkChart>> GetAllAsync(CancellationToken ct = default)
     {
@@ -41,39 +44,33 @@ public sealed class ChartApi : IChartApi
         var charts = new List<SignalkChart>(BuiltInCharts.All.Count + 8);
         charts.AddRange(BuiltInCharts.All);
 
-        try
+        var url = _baseUrl.Combine(SignalKUrls.ChartsPath);
+        var result = await ResourceHttp.GetJsonAsync<Dictionary<string, SignalkChart>>(
+            _http, url, _logger, ct, JsonSerializerOptions.Web);
+        if (!result.Success)
         {
-            var url = _baseUrl.Combine(SignalKUrls.ChartsPath);
-            using var response = await _http.GetAsync(url, ct);
-            response.EnsureSuccessStatusCode();
-
-            var dict = await response.Content.ReadFromJsonAsync<Dictionary<string, SignalkChart>>(cancellationToken: ct);
-            if (dict is null) return charts;
-
-            foreach (var (key, chart) in dict)
-            {
-                if (string.IsNullOrEmpty(chart.Identifier)) chart.Identifier = key;
-
-                // Resolve relative tile URLs against the SignalK server origin.
-                var tileUrl = chart.GetTileUrl();
-                if (tileUrl is not null && tileUrl.StartsWith('/'))
-                    chart.TilemapUrl = _baseUrl.BaseUrl + tileUrl;
-
-                if (chart.GetTileUrl() is not null) charts.Add(chart);
-            }
+            // SK server unreachable / non-2xx / malformed: the helm
+            // still gets the built-in basemaps from the prefix above.
+            // Failing the whole call would erase that fallback, which
+            // is the point of having client-side basemaps at all.
+            // Transport + parse failures are already logged by
+            // ResourceHttp; a status failure is logged here.
+            if (result.StatusCode is int status)
+                _logger.LogWarning("Chart list GET returned HTTP {Status}; showing built-in charts only", status);
+            return charts;
         }
-        catch (HttpRequestException ex)
+        if (result.Value is null) return charts;
+
+        foreach (var (key, chart) in result.Value)
         {
-            // SK server unreachable / 5xx: the helm still gets the
-            // built-in basemap charts from the prefix above. Re-throw
-            // would erase that fallback (Map.razor's SafeLoad would
-            // null the list), which defeats the purpose of having
-            // client-side basemaps at all. Console.WriteLine so a
-            // developer inspecting DevTools sees the SK failure
-            // without the errorRelayBoot.js console.error wrapper
-            // surfacing it as an unhandled error - this is fully
-            // recovered by the basemap fallback.
-            Console.WriteLine($"[charts] SK fetch failed: {ex.Message}");
+            if (string.IsNullOrEmpty(chart.Identifier)) chart.Identifier = key;
+
+            // Resolve relative tile URLs against the SignalK server origin.
+            var tileUrl = chart.GetTileUrl();
+            if (tileUrl is not null && tileUrl.StartsWith('/'))
+                chart.TilemapUrl = _baseUrl.BaseUrl + tileUrl;
+
+            if (chart.GetTileUrl() is not null) charts.Add(chart);
         }
         return charts;
     }

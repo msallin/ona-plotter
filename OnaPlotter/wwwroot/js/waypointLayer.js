@@ -175,7 +175,7 @@ function stopMobTickIfIdle() {
 }
 
 function refreshAllMobLabels() {
-    for (const [id, ov] of _activeMobOverlays) {
+    for (const ov of _activeMobOverlays.values()) {
         if (ov.pinLabel) ov.pinLabel.setContent(buildMobPinLabelHtml(ov));
     }
 }

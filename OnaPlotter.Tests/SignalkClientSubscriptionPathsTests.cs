@@ -104,6 +104,25 @@ public class SignalkClientSubscriptionPathsTests
     }
 
     [Test]
+    public async Task DepthBelowSurface_Rides_The_Fast_Self_Tier()
+    {
+        // Feeds NavigationData.DepthBelowSurface, the HUD's last-resort
+        // depth source. Depth is safety data: 1 Hz like its siblings.
+        var tier = SignalkClient.Tiers.Single(t => t.Paths.Contains("environment.depth.belowSurface"));
+        await Assert.That(tier.Name).IsEqualTo("SelfFast");
+    }
+
+    [Test]
+    public async Task MagneticVariation_Rides_The_Slow_Self_Tier()
+    {
+        // Feeds NavigationData.MagneticVariation, which converts a
+        // magnetic-only COG to true for CPA. Self-only (AIS COG is
+        // always true) and slow-changing.
+        await Assert.That(SignalkClient.SlowSelfPaths).Contains("navigation.magneticVariation");
+        await Assert.That(SignalkClient.AisPaths).DoesNotContain("navigation.magneticVariation");
+    }
+
+    [Test]
     public async Task V2_Anchor_Paths_Subscribed()
     {
         // signalk-anchoralarm-plugin v2.0.0+ publishes four extra

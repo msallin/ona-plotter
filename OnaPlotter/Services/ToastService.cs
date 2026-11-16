@@ -10,6 +10,17 @@ namespace OnaPlotter.Services;
 public sealed class ToastService : IToastService
 {
     private readonly List<Toast> _toasts = [];
+    private readonly TimeProvider _time;
+
+    public ToastService(TimeProvider time)
+    {
+        _time = time;
+    }
+
+    /// <summary>System clock; DI resolves <see cref="ToastService(TimeProvider)"/>.</summary>
+    public ToastService() : this(TimeProvider.System) { }
+
+    private DateTime UtcNow() => _time.GetUtcNow().UtcDateTime;
 
     public IReadOnlyList<Toast> Active
     {
@@ -18,7 +29,7 @@ public sealed class ToastService : IToastService
             // Pinned toasts are kept regardless of ExpiresAt so a
             // long-running MOB read-back doesn't disappear under the
             // helm's finger. Everything else expires on the dot.
-            _toasts.RemoveAll(t => !t.IsPinned && t.ExpiresAt <= DateTime.UtcNow);
+            _toasts.RemoveAll(t => !t.IsPinned && t.ExpiresAt <= UtcNow());
             return _toasts;
         }
     }
@@ -43,13 +54,13 @@ public sealed class ToastService : IToastService
                 && existing.Message == message
                 && existing.ActionLabel is null)
             {
-                _toasts[i] = existing with { ExpiresAt = DateTime.UtcNow.AddSeconds(durationSec) };
+                _toasts[i] = existing with { ExpiresAt = UtcNow().AddSeconds(durationSec) };
                 OnChanged?.Invoke();
                 return;
             }
         }
 
-        var t = new Toast(Guid.NewGuid(), message, level, DateTime.UtcNow.AddSeconds(durationSec));
+        var t = new Toast(Guid.NewGuid(), message, level, UtcNow().AddSeconds(durationSec));
         _toasts.Add(t);
         OnChanged?.Invoke();
 
@@ -73,7 +84,7 @@ public sealed class ToastService : IToastService
         ToastLevel level = ToastLevel.Info, int durationSec = 6)
     {
         var t = new Toast(Guid.NewGuid(), message, level,
-            DateTime.UtcNow.AddSeconds(durationSec), actionLabel, action);
+            UtcNow().AddSeconds(durationSec), actionLabel, action);
         _toasts.Add(t);
         OnChanged?.Invoke();
         ScheduleAutoDismiss(t.Id, durationSec);
@@ -180,7 +191,7 @@ public sealed class ToastService : IToastService
                 // forces the question "should this even be scheduled?"
                 _toasts.RemoveAll(x => x.Id == id
                                        && !x.IsPinned
-                                       && x.ExpiresAt <= DateTime.UtcNow);
+                                       && x.ExpiresAt <= UtcNow());
                 OnChanged?.Invoke();
             }
             catch (ObjectDisposedException) { /* tear-down race */ }

@@ -349,13 +349,13 @@ public class ServerTrackControllerTests
     }
 
     [Test]
-    public async Task Push_Carries_Sog_Triples_Not_Pairs()
+    public async Task Push_Carries_SpeedBucket_Triples_Not_Pairs()
     {
         // Server-track parity with the local trail requires the JS
-        // layer to receive [lat, lon, sogMs] triples so it can colour
-        // by speed bucket. Pin the shape so a regression back to
-        // [lat, lon] pairs (and the grey single-line render) breaks
-        // this test.
+        // layer to receive [lat, lon, speedBucket] triples so it can
+        // colour runs from the C# palette. Pin the shape so a
+        // regression back to [lat, lon] pairs (and the grey single-
+        // line render) breaks this test.
         var (ctrl, js, _, _) = New();
 
         await ctrl.ToggleAsync(true);
@@ -364,8 +364,9 @@ public class ServerTrackControllerTests
         var pushed = js.ServerSets[0].coords;
         await Assert.That(pushed.Length).IsEqualTo(2);
         await Assert.That(pushed[0].Length).IsEqualTo(3);
-        await Assert.That(pushed[0][2]).IsEqualTo(2.1);
-        await Assert.That(pushed[1][2]).IsEqualTo(2.4);
+        // 2.1 and 2.4 m/s both land in bucket 2 (2 <= sog < 3).
+        await Assert.That(pushed[0][2]).IsEqualTo(2.0);
+        await Assert.That(pushed[1][2]).IsEqualTo(2.0);
     }
 
     [Test]

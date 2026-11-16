@@ -1,17 +1,16 @@
 // Leaflet JS interop for the chartplotter map.
 // All map state lives here; Blazor calls exported functions via IJSRuntime.
 
-import { DEG, NM_PER_METER, SPEED_BUCKETS,
-         haversineMeters, destPoint, vectorEnd,
-         speedColor, speedBucket } from './geoMath.js';
-import { MS_TO_KNOTS, etaWithTtg } from './format.js';
+import { DEG, NM_PER_METER, destPoint, vectorEnd, chartBoundsBoxes } from './geoMath.js';
+import { pickRangeScale } from './rangeScale.js';
+import { TrackRuns, splitTrackRuns } from './trackRuns.js';
 import { MarkerLayer } from './markerLayer.js';
 import { enableRadarOverlay, disableRadarOverlay,
          setRadarRange, setBoatState as setRadarBoatState,
          setRangeRingsConfig as setRadarRangeRingsConfig,
          setRadarUseWireBearing as setRadarUseWireBearingMod,
          setRadarBearingCorrection as setRadarBearingCorrectionMod,
-         tearDownAllRadarOverlays } from './radarLayer.js';
+         setRadarPaused, tearDownAllRadarOverlays } from './radarLayer.js';
 import * as weatherLayerMod from './weatherLayer.js';
 import * as anchorLayerMod from './anchorLayer.js';
 import * as laylineLayerMod from './laylineLayer.js';
@@ -29,6 +28,11 @@ import * as polygonEditLayerMod from './polygonEditLayer.js';
 import * as waypointLayerMod from './waypointLayer.js';
 import * as noteLayerMod from './noteLayer.js';
 import * as regionLayerMod from './regionLayer.js';
+import { installRotationSupport, attachRotation, detachRotation, setRotation,
+         toContainerPoint, toLayoutPoint, toContainerVector } from './mapRotation.js';
+import { isTypingTarget, shortcutKey } from './keyboardShortcuts.js';
+import { buildSelfPopupHtml } from './ownBoatPopup.js';
+import { makeBoatSvg } from './boatIcons.js';
 import { esc as escImported, wireDeleteConfirm as wireDeleteConfirmImported } from './popupHelpers.js';
 
 let map = null;
@@ -82,10 +86,27 @@ let vectorLabel = null;  // Time/distance label at end of COG vector.
 // declaring it lower than its first use trips eslint no-use-before-define.
 let currentArrow = null;
 let trackLayer = null;
+// Track colour per speed bucket, indexed by the bucket ids C# puts on
+// every track payload. Set from initMap's options and swapped for the
+// night palette by setNightMode (both from SpeedColor.PaletteFor).
+let speedPalette = [];
+// 1000 segments x 5 s emit cadence = ~83 min of visible history,
+// matching the C# TrackBuffer capacity.
+const MAX_TRACK_SEGMENTS = 1000;
+
+// Own-track run polylines (trackRuns.js) inside trackLayer.
+const ownTrack = new TrackRuns(
+    (latlngs, bucket) => {
+        const line = L.polyline(latlngs, {
+            color: speedPalette[bucket], weight: 2.5, opacity: 0.8, className: 'speed-track-line',
+        }).addTo(trackLayer);
+        line._bucket = bucket;   // recoloured on a palette swap
+        return line;
+    },
+    (line) => trackLayer.removeLayer(line),
+    MAX_TRACK_SEGMENTS);
 let followBoat = true;
 let mapOrientation = 'north'; // 'north', 'course', 'head'
-let currentRotationDeg = 0;
-let nightMode = false;
 let dotNetRef = null;
 let suppressMoveEnd = false;  // Suppress moveend during programmatic panTo.
 
@@ -95,6 +116,8 @@ let suppressMoveEnd = false;  // Suppress moveend during programmatic panTo.
 // pointerdown listener; over a long passage the input pipeline stacks
 // dozens of dead callbacks each holding a closure over a disposed map.
 let _alarmBannerPointerDown = null;
+// Pauses the radar spoke sockets while the page is hidden.
+let _visibilityChange = null;
 
 // AIS state lives in aisLayer.js.
 
@@ -108,20 +131,6 @@ let signalKBaseUrl = '';
 
 export function setSignalKBaseUrl(url) {
     signalKBaseUrl = (url || '').replace(/\/+$/, '');
-}
-
-/** Stash the History page's DotNetObjectReference on window so the
- *  Leaflet moveend handler attached inline (via eval) can invoke
- *  back into C#. Replaces an earlier `eval("window._historyDotNet
- *  = arguments[0]", ref)` call which threw "arguments is not
- *  defined" - eval runs in the surrounding script/module strict
- *  context where `arguments` isn't bound, and Blazor's eval interop
- *  doesn't pass extra args to the eval'd code anyway. A real
- *  exported function via JSObjectReference.InvokeVoidAsync DOES
- *  receive serialised args (DotNetObjectReference round-trips as
- *  a JS proxy), so this is the correct shape for the handoff. */
-export function setHistoryDotNetRef(ref) {
-    window._historyDotNet = ref;
 }
 
 /** Build the flag-image URL for an MMSI. Same path on every server
@@ -150,27 +159,14 @@ const chartLayers = new MarkerLayer();  // keyed by chart identifier
 // exists before the first zoomend fires.
 let zoomBadge = null;
 
-// "Nice round" nautical-mile values for the corner range scale chip
-// AND the pinch-zoom preview. Single source of truth so the bar in
-// the corner and the chip floating mid-gesture pick the same step -
-// previously this lived as a duplicated literal in both places. Same
-// ladder dedicated chartplotter hardware uses for chart range scales.
-const RANGE_SCALE_NM_LADDER = [
-    0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500
-];
-
 // How long the pinch-zoom preview chip lingers AFTER zoomend before
 // fading out. The 0.4s opacity transition on `.ona-zoom-preview` runs
 // AFTER this timer expires, so total visible time is LINGER + 400ms.
 const PINCH_PREVIEW_LINGER_MS = 700;
 
 /**
- * Pure helper: pick a nice-round nautical-mile value at or below the
- * sample length and the matching pixel width to render. Used by the
- * permanent range-scale chip and the pinch-zoom preview. Caps the
- * pixel width at the sample size so a sub-ladder zoom (tighter than
- * 0.02 nm visible per 200 px sample) doesn't render a bar wider than
- * the sample it represents.
+ * Measures the ground distance across a horizontal pixel sample at the
+ * map centre and picks the range-scale step for it (rangeScale.js).
  *
  * @param map Leaflet map
  * @param sampleHalfPx pixels each side of centre to measure
@@ -182,22 +178,8 @@ function computeNiceScale(map, sampleHalfPx, minPx) {
     const cp = map.latLngToContainerPoint(c);
     const lhs = map.containerPointToLatLng([cp.x - sampleHalfPx, cp.y]);
     const rhs = map.containerPointToLatLng([cp.x + sampleHalfPx, cp.y]);
-    const meters = lhs.distanceTo(rhs);
-    const totalNm = meters / 1852;
-    let nice = RANGE_SCALE_NM_LADDER[0];
-    for (const v of RANGE_SCALE_NM_LADDER) { if (v <= totalNm) nice = v; }
-    // Width clamp: bar can't exceed the sample width (would be a lie),
-    // and floors at minPx so it stays visible at very wide zooms.
-    const sampleWidthPx = 2 * sampleHalfPx;
-    const rawWidth = Math.round(sampleWidthPx * (nice / totalNm));
-    const widthPx = Math.min(sampleWidthPx, Math.max(minPx, rawWidth));
-    // Trim trailing zeros and the orphan dot for sub-1 nm values
-    // ("0.50 nm" reads as fake precision; "0.5 nm" is what a
-    // chartplotter shows). >= 1 stays integer.
-    const label = nice >= 1
-        ? `${nice} nm`
-        : `${nice.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')} nm`;
-    return { label, widthPx };
+    const sampleNm = lhs.distanceTo(rhs) / 1852;
+    return pickRangeScale(sampleNm, 2 * sampleHalfPx, minPx);
 }
 
 // Wake-lock code lives in platform/wakeLock.js so it can
@@ -249,7 +231,11 @@ let _rangeScaleLabelEl = null;
 let _rangeScaleBarEl = null;
 let _rangeScaleZoomEl = null;
 let _rangeScaleHideTimer = null;
+// Last values written to the chip. updateRangeScale runs on every
+// pinch frame; each DOM write invalidates style even when unchanged.
+let _rangeScaleShown = { label: null, width: null, zoom: null };
 function initRangeScale(mapInstance) {
+    _rangeScaleShown = { label: null, width: null, zoom: null };
     _rangeScaleEl = L.DomUtil.create('div', 'ona-range-scale',
         mapInstance.getContainer());
     _rangeScaleLabelEl = L.DomUtil.create('span', 'ona-range-scale-label',
@@ -292,16 +278,21 @@ function initRangeScale(mapInstance) {
 function updateRangeScale() {
     if (!_rangeScaleEl || !map) return;
     const { label, widthPx } = computeNiceScale(map, 100, 8);
-    _rangeScaleLabelEl.textContent = label;
-    _rangeScaleBarEl.style.width = `${widthPx}px`;
-    // Leaflet allows fractional zoom (zoomSnap: 0.5 lands on .0 / .5);
-    // round for the chip so "z 14.5" doesn't read as a precision the
-    // chart can't actually deliver. Falls back to the full Leaflet
-    // value in the title attribute for the helm who long-presses.
     const zRaw = map.getZoom();
-    const zRounded = Math.round(zRaw);
-    if (_rangeScaleZoomEl) _rangeScaleZoomEl.textContent = `z${zRounded}`;
-    _rangeScaleEl.title = `Range: ${label} - Zoom ${zRaw}`;
+    const shown = _rangeScaleShown;
+    if (label !== shown.label) _rangeScaleLabelEl.textContent = label;
+    if (widthPx !== shown.width) _rangeScaleBarEl.style.width = `${widthPx}px`;
+    if (zRaw !== shown.zoom) {
+        // Leaflet allows fractional zoom (zoomSnap: 0.5 lands on .0 /
+        // .5); round for the chip so "z 14.5" doesn't read as a
+        // precision the chart can't actually deliver. The title keeps
+        // the full Leaflet value for the helm who long-presses.
+        _rangeScaleZoomEl.textContent = `z${Math.round(zRaw)}`;
+    }
+    if (label !== shown.label || zRaw !== shown.zoom) {
+        _rangeScaleEl.title = `Range: ${label} - Zoom ${zRaw}`;
+    }
+    _rangeScaleShown = { label, width: widthPx, zoom: zRaw };
 }
 
 /**
@@ -349,51 +340,6 @@ const wireDeleteConfirm = (popup, selector, method, id) =>
     wireDeleteConfirmImported(popup, selector, method, id, () => dotNetRef);
 
 // --- Icons ---
-
-// Boat icon: clean chevron shape, subtle drop shadow for depth.
-// `category` (optional) is a coarse ship-type bucket used to draw a
-// small glyph inside the chevron so vessel type is distinguishable
-// without colour (accessibility / colour-blind users). Four buckets:
-//   - "sail":       diamond (sailing, pleasure)
-//   - "fish":       crossed nets (fishing)
-//   - "commercial": solid dot (cargo, tanker, passenger, tug)
-//   - "service":    cross/plus (military, sar)
-// Own-boat and unknown vessels get no glyph.
-function makeBoatSvg(fill, size, isOwn, category) {
-    const s = size || 28;
-    const h = s / 2;
-    // Sleek arrow shape: pointed bow, tapered stern with notch.
-    const outline = isOwn
-        ? `stroke="#fff" stroke-width="1.2" stroke-linejoin="round"`
-        : `stroke="rgba(255,255,255,0.5)" stroke-width="0.8" stroke-linejoin="round"`;
-    return `<svg width="${s}" height="${s}" viewBox="-${h} -${h} ${s} ${s}" style="filter:drop-shadow(0 1px 2px rgba(0,0,0,0.4))">
-              <polygon points="0,-${h-2} ${h-6},${h-4} 0,${h-8} -${h-6},${h-4}" fill="${fill}" ${outline} opacity="${isOwn ? 1 : 0.9}"/>
-              ${shipTypeGlyph(category)}
-            </svg>`;
-}
-
-// Small glyph overlaid near the centre of the chevron. Kept to 3-4 px
-// so it never obscures the outline; stroke colour is a fixed dark so it
-// reads on any coloured chevron (including muted warms). The category
-// string comes from C# (Utilities/AisPalette.ShipTypeCategory); this
-// function is a pure renderer that maps a category to SVG.
-function shipTypeGlyph(category) {
-    const stroke = `stroke="rgba(0,0,0,0.7)" stroke-width="0.9" stroke-linecap="round"`;
-    switch (category) {
-        case 'sail':       // small diamond
-            return `<polygon points="0,-3 2.5,0 0,3 -2.5,0" fill="rgba(255,255,255,0.85)" ${stroke}/>`;
-        case 'fish':       // crossed nets
-            return `<line x1="-2.5" y1="-2" x2="2.5" y2="2" ${stroke}/>`
-                 + `<line x1="-2.5" y1="2"  x2="2.5" y2="-2" ${stroke}/>`;
-        case 'commercial': // solid dot (bulk / deck superstructure)
-            return `<circle cx="0" cy="0.5" r="1.8" fill="rgba(0,0,0,0.75)"/>`;
-        case 'service':    // plus
-            return `<line x1="-2.5" y1="0" x2="2.5" y2="0" ${stroke}/>`
-                 + `<line x1="0" y1="-2.5" x2="0" y2="2.5" ${stroke}/>`;
-        default:
-            return '';
-    }
-}
 
 function makeIcon(html, size) {
     return L.divIcon({ className: 'boat-icon', html, iconSize: [size, size], iconAnchor: [size/2, size/2] });
@@ -461,13 +407,6 @@ function readMapColors() {
 // the stylesheet defined a new --map-own.
 let selfIcon = null;
 
-// AIS / radar / SART icons + caches moved into aisLayer.js (sole user).
-// makeBoatSvg + shipTypeGlyph + makeIcon stay above for the own-boat
-// marker built in initMap(). aisLayer keeps its own copies because the
-// chart's own-boat is logically a separate concern from AIS targets;
-// keeping the helpers small + duplicated avoids a tight coupling
-// between the modules just to share three SVG templates.
-
 function rotateMarker(marker, rad) {
     if (rad == null) return;
     // Cache the inner <svg> + last-applied degree on the marker to avoid
@@ -496,7 +435,7 @@ function rotateMarker(marker, rad) {
 
 // ========== EXPORTED FUNCTIONS ==========
 
-export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
+export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient, options) {
     // Tear down EVERY radar overlay BEFORE map.remove(). The radar
     // module keeps a module-level Map of active overlays; without
     // this each navigate-away-and-back leaves stale records pointing
@@ -525,6 +464,10 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
     // fall back to the desktop-class default of false.
     isSlowClient = !!slowClient;
 
+    // Speed-bucket track colours come from C# (SpeedColor.BucketPalette);
+    // track payloads carry bucket ids that index this array.
+    speedPalette = options.speedPalette;
+
     // Mirror the flag to the DOM so CSS can strip perf-heavy effects
     // (backdrop-filter blur passes, drop-shadow filters) on slow
     // hardware. A single data-attribute drives all the :not(...) overrides
@@ -542,8 +485,8 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
     // Gated on slow-client so desktop / iPad keep the SVG renderer that
     // gives crisper outlines at high DPI.
     //
-    // Map maxZoom is bumped to native + ChartUpscale.MaxLevels (= 24)
-    // so the chart-upscale decorator can actually upscale tiles
+    // Map maxZoom is native + ChartUpscale.MaxLevels (MapMaxZoom, passed
+    // in from C#) so the chart-upscale decorator can actually upscale tiles
     // past the base layers' native cap. The map's view-zoom is the
     // ceiling for what L.tileLayer.maxZoom can deliver, and a
     // hardcoded 19 here would silently cap the upscale feature
@@ -555,12 +498,12 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
     // chart on top dominates and a frame-late basemap upscale
     // doesn't compete with it (helm field-tested as flicker).
     //
-    // Removable contract for ChartUpscale: revert this to 19 if
-    // the feature is ripped out (the constant is part of the 6
-    // surfaces listed in OnaPlotter/Utilities/ChartUpscale.cs).
+    // Patches Leaflet's pointer / drag / overlay positioning for the
+    // course-up rotation before the map (and its drag handler) exist.
+    installRotationSupport(L);
     map = L.map(elementId, {
         zoomControl: false,
-        maxZoom: 19 + 5,         // 5 == ChartUpscale.MaxLevels (mirrored in C#)
+        maxZoom: options.maxZoom,  // ChartUpscale.MapMaxZoom
         preferCanvas: isSlowClient,
         // Half-step zoom. Default 1.0 jumps a full power-of-two per
         // tap which is too coarse for chart work - the helm sees a
@@ -585,6 +528,9 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
     // OSM / OpenSeaMap attribution stays (ODbL / CC-BY-SA require it);
     // the Leaflet credit is courtesy and removable.
     map.attributionControl.setPrefix(false);
+    // Pointer input un-rotation and a clean north-up start: the
+    // container is new, whatever a previous map left behind is gone.
+    attachRotation(map);
 
     // Hook the newly-created Leaflet map into each MarkerLayer dict so
     // remove() / clear() can pull layers off the map. Done here rather
@@ -652,9 +598,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
     aisLayerMod.init(map, {
         colors: MapColors,
         isSlowClient,
-        getDotNetRef: () => dotNetRef,
         ...editModeDeps,
-        getOwnMmsi: () => ownMmsi,
         flagUrl,
         rotateMarker,
     });
@@ -667,7 +611,6 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
         wireRouteDeactivate,
         wireRouteEdit,
         wireDeleteConfirm,
-        routeTotalNauticalMiles,
         clearCourseLine: () => courseLineLayerMod.clearCourseLine(),
         // Tell courseLineLayer to hide its own pulsing destination
         // marker while we own one - otherwise both render at the
@@ -713,31 +656,14 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
     // zoomstart/zoom/zoomend listeners so the bottom-centre chip
     // appears + updates + lingers exactly when the helm wants it.)
 
-    // isSlowClient was set at the top of initMap; the same flag drives
-    // tile updateWhenIdle here so all perf gates decide together.
-    //
-    // keepBuffer bumped above the default 2 so tiles stay in memory a
-    // few rings further out; panning back doesn't re-request. Cheap
-    // memory, noticeable smoothness on the Pi-local-wifi setup where
-    // re-fetch RTT is low but visible.
-    // OSM + OpenSeaMap base layers used to be hardcoded here as
-    // L.tileLayer instances with detectRetina: !isSlowClient. They
-    // now flow through addChartLayer like any other chart, synthesised
-    // on the C# side via OnaPlotter/Utilities/BuiltInCharts.cs and
-    // seeded as enabled on first run from Map.razor. The helm gets
-    // uniform control (toggle, reorder, opacity stacking) over basemap
-    // and SignalK charts. Tile URLs still point at the public internet
-    // endpoints so the boat doesn't need to host basemaps. detectRetina
-    // (which fetches {z+1} tiles for high-DPI devices, gated on
-    // !isSlowClient to avoid 4x tile fetches on a Pi) is applied per-
-    // layer inside addChartLayer.
+    // Base maps (OSM, OpenSeaMap) and SignalK charts all come in through
+    // addChartLayer (built-in ones synthesised in BuiltInCharts.cs), so
+    // tile options such as keepBuffer and updateWhenIdle live there.
 
     // featureGroup (not layerGroup) so zoomToTrack can call getBounds() on it.
     trackLayer = L.featureGroup().addTo(map);
-    // Reset the segment counter for the new layer instance. A previous
-    // page mount may have left it non-zero before the dispose path
-    // re-entered init (route mode -> back to normal flips the lot).
-    trackSegmentCount = 0;
+    // Fresh run bookkeeping for the new layer instance.
+    ownTrack.reset();
     boatMarker = L.marker([lat, lon], { icon: selfIcon, zIndexOffset: 1000 }).addTo(map);
     // Bind an empty popup and rebuild its content on every open so the
     // numbers match the current NavigationData snapshot rather than a
@@ -760,7 +686,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
             return;
         }
         const data = boatMarker._onaSelfData || {};
-        boatMarker.setPopupContent(buildSelfPopupHtml(data));
+        boatMarker.setPopupContent(buildSelfPopupHtml(data, ownMmsi, ownCallsign, flagUrl));
     });
     // Own COG vector - matches the AIS COG vector style (weight 1.5,
     // dash 6/4) but in MapColors.own (the boat's identity colour, same
@@ -825,7 +751,9 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
             clearMeasure();
             return;
         }
-        const pt = map.latLngToContainerPoint(latlng);
+        // The menu is placed on screen, outside the rotated container.
+        const cp = map.latLngToContainerPoint(latlng);
+        const pt = toLayoutPoint(cp.x, cp.y);
         const sz = map.getSize();
         const x = Math.min(pt.x, sz.x - 175);
         const y = Math.min(pt.y, sz.y - 125);
@@ -876,6 +804,10 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
     };
     document.addEventListener('pointerdown', _alarmBannerPointerDown, { passive: true });
 
+    _visibilityChange = () => setRadarPaused(document.hidden);
+    document.addEventListener('visibilitychange', _visibilityChange);
+    setRadarPaused(document.hidden);
+
     mapEl.addEventListener('touchstart', (e) => {
         cancelLongPress();
         if (e.touches.length !== 1) return; // two-finger pinch, etc.
@@ -914,11 +846,8 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
                 longPressStartPt = null;
                 return;
             }
-            const rect = mapEl.getBoundingClientRect();
-            const latlng = map.containerPointToLatLng([
-                longPressStartPt.x - rect.left,
-                longPressStartPt.y - rect.top
-            ]);
+            const latlng = map.containerPointToLatLng(
+                toContainerPoint(longPressStartPt.x, longPressStartPt.y));
             if (navigator.vibrate) navigator.vibrate(30);
             showContextMenu(latlng);
             longPressStartPt = null;
@@ -1027,7 +956,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
  * `frame` shape (all fields optional where noted):
  *   {
  *     pos: { lat, lon, headingRad, cogRad, sogMs } | null,
- *     track: [lat, lon, sogMs, prevLat, prevLon] | null,
+ *     track: [lat, lon, speedBucket, prevLat, prevLon] | null,
  *     course: { wpLat, wpLon, prevLat, prevLon, xte } | null,
  *     clearCourse: bool,
  *     current: { lat, lon, setRad, driftMs } | null,
@@ -1171,9 +1100,8 @@ export function updatePosition(lat, lon, headingRad, cogRad, sogMs, headingTrueR
     }
     rotateMarker(boatMarker, headingRad ?? cogRad);
 
-    // Push the new boat fix into aisLayer.js (CPA prediction needs
-    // own-boat lat/lon/COG/SOG; the guard-zone ring chases the boat).
-    aisLayerMod.setBoatPosition(lat, lon, cogRad, sogMs);
+    // Own-side CPA lines and the distance rings start at the boat.
+    aisLayerMod.setBoatPosition(lat, lon);
     // Push the new boat fix into anchorLayer.js so it can sample the
     // swing-arc trail, recolour the alarm circle, and re-anchor the
     // boat<->anchor line in one place.
@@ -1256,156 +1184,80 @@ export function updatePosition(lat, lon, headingRad, cogRad, sogMs, headingTrueR
         if (vectorLabel) { map.removeLayer(vectorLabel); vectorLabel = null; }
     }
 
-    if (followBoat && Number.isFinite(lat) && Number.isFinite(lon)) {
-        // Shift the boat slightly above the geometric viewport centre
-        // so more chart area is visible AHEAD of it (the helm's typical
-        // task is "what's coming up?" not "where have I been?"). On
-        // iPad the top-side HUDs (AWA/AWS, position) and the lower
-        // route/depth/anchor cards leave the unobstructed chart area
-        // skewed downward, so a literal-centre panTo lands the boat
-        // visually too low. 40% from the top works on landscape iPad +
-        // desktop without disorienting the helm.
-        //
-        // Implementation: project the boat to pixel space, push the
-        // map centre DOWN in pixels (positive Y) by 10% of the
-        // viewport height, then unproject back to a latLng. panTo
-        // that latLng so the boat lands at (cx, cy*0.4).
-        const z = map.getZoom();
-        const size = map.getSize();
-        const boatPx = map.project([lat, lon], z);
-        const newCenterPx = boatPx.add(L.point(0, size.y * 0.1));
-        const newCenter = map.unproject(newCenterPx, z);
-        // animate:false on purpose. Position fixes arrive at the
-        // SignalkClient cadence (1 Hz on the default policy=ideal
-        // tier). The previous animate:true / duration:0.5 kept a
-        // Leaflet rAF easing loop hot for half of every tick, so
-        // on a low-end mobile the compositor was effectively always
-        // running (a 4x-throttled DevTools trace showed ~75 Hz
-        // composite + 38 Hz layout during steady follow-mode). With
-        // animate:false the pan is synchronous, moveend fires inline
-        // (suppressed below), the rAF loop stays idle between fixes,
-        // and the visual is "chart re-centres once per second" - not
-        // a regression on a slow tablet (frame-by-frame easing reads
-        // as jitter there anyway). User-initiated panTo/panBy/setView
-        // calls keep their animations - this is the only per-tick
-        // site, so isolated.
-        suppressMoveEnd = true;
-        try {
-            map.panTo(newCenter, { animate: false });
-        } finally {
-            suppressMoveEnd = false;
-        }
-    }
+    if (followBoat && Number.isFinite(lat) && Number.isFinite(lon)) followPan(lat, lon);
 
     // Apply map rotation for course-up / head-up modes.
-    if (mapOrientation === 'course' && cogRad != null) {
-        applyMapRotation(cogRad * DEG);
-    } else if (mapOrientation === 'head' && headingRad != null) {
-        applyMapRotation(headingRad * DEG);
+    if (mapOrientation !== 'north') {
+        const deg = orientationDeg(boatMarker._onaSelfData);
+        if (deg != null) applyMapRotation(deg);
     }
 
-    // (Anchor-watch alarm-state evaluation moved into anchorLayerMod.setBoatPosition above.)
-
-    // Push the new boat fix into measureLayer.js so vessel-anchored
-    // segments redraw against fresh own-boat coords. Internally it
-    // skips when no measurement is active or none of the points is
-    // vessel-anchored.
+    // Vessel-anchored measure segments redraw against the fresh fix
+    // (no-op without an active vessel-anchored measurement).
     measureLayerMod.setBoatPosition(lat, lon);
 
-    // Push into waypointLayer.js so the boat<->MOB line + midpoint
-    // bearing/distance label re-anchor while a MOB is active. No-op
-    // when no MOB waypoint is on the chart.
+    // Boat <-> MOB line and its bearing / distance label re-anchor while
+    // a MOB is active.
     waypointLayerMod.setBoatPosition(lat, lon);
 }
 
-// Pending points buffer for batched track updates.
-let pendingTrackPoints = [];
+// Follow-mode pans smaller than this (px) are skipped: below what the
+// helm can see, and each pan fires move / moveend and repaints every
+// overlay.
+const FOLLOW_PAN_MIN_PX = 1.5;
 
-// Live count of polylines in trackLayer. Maintained in parallel with
-// addTo / removeLayer / clearLayers so the cap-check below doesn't
-// have to materialise trackLayer.getLayers() (which walks the layer
-// group's internal _layers map every time). flushTrackPoints fires
-// every 5 s under MapFrameBuilder's TrackEmitIntervalMs gate, so the
-// per-call saving is small but the getLayers() allocation is pure
-// overhead the counter eliminates.
-let trackSegmentCount = 0;
+/**
+ * Keeps the boat 40 % from the top of the screen (more chart ahead
+ * than astern; the top HUDs and bottom cards skew the free chart area
+ * downward on an iPad). Projects the boat, offsets the centre 10 % of
+ * the viewport height down the screen (rotated into the map frame in
+ * course-up), and pans there, unless that is under FOLLOW_PAN_MIN_PX
+ * from where the map already is: fixes arrive several times a second
+ * while a moored or slow boat moves less than a pixel.
+ */
+function followPan(lat, lon) {
+    const z = map.getZoom();
+    const size = map.getSize();
+    const down = toContainerVector(0, size.y * 0.1);
+    const newCenterPx = map.project([lat, lon], z).add(L.point(down.x, down.y));
+    if (newCenterPx.distanceTo(map.project(map.getCenter(), z)) < FOLLOW_PAN_MIN_PX) return;
+    // animate:false: a per-fix easing loop keeps the compositor busy
+    // half of every tick on a low-end tablet. The synchronous pan fires
+    // moveend inline, which suppressMoveEnd keeps from reporting bounds
+    // to C# per fix. User-initiated pans keep their animation.
+    // noMoveStart: movestart cancels a pending long-press, and a fix
+    // landing during the 700 ms hold must not eat the helm's gesture.
+    suppressMoveEnd = true;
+    try {
+        map.panTo(map.unproject(newCenterPx, z), { animate: false, noMoveStart: true });
+    } finally {
+        suppressMoveEnd = false;
+    }
+}
 
 export function setColoredTrack(runs) {
     if (!trackLayer) return;
     trackLayer.clearLayers();
-    trackSegmentCount = 0;
-    if (!runs || runs.length === 0) return;
-
-    // Bucket grouping happens on the C# side (TrackPolylineGrouping)
-    // so this loop is just a thin "create one Leaflet polyline per
-    // run" pass. Each run already shares a speed bucket; adjacent
-    // runs share a bridge coord so the boundary between buckets is
-    // visually continuous. The previous shape walked the per-point
-    // array bucketing as it went - duplicated in JS and recomputed
-    // on every seed call.
-    for (const run of runs) {
-        if (!run.coords || run.coords.length < 2) continue;
-        L.polyline(run.coords, {
-            color: speedColor(SPEED_BUCKETS[run.bucket]),
-            weight: 2.5,
-            opacity: 0.8,
-            className: 'speed-track-line',
-        }).addTo(trackLayer);
-        trackSegmentCount++;
-    }
+    // Runs are grouped C#-side (TrackPolylineGrouping).
+    ownTrack.seed(runs ?? []);
 }
 
-export function addColoredTrackPoint(lat, lon, sogMs, prevLat, prevLon) {
-    // C# rate-limits track-segment emission to once per 5 s
-    // (MapFrameBuilder.TrackEmitIntervalMs), so the JS batch buffer
-    // is no longer protecting against interop overhead. Flush
-    // immediately so the helm sees the trail extend on each emit
-    // rather than waiting for 10 segments (~50 s) to accumulate.
-    pendingTrackPoints.push([lat, lon, sogMs, prevLat, prevLon]);
-    flushTrackPoints();
-}
-
-// 1000 segments × 5 s emit cadence = ~83 min of visible history,
-// matching the C# TrackBuffer capacity. Sized to cover a typical
-// day-sail without the trail wraparound the helm previously saw on
-// bursty multi-Hz feeds (when the cap was hit in 1-2 min).
-const MAX_TRACK_SEGMENTS = 1000;
-
-export function flushTrackPoints() {
-    if (!trackLayer || pendingTrackPoints.length === 0) return;
-    for (const [lat, lon, sogMs, pLat, pLon] of pendingTrackPoints) {
-        L.polyline([[pLat, pLon], [lat, lon]], {
-            color: speedColor(sogMs), weight: 2.5, opacity: 0.8,
-            className: 'speed-track-line'
-        }).addTo(trackLayer);
-        trackSegmentCount++;
-    }
-    pendingTrackPoints = [];
-
-    // Prune oldest segments to prevent unbounded DOM growth. The
-    // counter short-circuits the common steady-state case where we're
-    // still under the cap - no getLayers() allocation needed.
-    if (trackSegmentCount > MAX_TRACK_SEGMENTS) {
-        const layers = trackLayer.getLayers();
-        const excess = trackSegmentCount - MAX_TRACK_SEGMENTS;
-        for (let i = 0; i < excess; i++) {
-            trackLayer.removeLayer(layers[i]);
-        }
-        trackSegmentCount -= excess;
-    }
+// One segment prev -> current; C# emits at most one per 5 s
+// (MapFrameBuilder.TrackEmitIntervalMs).
+export function addColoredTrackPoint(lat, lon, bucket, prevLat, prevLon) {
+    if (!trackLayer) return;
+    ownTrack.append(lat, lon, bucket, prevLat, prevLon);
 }
 
 // --- AIS targets / guard zone / harbor mode ---
 // Implementation in aisLayer.js; mux re-exports the C# entries.
-export const updateAisTargets = (vessels) => aisLayerMod.updateAisTargets(vessels);
+export const updateAisTargets = (update) => aisLayerMod.updateAisTargets(update);
 export const focusVessel = (context) => aisLayerMod.focusVessel(context);
 export const setDistanceRings = (enabled, baseNm, count) =>
     aisLayerMod.setDistanceRings(enabled, baseNm, count);
 export const setHarborMode = (enabled) => aisLayerMod.setHarborMode(enabled);
 export const setAisLabelsVisible = (enabled) =>
     aisLayerMod.setAisLabelsVisible(enabled);
-export const setAisInactiveMinutes = (minutes) =>
-    aisLayerMod.setAisInactiveMinutes(minutes);
 
 // --- Persistent measurement tool ---
 // Implementation in measureLayer.js; mux re-exports the C# entries.
@@ -1506,15 +1358,29 @@ export function setCogVectorMinutes(ownMin, _aisMin) {
 
 // --- Night Mode ---
 
-export function setNightMode(enabled) {
-    nightMode = enabled;
+// speedPalette: the track colours for this mode (C# SpeedColor.PaletteFor).
+export function setNightMode(enabled, speedPaletteForMode) {
     if (!map) return;
-    const pane = map.getPane('tilePane');
-    if (pane) {
+    if (Array.isArray(speedPaletteForMode)) setSpeedPalette(speedPaletteForMode);
+    // The weather overlay has its own pane above the charts; it gets the
+    // same red-shift so a bright precipitation layer doesn't break the
+    // night palette.
+    for (const name of ['tilePane', 'weatherPane']) {
+        const pane = map.getPane(name);
+        if (!pane) continue;
         pane.style.filter = enabled
             ? 'brightness(0.35) sepia(1) hue-rotate(-30deg) saturate(3)'
             : '';
     }
+}
+
+// Recolours the own track and server track for a new bucket palette.
+function setSpeedPalette(palette) {
+    speedPalette = palette;
+    if (trackLayer) {
+        trackLayer.eachLayer((line) => line.setStyle({ color: speedPalette[line._bucket] }));
+    }
+    if (serverTrackLayer) _renderServerTrack();
 }
 
 // --- Chart Layers ---
@@ -1558,6 +1424,25 @@ const chartZoomErrors = new Map();   // id -> Map<zoom, count>
 // below stays thin: read state, call decideDownshift, apply
 // side-effects on a downshift result.
 
+// Off-screen tile rings kept per chart layer (see addChartLayer).
+function tileKeepBuffer() {
+    const phone = typeof screen !== 'undefined' && Math.min(screen.width, screen.height) < 600;
+    return isSlowClient || phone ? 2 : 4;
+}
+
+// Antimeridian charts: Leaflet wraps tile bounds into [-180, 180] before
+// testing them against options.bounds, so tiles east of the line only
+// overlap the -360 copy of the unwrapped chart bounds (chartBoundsBoxes).
+function acceptTilesInAnyBox(layer, boxes) {
+    const extra = boxes.slice(1).map(b => L.latLngBounds(b));
+    const isValid = layer._isValidTile;
+    layer._isValidTile = function (coords) {
+        if (isValid.call(this, coords)) return true;
+        const tile = this._tileCoordsToBounds(coords);
+        return extra.some(b => b.overlaps(tile));
+    };
+}
+
 export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds, upscaleLevels, attribution) {
     if (!map || chartLayers.has(id)) return false;
     // OSM + OpenSeaMap used to be hardcoded as Leaflet base layers
@@ -1589,19 +1474,19 @@ export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds, up
         // (defensive only - this path shouldn't exist) still renders
         // at full contrast.
         opacity: opacity || 1.0,
-        // keepBuffer + updateWhenIdle match base layers; don't re-fetch
-        // chart tiles when the user zig-zags back into territory they
-        // just panned away from. updateWhenIdle follows the client-
-        // strength detection - slow devices defer tile fetches to pan-
-        // end so the drag stays smooth. detectRetina on fast clients
-        // sharpens chart tiles on high-DPI displays (iPad Retina would
-        // otherwise blur the 256-px source up to 512 px of screen).
-        // keepBuffer 10 (up from 6, default 2): ten rings of tiles
-        // outside the viewport stay in DOM so route-planning pans
-        // feel snappier and small zig-zags don't re-fetch.
-        keepBuffer: 10,
+        // keepBuffer: rings of off-screen tiles kept decoded so a small
+        // zig-zag doesn't re-fetch. Every ring on a Retina iPad is
+        // dozens of decoded bitmaps per chart layer, and iOS kills the
+        // tab past a few hundred MB, so it stays small: 2 on phones and
+        // slow clients, 4 elsewhere.
+        // No detectRetina: it requests zoom+1 tiles at half size, which
+        // past a chart's native max are 404s that trip the downshift
+        // calibrator and blank the chart one level early, and it
+        // quadruples decoded tile memory. The half-step zoomSnap
+        // already rounds x.5 views up to the next tile level, so tiles
+        // are drawn at 0.7-1x and stay sharp enough on high-DPI.
+        keepBuffer: tileKeepBuffer(),
         updateWhenIdle: isSlowClient,
-        detectRetina: !isSlowClient,
         crossOrigin: 'anonymous',
         // Attribution: SK chart-server tiles ship empty (the SK server
         // doesn't preach about chart sources), but the built-in OSM /
@@ -1624,23 +1509,15 @@ export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds, up
     // returns false for everything - silent blank chart. Match the
     // sanity range LoadMapView uses (-90 <= lat <= 90; lon clamped
     // generously since wrap-around mid-pacific charts are real).
-    if (bounds && bounds.length === 4 &&
-        bounds.every(Number.isFinite) &&
-        bounds[1] >= -90 && bounds[1] <= 90 &&    // south
-        bounds[3] >= -90 && bounds[3] <= 90 &&    // north
-        bounds[0] >= -540 && bounds[0] <= 540 &&  // west
-        bounds[2] >= -540 && bounds[2] <= 540) {  // east
-        opts.bounds = L.latLngBounds(
-            [bounds[1], bounds[0]],  // SW: [south, west]
-            [bounds[3], bounds[2]]   // NE: [north, east]
-        );
-    }
+    const boxes = chartBoundsBoxes(bounds);
+    if (boxes) opts.bounds = L.latLngBounds(boxes[0]);
     // Chart-upscale decorator (overzoom). Wraps options before the
     // Leaflet constructor; 0 levels = identity passthrough. Removable
     // contract: drop the import + this line + the upscaleLevels
     // parameter and the feature is gone.
     opts = withOverzoom(opts, upscaleLevels | 0);
     const layer = L.tileLayer(tileUrl, opts);
+    if (boxes && boxes.length > 1) acceptTilesInAnyBox(layer, boxes);
     layer.addTo(map);
     layer.setZIndex(50);
     chartLayers.set(id, layer);
@@ -1907,7 +1784,7 @@ export function addRoute(id, name, coords, totalNm) {
     line.on('click', (ev) => onLineClick(ev, line));
     hitLine.on('click', (ev) => onLineClick(ev, hitLine));
     const wirePopup = (ev) => {
-        wireRouteActivate(ev.popup, id, name);
+        wireRouteActivate(ev.popup, id);
         wireRouteEdit(ev.popup, id);
         wireDeleteConfirm(ev.popup, '.route-delete-btn', 'DeleteRouteById', id);
     };
@@ -1931,23 +1808,6 @@ export function addRoute(id, name, coords, totalNm) {
     routeLayers.set(id, group);
 }
 
-// JS-side haversine sum used to populate the saved-route popup's
-// distance line. addRoute() no longer calls this (it accepts a
-// precomputed totalNm from C# via RouteProgress.TotalDistanceMeters
-// / 1852, per the project rule that decisions/math live in C#).
-// Still used by activeRouteLayer.js via dep injection - the active-
-// route popup hasn't been migrated yet because the C# active-route
-// sync controller doesn't compute the total NM today; that's a
-// follow-up. When that lands this function can be deleted alongside
-// the dep-injection wiring.
-function routeTotalNauticalMiles(coords) {
-    let m = 0;
-    for (let i = 1; i < coords.length; i++) {
-        m += haversineMeters(coords[i - 1][0], coords[i - 1][1], coords[i][0], coords[i][1]);
-    }
-    return m * NM_PER_METER;
-}
-
 function buildRoutePopupHtml(id, name, wpCount, nmTotal) {
     const safeName = esc(name || `Route ${id.substring(0, 6)}`);
     return `
@@ -1965,7 +1825,7 @@ function buildRoutePopupHtml(id, name, wpCount, nmTotal) {
 // Single-tap Activate - no two-step confirm like delete, because
 // activating a route is non-destructive (the old active course is
 // just replaced on the server side).
-function wireRouteActivate(popup, id, name) {
+function wireRouteActivate(popup, id) {
     const el = popup.getElement();
     if (!el) return;
     const btn = el.querySelector('.route-activate-btn');
@@ -1998,57 +1858,6 @@ function wireRouteEdit(popup, id) {
             catch (_) { /* disposed or navigation in flight */ }
         }
     });
-}
-
-// Live ETA cache pushed from C# whenever ActiveRouteTimeToGo changes.
-// We store BOTH the value and the wall-clock at push time so the
-// popup can recompute the live remaining time from elapsed clock
-// regardless of whether C# has pushed an update recently. Without
-// the timestamp the helm sees a frozen "in 60m" 30 minutes into a
-// 60-minute leg, because C#-side SyncActiveRouteAsync only pushes
-// when the leg / waypoint / pointIndex actually changes.
-let _activeRouteTtgSeconds = null;
-let _activeRouteTtgPushedAtMs = 0;
-export function setActiveRouteTtgSeconds(seconds) {
-    if (typeof seconds === 'number' && seconds > 0) {
-        _activeRouteTtgSeconds = seconds;
-        _activeRouteTtgPushedAtMs = Date.now();
-    } else {
-        _activeRouteTtgSeconds = null;
-        _activeRouteTtgPushedAtMs = 0;
-    }
-}
-
-// Format seconds into a wall-clock ETA + "in Xh Ym" / "in Xm" pair.
-// Returns null when ttg is null / non-positive so the popup can drop
-// the row entirely instead of showing "ETA --". For >99h the
-// parenthetical collapses to "(in >99h)" rather than lying with a
-// truncated "(in 99h 59m)" - that ambiguity surfaced in code
-// review. Realistically the helm doesn't sit on a >4-day leg
-// without an intermediate waypoint, but the contract holds.
-function formatRouteEta(ttgSeconds) {
-    // Canonical: OnaPlotter/Utilities/RouteEta.cs (Format.EtaWithTtg).
-    // The mirror in format.js already produces the full popup string
-    // ("ETA HH:MM (in Xh Ym)") or null on bad input; the parity test
-    // (RouteEtaJsParityTests) scrapes format.js for the matching
-    // tokens. Guards (ttgSeconds == null / !isFinite / <= 0) are
-    // duplicated here purely for the parity-test scrape, since the
-    // historical contract was that those literal tokens live in
-    // leafletInterop.js. They short-circuit to the same null result.
-    if (ttgSeconds == null || !isFinite(ttgSeconds) || ttgSeconds <= 0) return null;
-    return etaWithTtg(ttgSeconds);
-}
-
-// Read the live TTG, decremented by the elapsed wall-clock since
-// the last C# push. This is what the popup actually wants - a
-// stale-from-30-minutes-ago cache returns the right answer because
-// we subtract the elapsed time. Returns null when no value has
-// ever been pushed or the decrement crossed zero (boat arrived).
-function liveActiveRouteTtgSeconds() {
-    if (_activeRouteTtgSeconds == null) return null;
-    const elapsed = (Date.now() - _activeRouteTtgPushedAtMs) / 1000;
-    const remaining = _activeRouteTtgSeconds - elapsed;
-    return remaining > 0 ? remaining : null;
 }
 
 // Active-route popup: same shape as the regular-route popup but the
@@ -2163,11 +1972,10 @@ export function updateRoute(id, name, coords, totalNm) {
 //   * full set         (clipToBounds = false): draws every coord in
 //     one polyline, regardless of where the map is panned. Default.
 //   * within bounds    (clipToBounds = true): draws only coords inside
-//     the current map.getBounds() at the moment of render. A moveend
-//     listener re-clips on pan / zoom so the helm sees only the
-//     subset of the track that's "on screen now". The full coord set
-//     stays cached on _serverTrackCoords so the re-clip doesn't have
-//     to re-fetch.
+//     the view (padded by half its size each way) at the moment of
+//     render. A moveend listener re-clips once the view leaves that
+//     padded area. The full coord set stays cached on
+//     _serverTrackCoords so the re-clip doesn't have to re-fetch.
 //
 // "w/o loading anything" (helm phrasing): the bounds-mode filter
 // works on the already-loaded coord array; switching it on / off
@@ -2175,6 +1983,10 @@ export function updateRoute(id, name, coords, totalNm) {
 let _serverTrackCoords = null;
 let _serverTrackClipToBounds = false;
 let _serverTrackMoveHandler = null;
+// Bounds the clipped track was last drawn for: the view padded by half
+// its size each way, so pans and zoom-ins inside it (follow mode moves
+// the map every few fixes) don't rebuild the polylines.
+let _serverTrackClipBounds = null;
 
 export function setServerTrack(coords, clipToBounds) {
     clearServerTrack();
@@ -2197,43 +2009,24 @@ export function setServerTrackClipToBounds(enabled) {
 
 function _renderServerTrack() {
     if (serverTrackLayer && map) { map.removeLayer(serverTrackLayer); serverTrackLayer = null; }
+    _serverTrackClipBounds = null;
     if (!map || !_serverTrackCoords) return;
-    let coords = _serverTrackCoords;
+    let include;
     if (_serverTrackClipToBounds) {
-        const b = map.getBounds();
-        // Each entry is [lat, lon, sogMs]; LatLngBounds.contains
-        // accepts [lat, lon] arrays and ignores any trailing values,
-        // so we can pass the triple in directly without rebuilding.
-        coords = coords.filter(c => b.contains(c));
-        if (coords.length === 0) return;
+        const b = map.getBounds().pad(0.5);
+        _serverTrackClipBounds = b;
+        // Each entry is [lat, lon, bucket]; LatLngBounds.contains
+        // accepts [lat, lon] arrays and ignores any trailing values.
+        include = (c) => b.contains(c);
     }
-    // Group consecutive samples by speed bucket and emit one
-    // polyline per run - same scheme as setColoredTrack so the
-    // server track and the local trail are visually identical.
-    // Falls back to an L.featureGroup so all runs are added /
-    // removed as one server-track layer.
+    // One polyline per same-bucket run, split where the clip drops
+    // points - same colouring as the own track. One featureGroup so all
+    // runs are added / removed as the server-track layer.
     serverTrackLayer = L.featureGroup().addTo(map);
-    if (coords.length < 2) return;
-    let runBucket = speedBucket(coords[1][2] ?? 0);
-    let runCoords = [[coords[0][0], coords[0][1]]];
-    for (let i = 1; i < coords.length; i++) {
-        const b = speedBucket(coords[i][2] ?? 0);
-        const ll = [coords[i][0], coords[i][1]];
-        if (b !== runBucket) {
-            runCoords.push(ll); // bridge point so adjacent runs visually connect
-            L.polyline(runCoords, {
-                color: speedColor(SPEED_BUCKETS[runBucket]), weight: 2.5, opacity: 0.8,
-                className: 'speed-track-line'
-            }).addTo(serverTrackLayer);
-            runBucket = b;
-            runCoords = [ll];
-        } else {
-            runCoords.push(ll);
-        }
-    }
-    if (runCoords.length >= 2) {
-        L.polyline(runCoords, {
-            color: speedColor(SPEED_BUCKETS[runBucket]), weight: 2.5, opacity: 0.8
+    for (const run of splitTrackRuns(_serverTrackCoords, include)) {
+        L.polyline(run.latlngs, {
+            color: speedPalette[run.bucket], weight: 2.5, opacity: 0.8,
+            className: 'speed-track-line'
         }).addTo(serverTrackLayer);
     }
 }
@@ -2245,7 +2038,9 @@ function _ensureServerTrackMoveHandler() {
     // toggle (which would race a moveend mid-frame).
     if (_serverTrackMoveHandler || !_serverTrackCoords) return;
     _serverTrackMoveHandler = () => {
-        if (_serverTrackClipToBounds && _serverTrackCoords) _renderServerTrack();
+        if (!_serverTrackClipToBounds || !_serverTrackCoords) return;
+        if (_serverTrackClipBounds && _serverTrackClipBounds.contains(map.getBounds())) return;
+        _renderServerTrack();
     };
     map.on('moveend', _serverTrackMoveHandler);
 }
@@ -2258,13 +2053,14 @@ export function clearServerTrack() {
     }
     _serverTrackCoords = null;
     _serverTrackClipToBounds = false;
+    _serverTrackClipBounds = null;
 }
 
 // --- Active Route Navigation + course line ---
 // Implementations in activeRouteLayer.js + courseLineLayer.js; mux
 // re-exports the C# entries.
-export const setActiveRoute = (coords, wpIdx, routeId, routeName) =>
-    activeRouteLayerMod.setActiveRoute(coords, wpIdx, routeId, routeName);
+export const setActiveRoute = (coords, wpIdx, routeId, routeName, totalNm) =>
+    activeRouteLayerMod.setActiveRoute(coords, wpIdx, routeId, routeName, totalNm);
 export const clearActiveRoute = () => activeRouteLayerMod.clearActiveRoute();
 export const setActiveOverlayHidden = (hidden) => activeRouteLayerMod.setActiveOverlayHidden(hidden);
 export function setCourseLine(selfLat, selfLon, wpLat, wpLon, arrivalRadiusMeters) {
@@ -2434,46 +2230,6 @@ export const setCirclePreview = (lat, lon, radiusMeters) =>
     regionLayerMod.setCirclePreview(lat, lon, radiusMeters);
 export const clearCirclePreview = () => regionLayerMod.clearCirclePreview();
 
-// Own-boat popup: same shape as the AIS popup minus the vessel-lookup
-// links / buddy toggle. Rebuilt on every popupopen from the marker's
-// latest data snapshot so the numbers track nav updates live.
-function buildSelfPopupHtml(data) {
-    const lat = data.lat, lon = data.lon;
-    const sog = data.sogMs != null ? (data.sogMs * MS_TO_KNOTS).toFixed(1) : '--';
-    const cogDeg = data.cogRad != null ? (data.cogRad * DEG).toFixed(0) : '--';
-    const hdgDeg = data.headingRad != null ? (data.headingRad * DEG).toFixed(0) : '--';
-    const pos = (lat != null && lon != null)
-        ? `${lat.toFixed(5)}, ${lon.toFixed(5)}`
-        : '--';
-    // Country flag from signalk-flags plugin when we know the own MMSI.
-    // Same onerror hide as AIS markers (plugin not installed = silent).
-    const flagHtml = ownMmsi
-        ? `<img class="ais-popup-flag" src="${flagUrl(ownMmsi)}" alt="" onerror="this.style.display='none'">`
-        : '';
-    // Identity rows: MMSI + callsign show only when we know them
-    // (server hello hasn't resolved self yet, or the SK feed
-    // doesn't carry communication.callsignVhf). Helm reads MMSI
-    // off the popup onto the VHF mic during distress comms; the
-    // callsign feeds Sea Areas A2/A3 distress channel routing.
-    const mmsiRow = ownMmsi
-        ? `<tr><td>MMSI</td><td>${ownMmsi}</td></tr>`
-        : '';
-    const callsignRow = ownCallsign
-        ? `<tr><td>Call</td><td>${ownCallsign}</td></tr>`
-        : '';
-    return `<div class="ais-popup-content">` +
-        `<div class="ais-popup-title">${flagHtml}&#9733; Own boat</div>` +
-        `<table class="ais-popup-table">` +
-            `<tr><td>Pos</td><td>${pos}</td></tr>` +
-            `<tr><td>SOG</td><td>${sog} kn</td></tr>` +
-            `<tr><td>COG</td><td>${cogDeg}&deg;</td></tr>` +
-            `<tr><td>HDG</td><td>${hdgDeg}&deg;</td></tr>` +
-            mmsiRow +
-            callsignRow +
-        `</table>` +
-        `</div>`;
-}
-
 /** Set the own-boat MMSI. C# calls this once SignalkClient has
  *  resolved self-context from the hello message. Idempotent; calling
  *  with the same value is a no-op. */
@@ -2528,6 +2284,10 @@ export function setCurrentArrow(selfLat, selfLon, setRad, driftMs) {
     // weight class as the COG vector (thin + dashed + dim) and cap
     // the length at 1000m visual so a strong tide doesn't paint a
     // 2km line across the chart.
+    // Frames repeat the same set / drift for minutes; setLatLngs
+    // repaints the path regardless.
+    if (currentArrow && currentArrow._lastLat === selfLat && currentArrow._lastLon === selfLon
+        && currentArrow._lastSet === setRad && currentArrow._lastDrift === driftMs) return;
     const arrowLen = Math.min(Math.max(driftMs * 400, 200), 1000);
     const endPt = destPoint(selfLat, selfLon, setRad, arrowLen);
 
@@ -2539,6 +2299,10 @@ export function setCurrentArrow(selfLat, selfLon, setRad, driftMs) {
             dashArray: '4,3'
         }).addTo(map);
     }
+    currentArrow._lastLat = selfLat;
+    currentArrow._lastLon = selfLon;
+    currentArrow._lastSet = setRad;
+    currentArrow._lastDrift = driftMs;
 }
 
 export function clearCurrentArrow() {
@@ -2556,11 +2320,11 @@ export const clearLaylines = () => laylineLayerMod.clearLaylines();
 
 let keyHandler = null;
 
-export function enableKeyboardShortcuts(dotNetObjRef) {
+export function enableKeyboardShortcuts(dotNetObjRef, keys) {
     disableKeyboardShortcuts();
     keyHandler = (e) => {
-        // Skip if user is typing in an input.
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        // Skip while the helm types or picks a value.
+        if (isTypingTarget(e.target)) return;
 
         // Don't hijack browser shortcuts. Ctrl+R / Cmd+R (reload),
         // Ctrl+W (close tab), etc. all involve a modifier - the map's
@@ -2604,19 +2368,16 @@ export function enableKeyboardShortcuts(dotNetObjRef) {
                 aisLayerMod.setFollow(false);
                 if (dotNetRef) dotNetRef.invokeMethodAsync('SetFollowFromJs', false).catch(() => {});
             }
-            map.panBy([dx, dy], { animate: true, duration: 0.3 });
+            // Arrows pan in screen directions, also in course-up.
+            const v = toContainerVector(dx, dy);
+            map.panBy([v.x, v.y], { animate: true, duration: 0.3 });
             return;
         }
 
-        const key = e.key.toLowerCase();
-        // Keep this set in sync with Map.razor's OnKeyShortcut switch
-        // and the MapShortcutsOverlay help card. Letters here are
-        // forwarded to .NET; anything else falls through to the
-        // browser. Order matches the help card so a future reader
-        // can scan both lists side by side.
-        const isLetter = 'fonamtldr'.includes(key) && key.length === 1;
-        const isSpecial = key === '?' || key === 'escape';
-        if (isLetter || isSpecial) {
+        // Forward only the keys C# binds (MapKeyboardShortcuts); the
+        // rest stay with the browser.
+        const key = shortcutKey(e);
+        if (key && keys.includes(key)) {
             e.preventDefault();
             dotNetObjRef.invokeMethodAsync('OnKeyShortcut', key).catch(() => {});
         }
@@ -2682,48 +2443,32 @@ function applyFollowZoomMode() {
 }
 
 // Map orientation: 'north' (default), 'course' (rotates to COG), 'head' (rotates to heading).
+// Applied at once from the last fix (no 1 deg gate: a mode switch must
+// land exactly); later fixes keep it current through updatePosition.
 export function setMapOrientation(mode) {
     mapOrientation = mode;
-    if (mode === 'north') {
-        applyMapRotation(0);
-    }
-    // For 'course' and 'head', rotation is applied in updatePosition.
+    if (!map) return;
+    const deg = orientationDeg(boatMarker?._onaSelfData);
+    if (deg != null) setRotation(deg);
 }
 
+// Heading-up angle for the current orientation mode, or null when the
+// fix lacks the angle that mode needs.
+function orientationDeg(fix) {
+    if (mapOrientation === 'north') return 0;
+    const rad = mapOrientation === 'course' ? fix?.cogRad : fix?.headingRad;
+    return rad == null ? null : rad * DEG;
+}
+
+// Rotates the chart so `deg` points up. mapRotation.js unwraps the
+// angle onto the previous one so the 0.5 s CSS transition always turns
+// the short way, and writes --map-rot on the map container for the
+// counter-rotated labels. The 1 deg gate keeps sub-degree COG jitter
+// from restyling the container on every fix; a CSS transform never
+// changes the container's layout size, so Leaflet needs no resize.
 function applyMapRotation(deg) {
     if (!map) return;
-    // Skip imperceptible changes. In course-up mode updatePosition
-    // calls this on every fix (~1 Hz on policy=ideal); without a guard,
-    // every fix rebuilt the counter-rotation stylesheet AND ran a full
-    // map.invalidateSize() - which fires `move` on every layer and
-    // reprojects them all, the heaviest single per-tick cost when
-    // course-up is active. 1° is well below what the helm can see at
-    // typical zoom levels and below the COG jitter from the SK feed.
-    if (Math.abs(deg - currentRotationDeg) < 1) return;
-    currentRotationDeg = deg;
-    const container = map.getContainer();
-    container.style.transform = deg === 0 ? '' : `rotate(${-deg}deg)`;
-    container.style.transformOrigin = 'center center';
-    // Counter-rotate labels / tooltips so they stay upright. Drives a
-    // CSS custom property on <html>; the actual transform rule lives
-    // in app.css gated on the data-map-rotated attribute so a deg=0
-    // state doesn't create a stacking context on every tooltip. The
-    // previous shape rebuilt a <style> element's textContent on every
-    // call, which forced a full CSS reparse for what is a single-
-    // number update.
-    const root = document.documentElement;
-    if (deg === 0) {
-        delete root.dataset.mapRotated;
-        root.style.removeProperty('--map-rot');
-    } else {
-        root.style.setProperty('--map-rot', `${deg}deg`);
-        root.dataset.mapRotated = '1';
-    }
-    // Invalidate map size after rotation. CSS rotate(...) changes the
-    // container's effective bounding box (non-90° angles), so Leaflet
-    // needs to recompute. Paid only on the change path now, not on
-    // every sub-degree COG wobble.
-    map.invalidateSize();
+    setRotation(deg, 1);
 }
 
 // --- AtoN (Aids to Navigation) ---
@@ -2761,15 +2506,33 @@ export function dispose() {
         document.removeEventListener('pointerdown', _alarmBannerPointerDown);
         _alarmBannerPointerDown = null;
     }
+    if (_visibilityChange) {
+        document.removeEventListener('visibilitychange', _visibilityChange);
+        _visibilityChange = null;
+    }
+    // Radar sockets keep streaming and decoding spokes into a detached
+    // canvas unless closed with the map.
+    tearDownAllRadarOverlays();
     // Null dotNetRef BEFORE tearing down the map. Leaflet's map.remove()
     // fires 'unload' synchronously; any handler that tries to call
     // dotNetRef.invokeMethodAsync during unload would otherwise hit a
     // still-live reference that C# has already disposed, producing the
     // "no tracked object with id X" error in the console.
     dotNetRef = null;
+    // Clear the rotation transform and --map-rot so nothing rotated
+    // outlives the chart; the next initMap starts north up and the
+    // orientation is re-applied from the next fix.
+    detachRotation();
     if (map) { map.remove(); map = null; }
     boatMarker = null; boatVector = null; boatVectorTip = null; vectorLabel = null; trackLayer = null;
+    ownTrack.reset();
     serverTrackLayer = null;
+    // The moveend hook died with the map; the next setServerTrack must
+    // install a fresh one on the new map.
+    _serverTrackMoveHandler = null;
+    _serverTrackCoords = null;
+    _serverTrackClipToBounds = false;
+    _serverTrackClipBounds = null;
     chartLayers.clear();
     routeLayers.clear();
     aisLayerMod.dispose();

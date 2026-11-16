@@ -38,11 +38,20 @@ public sealed class NavigationAverages : INavigationAverages, IDisposable
     /// stable instead of growing with the delta rate; chips and stats
     /// still compute over enough samples (12/min × window) for
     /// meaningful gust / lull / sigma. TWA (HUD dial only, 5 min
-    /// retention) stays unthrottled - smoothness of the dial matters
-    /// more than memory there.</summary>
+    /// retention) uses the faster <see cref="LiveMotionSamplePeriodMs"/>
+    /// gate instead: dial smoothness matters more than memory there.</summary>
     public const int LiveWindSamplePeriodMs = 5_000;
 
-    private readonly SignalkClient _client;
+    /// <summary>Period between live sample additions for the 5 min
+    /// boat-motion channels (SOG with its COG companions, TWA, VMG).
+    /// Self deltas arrive in bursts of 25-35 per second, unevenly spread
+    /// across paths; sampling every delta would weight each mean by how
+    /// bursty the feed happened to be. One sample per second makes the
+    /// 30 s / 1 min means time-weighted and caps each 5 min buffer at
+    /// 300 entries.</summary>
+    public const int LiveMotionSamplePeriodMs = 1_000;
+
+    private readonly ISignalkClient? _client;
     private readonly TimeProvider _time;
     private bool _disposed;
 
@@ -55,6 +64,9 @@ public sealed class NavigationAverages : INavigationAverages, IDisposable
     private DateTime _awsGateUtc = DateTime.MinValue;
     private DateTime _twdGateUtc = DateTime.MinValue;
     private DateTime _awaGateUtc = DateTime.MinValue;
+    private DateTime _sogGateUtc = DateTime.MinValue;
+    private DateTime _twaGateUtc = DateTime.MinValue;
+    private DateTime _vmgGateUtc = DateTime.MinValue;
 
     public RollingScalarSeries Tws { get; }
     public RollingScalarSeries Aws { get; }
@@ -74,9 +86,17 @@ public sealed class NavigationAverages : INavigationAverages, IDisposable
     public RollingDirectionSeries CogTrue { get; }
     public RollingDirectionSeries CogMagnetic { get; }
 
-    public NavigationAverages(SignalkClient client, TimeProvider? time = null)
+    public NavigationAverages(ISignalkClient client, TimeProvider time)
+        : this(time)
     {
         _client = client ?? throw new ArgumentNullException(nameof(client));
+        _client.OnDataChanged += HandleDataChanged;
+    }
+
+    /// <summary>Test seam: buffers and sampling without a SignalK
+    /// subscription; tests drive <see cref="SampleForTest"/>.</summary>
+    internal NavigationAverages(TimeProvider? time)
+    {
         _time = time ?? TimeProvider.System;
 
         // Wind: 1440 min (24 h) retention - covers the Wind page's
@@ -103,8 +123,6 @@ public sealed class NavigationAverages : INavigationAverages, IDisposable
         // TWA stays HUD-only: bow-relative true wind angle for the
         // dial arrow smoothing, no history-chart consumer.
         Twa = new RollingDirectionSeries(TimeSpan.FromMinutes(5), _time);
-
-        _client.OnDataChanged += HandleDataChanged;
     }
 
     /// <summary>Test seam: feed a NavigationData snapshot directly
@@ -131,7 +149,7 @@ public sealed class NavigationAverages : INavigationAverages, IDisposable
 
     private void HandleDataChanged()
     {
-        if (_disposed) return;
+        if (_disposed || _client is null) return;
         Sample(_client.Data);
     }
 
@@ -158,11 +176,14 @@ public sealed class NavigationAverages : INavigationAverages, IDisposable
             Awa.Add(awa);
             _awaGateUtc = now;
         }
-        // TWA stays full-rate: HUD dial smoothness over 30 s is the
-        // only consumer, and the 5 min retention bounds memory anyway.
-        if (d.WindAngleTrue is double twa) Twa.Add(twa);
-        if (d.SpeedOverGround is double sog)
+        if (d.WindAngleTrue is double twa && GatePassed(_twaGateUtc, now, LiveMotionSamplePeriodMs))
         {
+            Twa.Add(twa);
+            _twaGateUtc = now;
+        }
+        if (d.SpeedOverGround is double sog && GatePassed(_sogGateUtc, now, LiveMotionSamplePeriodMs))
+        {
+            _sogGateUtc = now;
             Sog.Add(sog);
             // COG only contributes when actually moving - zero-weight
             // sample below the stationary threshold so the buffer
@@ -174,11 +195,18 @@ public sealed class NavigationAverages : INavigationAverages, IDisposable
             if (d.CourseOverGroundTrue is double cogTrue) CogTrue.Add(cogTrue, weight);
             if (d.CourseOverGroundMagnetic is double cogMag) CogMagnetic.Add(cogMag, weight);
         }
-        if (d.CourseNextPointVmg is double vmg) Vmg.Add(vmg);
+        if (d.CourseNextPointVmg is double vmg && GatePassed(_vmgGateUtc, now, LiveMotionSamplePeriodMs))
+        {
+            Vmg.Add(vmg);
+            _vmgGateUtc = now;
+        }
     }
 
     private static bool WindGatePassed(DateTime last, DateTime now) =>
-        (now - last).TotalMilliseconds >= LiveWindSamplePeriodMs;
+        GatePassed(last, now, LiveWindSamplePeriodMs);
+
+    private static bool GatePassed(DateTime last, DateTime now, int periodMs) =>
+        (now - last).TotalMilliseconds >= periodMs;
 
     /// <inheritdoc/>
     public Task<TrackPoint[]?> SeedWindAsync(
@@ -281,6 +309,6 @@ public sealed class NavigationAverages : INavigationAverages, IDisposable
     {
         if (_disposed) return;
         _disposed = true;
-        _client.OnDataChanged -= HandleDataChanged;
+        if (_client is not null) _client.OnDataChanged -= HandleDataChanged;
     }
 }

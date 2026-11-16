@@ -478,16 +478,42 @@
 
         // Active-route pin re-renders when the helm progresses through
         // the route (next-WP delta, distance ticks) or activates / stops
-        // a route from another plotter. Cheap re-render - the page is
-        // mostly tabs and tables; a single banner re-paint at SK delta
-        // cadence is invisible on the helm.
+        // a route from another plotter; HandleNavigationDataChanged
+        // filters out the deltas that leave the banner unchanged.
         SignalkClient.OnDataChanged += HandleNavigationDataChanged;
 
         await LoadAllAsync();
     }
 
-    private void HandleNavigationDataChanged() =>
+    /// <summary>Everything the active-route banner renders, quantised to
+    /// its display precision. Self deltas arrive 25-35 times a second and
+    /// almost none of them change the banner; re-render only when this
+    /// snapshot does.</summary>
+    internal readonly record struct ActiveRouteBannerSnapshot(
+        bool HasActiveCourse, string? Href, string? Name,
+        int? PointIndex, int? PointTotal, double? NextPointNm);
+
+    private ActiveRouteBannerSnapshot _lastBanner;
+
+    internal static ActiveRouteBannerSnapshot BannerSnapshot(
+        bool hasActiveCourse, string? href, string? name,
+        int? pointIndex, int? pointTotal, double? nextPointMetres) =>
+        hasActiveCourse
+            ? new(true, href, name, pointIndex, pointTotal,
+                nextPointMetres is double m
+                    ? Math.Round(m / OnaPlotter.Utilities.Format.MetersPerNm, 2)
+                    : null)
+            : default;
+
+    private void HandleNavigationDataChanged()
+    {
+        var d = SignalkClient.Data;
+        var snap = BannerSnapshot(d.HasActiveCourse, d.ActiveRouteHref, d.ActiveRouteName,
+            d.ActiveRoutePointIndex, d.ActiveRoutePointTotal, d.CourseNextPointDistance);
+        if (snap == _lastBanner) return;
+        _lastBanner = snap;
         _ = InvokeAsync(StateHasChanged);
+    }
 
     /// <summary>Stop the currently-active route via the v2 course API.
     /// PUT navigation.course.activeRoute = null clears the active

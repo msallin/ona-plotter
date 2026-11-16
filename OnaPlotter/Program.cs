@@ -140,9 +140,7 @@ builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.WindShiftAl
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.WaypointApproachAlarmRule>();
 // Bridge rule needs the v2 notifications API (to attach an
 // IAlarmAcknowledger to each AlarmInfo it emits) and the published-
-// alarms tracker (to skip our own publication echoes). Both are
-// optional on the rule's ctor for backward compat with legacy test
-// constructors that don't wire them; production DI threads them in.
+// alarms tracker (to skip our own publication echoes).
 builder.Services.AddSingleton<IAlarmRule>(sp =>
     new OnaPlotter.Services.Alarms.ServerNotificationsAlarmRule(
         sp.GetRequiredService<OnaPlotter.Services.ServerNotifications.ServerNotificationStore>(),
@@ -160,6 +158,11 @@ builder.Services.AddSingleton<OnaPlotter.Services.Alarms.PublishedAlarmTracker>(
 builder.Services.AddSingleton<OnaPlotter.Services.Alarms.IPublishedAlarmTracker>(
     sp => sp.GetRequiredService<OnaPlotter.Services.Alarms.PublishedAlarmTracker>());
 builder.Services.AddSingleton<OnaPlotter.Services.Alarms.AlarmPublisher>();
+// Alarm evaluation (data changes + 1 Hz timer) and waypoint auto-advance
+// run as services, independent of any mounted component. Resolved
+// post-build so their subscriptions exist from startup.
+builder.Services.AddSingleton<OnaPlotter.Services.Alarms.AlarmEvaluationDriver>();
+builder.Services.AddSingleton<AutoAdvanceService>();
 
 // SignalK REST API clients (one per concern).
 builder.Services.AddSingleton<ISignalKBaseUrl, SignalKBaseUrl>();
@@ -183,35 +186,19 @@ builder.Services.AddSingleton<OnaPlotter.Services.Mob.ResolvedPositionStore>();
 // Local-first MOB pipeline. Synthesises a notification into the
 // ServerNotificationStore + queues a background POST that retries
 // until the server confirms. The alarm pipeline wakes up via
-// MainLayout's subscription to ServerNotificationStore.OnPathChanged
+// AlarmEvaluationDriver's subscription to ServerNotificationStore.OnPathChanged
 // (no separate callback needed - the store fires synchronously
 // from inside Apply / Clear).
-// MobService factory wires every collaborator the safety pipeline
-// needs: notifications API for the alarm side, resource APIs for the
-// paired MOB waypoint, the resolved-position cache for reload
-// recovery, and the toast service for helm-visible failure surface.
-// The toast delegate is the helm's only cue that the persistent chart
-// pin failed to land while the audible alarm is firing - without it
-// the helm sees "MOB dropped" + audio and assumes everything saved
-// even if the resource POST 500s.
-builder.Services.AddSingleton<OnaPlotter.Services.Mob.IMobService>(sp =>
-    new OnaPlotter.Services.Mob.MobService(
-        sp.GetRequiredService<INotificationsApi>(),
-        sp.GetRequiredService<OnaPlotter.Services.ServerNotifications.ServerNotificationStore>(),
-        sp.GetRequiredService<IKeyValueStore>(),
-        sp.GetRequiredService<OnaPlotter.Services.Mob.ResolvedPositionStore>(),
-        sp.GetRequiredService<TimeProvider>(),
-        sp.GetService<ILogger<OnaPlotter.Services.Mob.MobService>>(),
-        sp.GetRequiredService<IWaypointApi>(),
-        sp.GetRequiredService<OnaPlotter.Services.Resources.ResourceStore>(),
-        toastWarning: msg => sp.GetRequiredService<IToastService>().Warning(msg),
-        // SignalkClient lets MobService subscribe to OnConnectionChanged
-        // itself so reconnect-edge reconcile (cross-plotter MOB raised
-        // during a disconnect window) runs regardless of which page
-        // the helm is on. Previously routed through Map.razor's
-        // HandleConnectionChanged, which meant the recovery only fired
-        // if the helm happened to be on the chart page.
-        signalk: sp.GetRequiredService<SignalkClient>()));
+// Every collaborator is required: notifications API for the alarm
+// side, resource APIs for the paired MOB waypoint, the resolved-
+// position cache for reload recovery, the toast service for the
+// helm-visible "chart pin failed" surface (the helm's only cue while
+// the audible alarm fires), and the SignalK connection so reconnect
+// reconcile (cross-plotter MOB raised during a disconnect window)
+// runs whichever page the helm is on.
+builder.Services.AddSingleton<OnaPlotter.Services.Resources.IWaypointReader>(
+    sp => sp.GetRequiredService<OnaPlotter.Services.Resources.ResourceStore>());
+builder.Services.AddSingleton<OnaPlotter.Services.Mob.IMobService, OnaPlotter.Services.Mob.MobService>();
 
 builder.Services.AddSingleton<IAutopilotApi, AutopilotApi>();
 // Optional: signalk-anchoralarm-plugin. Endpoint 404s when the plugin
@@ -243,13 +230,18 @@ builder.Services.AddSingleton<OnaPlotter.Services.Radar.RadarOverlayManager>();
 // Optional: detects sbender9/signalk-buddylist-plugin at runtime.
 builder.Services.AddSingleton<IBuddyListApi, BuddyListApi>();
 
-// Wall-clock provider. Stale-data detection and track-point timestamps go
-// through this so tests can advance time deterministically (FakeTimeProvider
-// from Microsoft.Extensions.TimeProvider.Testing) instead of sleeping.
+// Wall-clock provider. Every service reads "now" through this (staleness,
+// alarm snooze, AIS pruning, toast expiry, resource createdAt, ...) so
+// tests can advance time deterministically (FakeTimeProvider from
+// Microsoft.Extensions.TimeProvider.Testing) instead of sleeping.
 builder.Services.AddSingleton(TimeProvider.System);
 
-// SignalK WebSocket delta stream.
+// SignalK WebSocket delta stream. NavigationData is the own-boat
+// store the stream writes into; services that only observe the
+// connection take ISignalkClient (same instance).
+builder.Services.AddSingleton<OnaPlotter.Models.NavigationData>();
 builder.Services.AddSingleton<SignalkClient>();
+builder.Services.AddSingleton<ISignalkClient>(sp => sp.GetRequiredService<SignalkClient>());
 
 // Time-windowed averages over the nav channels (TWS / AWS / SOG /
 // VMG / COG / TWD). Singleton so the buffers fill across page
@@ -271,8 +263,8 @@ builder.Services.AddSingleton<ClientErrorRelay>();
 // Composes over SignalkClient.OnResourceDelta (WS push) and the four
 // *Api REST clients (initial load + reconcile-on-reconnect). Map.razor
 // and Resources.razor read from here and subscribe to typed change
-// events; this closes the multi-plotter sync gap where a route edited
-// on plotter A used to never appear on plotter B until a manual reload.
+// events, so a route edited on plotter A appears on plotter B without
+// a manual reload.
 builder.Services.AddSingleton<OnaPlotter.Services.Resources.ResourceStore>();
 
 // Place search (topbar geocoder). The helm-facing IPlaceSearchService
@@ -305,7 +297,7 @@ builder.Services.AddSingleton<OnaPlotter.Services.Places.PhotonPlaceSearchServic
         sp.GetRequiredService<ILogger<OnaPlotter.Services.Places.PhotonPlaceSearchService>>(),
         () =>
         {
-            var nav = sp.GetRequiredService<SignalkClient>().Data;
+            var nav = sp.GetRequiredService<OnaPlotter.Models.NavigationData>();
             return nav.Latitude is double lat && nav.Longitude is double lon
                 ? (lat, lon)
                 : null;
@@ -408,6 +400,12 @@ _ = mobService.InitializeAsync();
 // the publisher) and locally-emitted alarms would never reach other
 // plotters. Stashed in a discard so the GC keeps the subscription alive.
 _ = host.Services.GetRequiredService<OnaPlotter.Services.Alarms.AlarmPublisher>();
+
+// Same for the alarm evaluation driver and auto-advance: their ctors
+// subscribe to SignalK data changes (and start the 1 Hz alarm tick), and
+// no component injects the driver.
+_ = host.Services.GetRequiredService<OnaPlotter.Services.Alarms.AlarmEvaluationDriver>();
+_ = host.Services.GetRequiredService<AutoAdvanceService>();
 
 // NavigationAverages must resolve at startup too - its ctor wires
 // the OnDataChanged subscription, and no component injects it until

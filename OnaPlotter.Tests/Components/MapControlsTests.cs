@@ -314,4 +314,47 @@ public class MapControlsTests
 
         await Assert.That(invokes).IsEqualTo(1);
     }
+
+    // - ShouldRender ------------------------------------------------
+
+    [Test]
+    public async Task ParentRerender_WithSameValues_DoesNotRerender()
+    {
+        // The Map page re-renders for HUD / AIS / dialog changes; the
+        // control bar must not repaint when none of its inputs moved.
+        using var ctx = new Bunit.TestContext();
+        var cut = Render(ctx, p => p.Add(x => x.Follow, true));
+        int before = cut.RenderCount;
+
+        cut.SetParametersAndRender(p => p.Add(x => x.Follow, true));
+        cut.SetParametersAndRender(p => p.Add(x => x.OnToggleFollow, () => { }));
+
+        await Assert.That(cut.RenderCount).IsEqualTo(before);
+    }
+
+    [Test]
+    public async Task ChangedParameter_Rerenders()
+    {
+        using var ctx = new Bunit.TestContext();
+        var cut = Render(ctx, p => p.Add(x => x.RouteNavigating, false));
+        int before = cut.RenderCount;
+
+        cut.SetParametersAndRender(p => p.Add(x => x.RouteNavigating, true));
+
+        await Assert.That(cut.RenderCount).IsEqualTo(before + 1);
+    }
+
+    [Test]
+    public async Task ConfirmArming_StillRerenders()
+    {
+        // Internal two-step confirm state is part of the snapshot, so
+        // arming "Raise anchor" repaints the button.
+        using var ctx = new Bunit.TestContext();
+        var cut = Render(ctx, p => p.Add(x => x.AnchorActive, true));
+        int before = cut.RenderCount;
+
+        cut.Find("button[title='Raise anchor (A)']").Click();
+
+        await Assert.That(cut.RenderCount).IsGreaterThan(before);
+    }
 }

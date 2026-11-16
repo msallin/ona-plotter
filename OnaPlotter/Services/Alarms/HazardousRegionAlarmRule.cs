@@ -31,6 +31,7 @@ namespace OnaPlotter.Services.Alarms;
 /// </summary>
 public sealed class HazardousRegionAlarmRule : IAlarmRule
 {
+    public AlarmRuleId Id => AlarmRuleId.Hazard;
     public string Title => "HAZARD";
     public int Priority => 150;
     public bool AutoClear => true;
@@ -71,6 +72,7 @@ public sealed class HazardousRegionAlarmRule : IAlarmRule
             string targetKey = string.IsNullOrEmpty(region.Id) ? label : region.Id;
 
             yield return new AlarmInfo(
+                RuleId: Id,
                 Title: Title,
                 Message: $"Inside {label}",
                 Severity: AlarmSeverity.Danger,

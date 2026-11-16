@@ -29,9 +29,9 @@ namespace OnaPlotter.Services.Resources;
 /// <para><b>Wire shape</b> per signalk-server's
 /// <c>buildDeltaMsg</c>: path = <c>resources.&lt;type&gt;.&lt;id&gt;</c>,
 /// value = full resource document on create / update, <c>null</c> on
-/// delete. <see cref="SignalkClient.DispatchResourceUpdates"/> peels
+/// delete. <see cref="OnaPlotter.Services.Signalk.SignalkDeltaDispatcher"/> peels
 /// the path into (type, id, value) and re-fires as
-/// <see cref="SignalkClient.OnResourceDelta"/>; this store branches
+/// <see cref="ISignalkClient.OnResourceDelta"/>; this store branches
 /// on type and parses value into the same DTO that the REST API
 /// returns.</para>
 ///
@@ -47,7 +47,7 @@ public sealed class ResourceStore : IAsyncDisposable, IWaypointReader
     private readonly IWaypointApi _waypointsApi;
     private readonly INoteApi _notesApi;
     private readonly IRegionApi _regionsApi;
-    private readonly SignalkClient _signalk;
+    private readonly ISignalkClient _signalk;
     private readonly ILogger<ResourceStore> _logger;
 
     // Per-type caches. Each owns its own dictionary, snapshot list,
@@ -82,7 +82,7 @@ public sealed class ResourceStore : IAsyncDisposable, IWaypointReader
         IWaypointApi waypoints,
         INoteApi notes,
         IRegionApi regions,
-        SignalkClient signalk,
+        ISignalkClient signalk,
         ILogger<ResourceStore> logger)
     {
         _routesApi = routes;
@@ -517,9 +517,9 @@ public sealed class ResourceStore : IAsyncDisposable, IWaypointReader
         // NOTE on threading: the synchronous prefix of
         // ReconcileOnReconnectAsync (the SafeFetch task allocations +
         // the first Task.WhenAll await) runs INLINE on whichever
-        // thread fired OnConnectionChanged - we no longer wrap in
-        // Task.Run. On Blazor WASM that's a no-op (single-threaded);
-        // on the WS-loop site (SignalkClient line 578) the pre-await
+        // thread fired OnConnectionChanged, without a Task.Run wrap.
+        // On Blazor WASM that's a no-op (single-threaded); on the
+        // receive loop's connection-edge invoke the pre-await
         // synchronous prefix is just task construction, so the loop
         // doesn't appreciably stall. The catch-all inside
         // ReconcileOnReconnectAsync still prevents an unobserved

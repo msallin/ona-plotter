@@ -1,9 +1,15 @@
 namespace OnaPlotter.Models;
 
 /// <summary>
-/// A single active alarm shown in the top banner. Title is one of SHALLOW,
-/// CPA, or WIND SHIFT today; new categories should add their own short label.
+/// A single active alarm shown in the top banner. <see cref="RuleId"/> is
+/// the stable identity (persistence, toggles, dismiss keys, UI branching);
+/// <see cref="Title"/> is display text only.
 /// </summary>
+/// <param name="RuleId">Which alarm source raised this. Server-sourced
+/// alarms carry the id of the matching local rule when one exists (a
+/// course-provider arrival notification carries
+/// <see cref="AlarmRuleId.Approach"/>) so the same Settings toggle covers
+/// both.</param>
 /// <param name="TargetKey">Stable identifier (AIS context / MMSI) for
 /// per-target snooze. Null for alarms that don't refer to a single vessel
 /// (SHALLOW, WIND SHIFT, ...).</param>
@@ -28,6 +34,7 @@ namespace OnaPlotter.Models;
 /// present and <c>Acknowledger.CanAcknowledge</c> is true; the banner
 /// hides the Acknowledge button otherwise.</param>
 public sealed record AlarmInfo(
+    AlarmRuleId RuleId,
     string Title,
     string Message,
     AlarmSeverity Severity,

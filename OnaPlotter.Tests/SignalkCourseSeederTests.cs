@@ -216,4 +216,90 @@ public class SignalkCourseSeederTests
         await Assert.That(data.HasActiveCourse).IsFalse();
         await Assert.That(calls).IsEqualTo(0);
     }
+
+    private static NavigationData WithActiveRoute()
+    {
+        var d = new NavigationData();
+        d.ApplyString("navigation.course.activeRoute.href", "/resources/routes/old");
+        d.ApplyString("navigation.course.activeRoute.name", "Old Route");
+        d.Apply("navigation.course.activeRoute.pointIndex", 3);
+        d.Apply("navigation.course.activeRoute.pointTotal", 5);
+        d.ApplyCourseNextPointPosition(10.0, 20.0);
+        d.ApplyCoursePreviousPointPosition(9.0, 19.0);
+        return d;
+    }
+
+    private static async Task<int> Seed(NavigationData data, string body)
+    {
+        int calls = 0;
+        var seeder = new SignalkCourseSeeder(
+            new HttpClient(new StubHandler(HttpStatusCode.OK, body)),
+            new FakeBaseUrl(), data,
+            NullLogger<SignalkCourseSeeder>.Instance,
+            onDataChanged: () => calls++);
+        await seeder.SeedAsync(CancellationToken.None);
+        return calls;
+    }
+
+    [Test]
+    [Arguments("""{"activeRoute":null,"nextPoint":null,"previousPoint":null}""")]
+    [Arguments("{}")]
+    public async Task SeedAsync_CourseClearedOnServerWhileOffline_ClearsLocalCourse(string body)
+    {
+        // The course was cleared on the server (another plotter, the
+        // autopilot head) while this plotter was offline. The seed is
+        // the only signal: the delta stream doesn't replay a clear that
+        // happened before we subscribed. Keeping the stale course would
+        // steer the helm, the autopilot route mode and auto-advance at
+        // a waypoint nobody is navigating to.
+        var data = WithActiveRoute();
+
+        int calls = await Seed(data, body);
+
+        await Assert.That(data.HasActiveCourse).IsFalse();
+        await Assert.That(data.ActiveRouteHref).IsNull();
+        await Assert.That(data.ActiveRoutePointIndex).IsNull();
+        await Assert.That(data.HasPreviousPoint).IsFalse();
+        await Assert.That(calls).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task SeedAsync_RouteReplacedByGoTo_ClearsRouteKeepsNextPoint()
+    {
+        // Server now has a single-waypoint go-to (no activeRoute): the
+        // old route identity and leg index must go.
+        var data = WithActiveRoute();
+
+        int calls = await Seed(data, """
+        {"activeRoute":null,"nextPoint":{"position":{"latitude":11.0,"longitude":21.0}}}
+        """);
+
+        await Assert.That(data.ActiveRouteHref).IsNull();
+        await Assert.That(data.ActiveRouteName).IsNull();
+        await Assert.That(data.ActiveRoutePointIndex).IsNull();
+        await Assert.That(data.ActiveRoutePointTotal).IsNull();
+        await Assert.That(data.CourseNextPointLatitude).IsEqualTo(11.0);
+        await Assert.That(data.HasPreviousPoint).IsFalse();
+        await Assert.That(calls).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task SeedAsync_CourseStillActive_KeepsLiveLegFlags()
+    {
+        // A reconnect seed for a course that is still active must not
+        // reset the leg flags: dropping perpendicularPassed to null and
+        // back to true on the next delta would look like a fresh edge
+        // to auto-advance and skip a waypoint.
+        var data = WithActiveRoute();
+        data.ApplyBool("navigation.course.calcValues.perpendicularPassed", true);
+
+        await Seed(data, """
+        {"activeRoute":{"href":"/resources/routes/old","pointIndex":3,"pointTotal":5},
+         "nextPoint":{"position":{"latitude":10.0,"longitude":20.0}},
+         "previousPoint":{"position":{"latitude":9.0,"longitude":19.0}}}
+        """);
+
+        await Assert.That(data.PerpendicularPassed).IsTrue();
+        await Assert.That(data.HasActiveCourse).IsTrue();
+    }
 }

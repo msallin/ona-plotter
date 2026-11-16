@@ -1,28 +1,45 @@
-namespace OnaPlotter.Services.Map;
-
+using System.Text.Json.Serialization;
+using OnaPlotter.Models;
 using OnaPlotter.Services.Js;
 
+namespace OnaPlotter.Services.Map;
+
 /// <summary>
-/// Builds the JS-side AtoN snapshot from <see cref="AtonStore"/> and
-/// pushes it through <see cref="IMapAisJs"/> (AtoN payloads share the
-/// AIS interop wrapper because they're rendered by the same marker
-/// pipeline on the JS side).
+/// One AtoN as <c>atonLayer.setAtons</c> renders it: symbol kind and
+/// side resolved through <see cref="AtonTypeCatalog"/>, popup text
+/// pre-built.
+/// </summary>
+public sealed record AtonPayload(
+    [property: JsonPropertyName("context")] string Context,
+    [property: JsonPropertyName("lat")] double Lat,
+    [property: JsonPropertyName("lon")] double Lon,
+    [property: JsonPropertyName("symbol")] string Symbol,
+    [property: JsonPropertyName("side")] string Side,
+    [property: JsonPropertyName("virtual")] bool Virtual,
+    [property: JsonPropertyName("title")] string Title,
+    [property: JsonPropertyName("subtitle"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Subtitle,
+    [property: JsonPropertyName("detail"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Detail);
+
+/// <summary>
+/// Builds the AtoN snapshot from <see cref="AtonStore"/> and pushes it
+/// through <see cref="IMapAisJs"/> (AtoNs share the AIS interop wrapper
+/// because the same marker pipeline renders them).
 ///
-/// Resolves symbol kind + cardinal/lateral side via
-/// <see cref="AtonTypeCatalog"/> here in C# so JS stays a dumb
-/// renderer. Pulled out of Map.razor so the same payload-shape logic
-/// can be regression-tested without bUnit / IJSRuntime.
+/// <para>Coalesced: <see cref="AtonStore.OnAtonsUpdated"/> fires per
+/// delta, and a reconnect replays every AtoN, so pushing per event costs
+/// O(N) per delta, O(N^2) per replay. The page calls
+/// <see cref="MarkDirty"/> from the event and <see cref="PushIfDirtyAsync"/>
+/// once per AIS tick, so a burst becomes one push.</para>
 ///
-/// Lifecycle: instantiated by Map.razor in <c>OnAfterRenderAsync</c>
-/// once the JS module reference is available. The page invokes
-/// <see cref="PushAsync"/> once after init plus from the
-/// <c>AtonStore.OnAtonsUpdated</c> event (no timer; AtoNs are static
-/// enough not to need polling).
+/// Lifecycle: instantiated by Map.razor once the JS module reference is
+/// available; <see cref="PushAsync"/> once after init.
 /// </summary>
 public sealed class AtonPushService
 {
     private readonly IMapAisJs _aisJs;
     private readonly AtonStore _atonStore;
+    private bool _dirty;
+    private int _lastPushedVersion = -1;
 
     public AtonPushService(IMapAisJs aisJs, AtonStore atonStore)
     {
@@ -30,53 +47,74 @@ public sealed class AtonPushService
         _atonStore = atonStore ?? throw new ArgumentNullException(nameof(atonStore));
     }
 
+    /// <summary>The store changed; the next <see cref="PushIfDirtyAsync"/>
+    /// pushes. Cheap enough to call from every store event.</summary>
+    public void MarkDirty() => _dirty = true;
+
+    /// <summary>Pushes when something changed since the last push.</summary>
+    public Task PushIfDirtyAsync() => _dirty ? PushAsync() : Task.CompletedTask;
+
     /// <summary>
-    /// Builds + pushes the current AtoN snapshot. Idempotent re-pushes
-    /// are cheap (the JS side diffs by id), so the caller doesn't
-    /// debounce; the C# AtonStore.GetAtons cache makes a re-push on
-    /// no-data-change a snapshot read.
+    /// Builds and pushes the current snapshot, unless the store version is
+    /// the one already pushed. A failed push leaves the service dirty so
+    /// the next tick retries.
     /// </summary>
     public async Task PushAsync()
     {
+        _dirty = false;
+        // GetAtons may prune, which bumps the version: read it after.
+        var atons = _atonStore.GetAtons();
+        int version = _atonStore.Version;
+        if (version == _lastPushedVersion) return;
         try
         {
-            // Resolve the symbol kind + cardinal/lateral side here in C#
-            // via AtonTypeCatalog.Lookup so JS stays a dumb renderer
-            // (per the project's "decisions in C# with tests" rule).
-            // Virtual flag: prefer the AtoN's own published value;
-            // otherwise fall back to the catalog's "20-25 are virtual"
-            // hint so an older plugin that omits the flag still
-            // renders dashed.
-            var atons = _atonStore.GetAtons();
-            var jsAtons = atons
-                .Where(a => a.Latitude is not null && a.Longitude is not null)
-                .Select(a =>
-                {
-                    var info = AtonTypeCatalog.Lookup(a.TypeId);
-                    bool isVirtual = a.Virtual ?? info.VirtualHint;
-                    return (object)new
-                    {
-                        context = a.Context,
-                        name = a.Name,
-                        mmsi = a.Mmsi,
-                        lat = a.Latitude!.Value,
-                        lon = a.Longitude!.Value,
-                        typeId = a.TypeId,
-                        typeName = a.TypeName,
-                        symbol = info.Symbol.ToString(),
-                        side = info.Side.ToString(),
-                        @virtual = isVirtual,
-                    };
-                })
-                .ToArray();
-            await _aisJs.SetAtonsAsync(jsAtons);
+            await _aisJs.SetAtonsAsync(BuildSnapshot(atons));
+            _lastPushedVersion = version;
         }
         catch (Microsoft.JSInterop.JSException ex)
         {
-            // Console.WriteLine (not Console.Error) so the handled
-            // JS regression doesn't surface as an unhandled error
-            // via errorRelayBoot.js's console.error wrapper.
+            _dirty = true;
+            // Console.WriteLine (not Console.Error) so the handled JS
+            // regression doesn't surface as an unhandled error via
+            // errorRelayBoot.js's console.error wrapper.
             Console.WriteLine($"[interop] PushAtons: {ex.Message}");
         }
+    }
+
+    internal static AtonPayload[] BuildSnapshot(IReadOnlyList<Aton> atons)
+    {
+        var result = new List<AtonPayload>(atons.Count);
+        foreach (var a in atons)
+        {
+            if (a.Latitude is not double lat || a.Longitude is not double lon) continue;
+            var info = AtonTypeCatalog.Lookup(a.TypeId);
+            // Prefer the AtoN's own virtual flag; fall back to the
+            // catalog's "types 20-25 are virtual" hint for plugins that
+            // omit it, so the mark still renders dashed.
+            bool isVirtual = a.Virtual ?? info.VirtualHint;
+            result.Add(new AtonPayload(
+                Context: a.Context,
+                Lat: lat,
+                Lon: lon,
+                Symbol: info.Symbol.ToString(),
+                Side: info.Side.ToString(),
+                Virtual: isVirtual,
+                Title: Title(a.Name, a.Mmsi, isVirtual),
+                Subtitle: !string.IsNullOrEmpty(a.TypeName) ? a.TypeName
+                    : a.TypeId is int id ? $"Type {id}" : null,
+                Detail: !string.IsNullOrEmpty(a.Name) && !string.IsNullOrEmpty(a.Mmsi)
+                    ? $"MMSI {a.Mmsi}" : null));
+        }
+        return result.ToArray();
+    }
+
+    /// <summary>Popup title: name, else MMSI, else "AtoN"; virtual marks
+    /// say so, since there is nothing in the water to look for.</summary>
+    internal static string Title(string? name, string? mmsi, bool isVirtual)
+    {
+        string title = !string.IsNullOrEmpty(name) ? name
+            : !string.IsNullOrEmpty(mmsi) ? mmsi
+            : "AtoN";
+        return isVirtual ? title + " (virtual)" : title;
     }
 }

@@ -46,6 +46,74 @@ public class ColregsTests
         await Assert.That(r.Role).IsEqualTo(Colregs.Role.StandOn);
     }
 
+    // Places a target at a relative bearing (deg from own bow, own
+    // heading north) and range (nm).
+    private static (double LatNm, double LonNm) AtRelative(double relDeg, double rangeNm) =>
+        (rangeNm * Math.Cos(relDeg * DegToRad), rangeNm * Math.Sin(relDeg * DegToRad));
+
+    [Test]
+    public async Task WeOvertake_TargetOnPortBow_Rule13NotCrossing()
+    {
+        // Review case: own 000 deg at 7 kn, target at relative 320 deg
+        // heading 000 at 3 kn. We are 40 deg abaft the target's beam on
+        // its starboard quarter (bearing from target = 140 rel), closing:
+        // Rule 13, we are overtaking and keep out of the way. A
+        // crossing-from-port reading would have told us to stand on.
+        var (lat, lon) = AtRelative(320, 0.5);
+        var r = Run(lat, lon, tgtCogDeg: 0, ownSogKn: 7, tgtSogKn: 3);
+        await Assert.That(r.Category).IsEqualTo(Colregs.Category.Overtaking);
+        await Assert.That(r.Role).IsEqualTo(Colregs.Role.GiveWay);
+    }
+
+    [Test]
+    public async Task TargetOvertakesUs_FromStarboardQuarter_Rule13NotCrossing()
+    {
+        // Reverse of the above: own 000 deg at 3 kn, target at relative
+        // 140 deg (40 deg abaft our starboard beam) heading 000 at 7 kn.
+        // It is the overtaking vessel; we stand on. A crossing-from-
+        // starboard reading would have told us to give way.
+        var (lat, lon) = AtRelative(140, 0.5);
+        var r = Run(lat, lon, tgtCogDeg: 0, ownSogKn: 3, tgtSogKn: 7);
+        await Assert.That(r.Category).IsEqualTo(Colregs.Category.BeingOvertaken);
+        await Assert.That(r.Role).IsEqualTo(Colregs.Role.StandOn);
+    }
+
+    [Test]
+    [Arguments(113.0, Colregs.Category.BeingOvertaken)]
+    [Arguments(247.0, Colregs.Category.BeingOvertaken)]
+    [Arguments(112.0, Colregs.Category.CrossingFromStarboard)]
+    [Arguments(248.0, Colregs.Category.CrossingFromPort)]
+    public async Task Rule13Sector_Is22Point5DegAbaftTheBeam(double relDeg, Colregs.Category expected)
+    {
+        // Target closing on a parallel course from just inside / just
+        // outside the overtaking sector (112.5, 247.5).
+        var (lat, lon) = AtRelative(relDeg, 0.5);
+        var r = Run(lat, lon, tgtCogDeg: 0, ownSogKn: 3, tgtSogKn: 12);
+        await Assert.That(r.Category).IsEqualTo(expected);
+    }
+
+    [Test]
+    public async Task TargetAbaftBeam_OpeningRange_IsNotOvertaking()
+    {
+        // Slower target on our quarter falling astern: no encounter.
+        var (lat, lon) = AtRelative(150, 0.5);
+        var r = Run(lat, lon, tgtCogDeg: 0, ownSogKn: 8, tgtSogKn: 3);
+        await Assert.That(r.Category).IsEqualTo(Colregs.Category.Indeterminate);
+    }
+
+    [Test]
+    public async Task Overtaking_OverridesRule18_PowerOvertakingSail()
+    {
+        // Rule 13 trumps Rule 18: an overtaking sailing vessel still
+        // keeps clear of the power vessel it overtakes, and vice versa.
+        var (lat, lon) = AtRelative(320, 0.5);
+        var r = Colregs.Classify(0, 0, 0, 7 * Knots,
+            lat * NmInLat, lon * NmInLat, 0, 3 * Knots,
+            Colregs.VesselType.Sail, Colregs.VesselType.Power);
+        await Assert.That(r.Category).IsEqualTo(Colregs.Category.Overtaking);
+        await Assert.That(r.Role).IsEqualTo(Colregs.Role.GiveWay);
+    }
+
     [Test]
     public async Task CrossingFromStarboard_WeGiveWay()
     {

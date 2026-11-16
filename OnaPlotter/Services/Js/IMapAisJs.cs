@@ -9,24 +9,17 @@ namespace OnaPlotter.Services.Js;
 /// </summary>
 public interface IMapAisJs
 {
-    /// <summary>Push the current AIS-target snapshot to the map. The
-    /// payload is a typed array of <see cref="OnaPlotter.Services.Map.AisVesselPayload"/>
-    /// instances pooled by <c>AisPushService</c>; each carries the
-    /// pre-resolved shape leafletInterop.js's <c>updateAisTargets</c>
-    /// expects (context, lat, lon, COG, SOG, heading, label, palette
-    /// key, etc.). The typed shape replaces the previous
-    /// <c>object[]</c> of anonymous types so the per-tick allocation
-    /// drops from 200 heap objects to one array, and Blazor's interop
-    /// serializer can pin the converter once instead of polymorphic-
-    /// resolving each element. JS-side reader is unchanged - the wire
-    /// keys still serialise camelCase via the explicit
-    /// <c>[JsonPropertyName]</c> annotations on the payload.</summary>
-    Task UpdateAisTargetsAsync(OnaPlotter.Services.Map.AisVesselPayload[] vessels);
+    /// <summary>Push an AIS update (full snapshot or versioned delta,
+    /// see <see cref="OnaPlotter.Services.Map.AisUpdatePayload"/>).
+    /// Returns false when the renderer refused it (it doesn't hold the
+    /// delta's base, or it deferred the update mid-drag), in which case
+    /// the caller must resend a full snapshot.</summary>
+    Task<bool> UpdateAisTargetsAsync(OnaPlotter.Services.Map.AisUpdatePayload update);
 
     /// <summary>Push the current AtoN snapshot. The JS side renders
     /// each entry as a static buoy / beacon symbol; static enough not
     /// to need a tick timer.</summary>
-    Task SetAtonsAsync(object[] atons);
+    Task SetAtonsAsync(OnaPlotter.Services.Map.AtonPayload[] atons);
 
     /// <summary>Toggle visibility of the AtoN layer without dropping
     /// the marker state, so flipping back doesn't have to refetch.</summary>
@@ -39,14 +32,6 @@ public interface IMapAisJs
     /// preference and harbor mode as the transient declutter, taking
     /// the AND of both.</summary>
     Task SetAisLabelsVisibleAsync(bool visible);
-
-    /// <summary>Push the helm-configured "AIS inactive" threshold (in
-    /// minutes) to the JS layer. Used to pin the staleness fade floor
-    /// and to suppress the vessel name label for targets past the
-    /// threshold so a chart full of ghost MMSIs doesn't drown out the
-    /// live targets. Called on startup and whenever the setting
-    /// changes.</summary>
-    Task SetAisInactiveMinutesAsync(double minutes);
 
     /// <summary>Seed the JS side with own-vessel MMSI once the SignalK
     /// hello resolves it. Used by the self-popup HTML to fetch the

@@ -6,6 +6,7 @@
 // branch (this file).
 
 import { MarkerLayer } from './markerLayer.js';
+import { esc } from './popupHelpers.js';
 
 // Sailor-distinct palette so categories are recognisable at a glance
 // from across the cockpit. Avoid red (collides with port-lateral
@@ -124,16 +125,6 @@ function makeMarinePoiIcon(category) {
     return icon;
 }
 
-function escapeHtml(s) {
-    if (s == null) return '';
-    return String(s)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-}
-
 // Subset of OSM tags we surface as labelled rows in the popup. The
 // C# parser already trimmed to a whitelist; this list picks the most
 // helm-relevant first and renders them as "Label: value". Anything
@@ -152,25 +143,32 @@ const POPUP_TAG_LABELS = [
     ['fee', 'Fee'],
 ];
 
-function buildMarinePoiPopupHtml(p) {
-    const title = p.name ? escapeHtml(p.name) : escapeHtml(p.category);
-    const subtitle = p.name ? escapeHtml(p.category) : '';
+// OSM website tags are free text: only http(s) URLs become links, so a
+// "javascript:..." value can't run on tap.
+// Example: "www.marina.de" -> null; "https://marina.de" -> kept
+function safeWebsiteUrl(url) {
+    return /^https?:\/\//i.test(String(url).trim()) ? String(url).trim() : null;
+}
+
+export function buildMarinePoiPopupHtml(p) {
+    const title = p.name ? esc(p.name) : esc(p.category);
+    const subtitle = p.name ? esc(p.category) : '';
 
     const rows = [];
     const tags = p.tags || {};
     const seen = new Set();
     for (const [key, label] of POPUP_TAG_LABELS) {
         if (key in tags && tags[key]) {
-            rows.push(`<div class="marine-poi-popup-row"><span class="marine-poi-popup-label">${label}:</span> ${escapeHtml(tags[key])}</div>`);
+            rows.push(`<div class="marine-poi-popup-row"><span class="marine-poi-popup-label">${label}:</span> ${esc(tags[key])}</div>`);
             seen.add(key);
         }
     }
 
     // Website link (raw or contact:website). Render as a clickable
     // anchor; the helm taps to open in the system browser.
-    const website = tags.website || tags['contact:website'];
+    const website = safeWebsiteUrl(tags.website || tags['contact:website'] || '');
     if (website) {
-        const safeUrl = escapeHtml(website);
+        const safeUrl = esc(website);
         rows.push(`<div class="marine-poi-popup-row"><a href="${safeUrl}" target="_blank" rel="noopener noreferrer">Website</a></div>`);
     }
 
@@ -182,7 +180,7 @@ function buildMarinePoiPopupHtml(p) {
         const num = p.id.substring(1);
         const typeWord = typeChar === 'n' ? 'node' : typeChar === 'w' ? 'way' : typeChar === 'r' ? 'relation' : null;
         if (typeWord) {
-            osmLink = `<div class="marine-poi-popup-row marine-poi-popup-source"><a href="https://www.openstreetmap.org/${typeWord}/${escapeHtml(num)}" target="_blank" rel="noopener noreferrer">View on OSM</a></div>`;
+            osmLink = `<div class="marine-poi-popup-row marine-poi-popup-source"><a href="https://www.openstreetmap.org/${typeWord}/${esc(num)}" target="_blank" rel="noopener noreferrer">View on OSM</a></div>`;
         }
     }
 
@@ -212,6 +210,10 @@ export function setMarinePois(pois) {
         seen.add(p.id);
         const icon = makeMarinePoiIcon(p.category);
         const existing = poiMarkers.get(p.id);
+        // The controller re-pushes the whole snapshot on every pan;
+        // most POIs are unchanged and need no DOM work at all.
+        const key = JSON.stringify(p);
+        if (existing && existing._poiKey === key) continue;
         if (existing) {
             existing.setLatLng([p.lat, p.lon]);
             // Identity check: cache returns the same divIcon for the
@@ -222,10 +224,16 @@ export function setMarinePois(pois) {
                 existing.setIcon(icon);
                 existing._lastIcon = icon;
             }
-            existing.setPopupContent(buildMarinePoiPopupHtml(p));
+            existing._poi = p;
+            existing._poiKey = key;
+            if (existing.isPopupOpen()) existing.setPopupContent(buildMarinePoiPopupHtml(p));
         } else {
+            // Popup HTML is built on open: most POI popups never are.
             const m = L.marker([p.lat, p.lon], { icon })
-                .bindPopup(buildMarinePoiPopupHtml(p), { autoPan: false });
+                .bindPopup('', { autoPan: false });
+            m.on('popupopen', () => m.setPopupContent(buildMarinePoiPopupHtml(m._poi)));
+            m._poi = p;
+            m._poiKey = key;
             m._lastIcon = icon;
             if (visible) m.addTo(mapRef);
             poiMarkers.set(p.id, m);

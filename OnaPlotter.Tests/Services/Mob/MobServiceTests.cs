@@ -53,6 +53,20 @@ public class MobServiceTests
         public void Dispose() => Service.Dispose();
     }
 
+    /// <summary>Builds the service exactly as production wires it:
+    /// every collaborator present, defaulting to inert fakes.</summary>
+    private static MobService NewService(
+        FakeNotificationsApi api, ServerNotificationStore store, InMemoryKv kv,
+        ResolvedPositionStore positions, FakeTimeProvider clock,
+        FakeWaypointApi? waypoints = null, FakeWaypointReader? reader = null,
+        FakeToastService? toasts = null, FakeSignalkClient? signalk = null) =>
+        new(api, store, kv, positions, clock,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<MobService>.Instance,
+            waypoints ?? new FakeWaypointApi(),
+            reader ?? new FakeWaypointReader(),
+            toasts ?? new FakeToastService(),
+            signalk ?? new FakeSignalkClient());
+
     private static Fixture NewFixture()
     {
         var api = new FakeNotificationsApi();
@@ -60,19 +74,16 @@ public class MobServiceTests
         var kv = new InMemoryKv();
         var positions = new ResolvedPositionStore(kv);
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 5, 3, 12, 0, 0, TimeSpan.Zero));
-        var svc = new MobService(api, store, kv, positions, clock);
+        var svc = NewService(api, store, kv, positions, clock);
         return new Fixture(svc, api, store, kv, clock);
     }
 
-    /// <summary>Fixture overload that wires a fake waypoint API.
-    /// Exercises the MOB-as-waypoint composition added in the
-    /// MOB-as-waypoint refactor: every RaiseAsync also pins a paired
-    /// waypoint with isMob/isActive metadata, and ClearAsync flips
-    /// the waypoint to isActive=false. The waypoint API is the
-    /// observable side; the resource store is left null (its only
-    /// MobService consumer is FindMobWaypoint, which short-circuits
-    /// to null when the store is missing - tests of the pending-raise
-    /// fast path don't need the store).</summary>
+    /// <summary>Fixture overload that hands back the fake waypoint API.
+    /// Exercises the MOB-as-waypoint composition: every RaiseAsync also
+    /// pins a paired waypoint with isMob/isActive metadata, and
+    /// ClearAsync flips the waypoint to isActive=false. The waypoint
+    /// API is the observable side; the waypoint cache is an empty
+    /// fake.</summary>
     private static (Fixture f, FakeWaypointApi waypoints) NewFixtureWithWaypoints(
         TimeZoneInfo? localTimeZone = null)
     {
@@ -89,8 +100,7 @@ public class MobServiceTests
         clock.SetLocalTimeZone(localTimeZone ?? TimeZoneInfo.CreateCustomTimeZone(
             "Test+02", TimeSpan.FromHours(2), "Test+02", "Test+02"));
         var waypoints = new FakeWaypointApi();
-        var svc = new MobService(api, store, kv, positions, clock,
-            logger: null, waypoints: waypoints, resources: null);
+        var svc = NewService(api, store, kv, positions, clock, waypoints: waypoints);
         return (new Fixture(svc, api, store, kv, clock), waypoints);
     }
 
@@ -105,8 +115,7 @@ public class MobServiceTests
             "Test+02", TimeSpan.FromHours(2), "Test+02", "Test+02"));
         var waypoints = new FakeWaypointApi();
         var reader = new FakeWaypointReader();
-        var svc = new MobService(api, store, kv, positions, clock,
-            logger: null, waypoints: waypoints, resources: reader);
+        var svc = NewService(api, store, kv, positions, clock, waypoints: waypoints, reader: reader);
         return (new Fixture(svc, api, store, kv, clock), waypoints, reader);
     }
 
@@ -392,10 +401,8 @@ public class MobServiceTests
         var kv = new InMemoryKv();
         var positions = new ResolvedPositionStore(kv);
         var waypoints = new FakeWaypointApi();
-        var toasts = new List<string>();
-        using var svc = new MobService(api, store, kv, positions, clock,
-            logger: null, waypoints: waypoints, resources: null,
-            toastWarning: msg => toasts.Add(msg));
+        var toastService = new FakeToastService();
+        using var svc = NewService(api, store, kv, positions, clock, waypoints: waypoints, toasts: toastService);
         waypoints.NextCreateResult = ApiResult<string>.Fail("server 500");
         api.SuspendRaise = true;
 
@@ -403,7 +410,7 @@ public class MobServiceTests
         await WaitForWaypointCreateAsync(waypoints, target: 1);
         // Spin briefly for the toast continuation to land.
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(1);
-        while (toasts.Count == 0 && DateTime.UtcNow < deadline) await Task.Delay(10);
+        while (toastService.Warnings.Count == 0 && DateTime.UtcNow < deadline) await Task.Delay(10);
 
         // The retry-loop wording reflects the new offline-resilient
         // behaviour: the create is queued for retry rather than
@@ -411,6 +418,7 @@ public class MobServiceTests
         // (suppressed on subsequent attempts to avoid spam) carrying
         // the underlying error so they know the network is the
         // problem, not the alarm pipeline.
+        var toasts = toastService.Warnings;
         await Assert.That(toasts.Count).IsEqualTo(1);
         await Assert.That(toasts[0]).Contains("MOB chart pin queued");
         await Assert.That(toasts[0]).Contains("server 500");
@@ -1354,40 +1362,19 @@ public class MobServiceTests
     // Reconnect-edge reconcile (WS-driven)
     // ------------------------------------------------------------
 
-    /// <summary>Stub SignalkClient with no-op deps. Exposes the
-    /// connection-state surface the MobService consumes
-    /// (<c>IsConnected</c> + <c>OnConnectionChanged</c>); the test
-    /// pairs <see cref="SignalkClient.MarkConnectionOpened"/> /
-    /// <see cref="SignalkClient.MarkConnectionClosed"/> with
-    /// <see cref="SignalkClient.RaiseConnectionChanged"/> to drive
-    /// reconcile flows deterministically without standing up a WS.</summary>
-    private static SignalkClient NewStubSignalkClient() =>
-        new SignalkClient(
-            baseUrl: new OnaPlotter.Tests.Services.Resources.FakeBaseUrl(),
-            logger: Microsoft.Extensions.Logging.Abstractions.NullLogger<SignalkClient>.Instance,
-            track: new OnaPlotter.Services.TrackBuffer(),
-            ais: new OnaPlotter.Services.AisStore(),
-            http: new HttpClient(),
-            settings: new FakeSettings(),
-            serverNotifs: new ServerNotificationStore(),
-            atons: new OnaPlotter.Services.AtonStore(),
-            time: TimeProvider.System);
-
-    /// <summary>Fixture overload that wires a stub SignalkClient so
-    /// the connection-edge handler inside MobService is reachable.
+    /// <summary>Fixture overload that hands back the fake SignalK
+    /// connection so tests can drive its edges.
     /// Tests that exercise the reconnect reconcile path use this
     /// helper instead of <see cref="NewFixture"/>.</summary>
-    private static (Fixture f, SignalkClient signalk) NewFixtureWithSignalk()
+    private static (Fixture f, FakeSignalkClient signalk) NewFixtureWithSignalk()
     {
         var api = new FakeNotificationsApi();
         var store = new ServerNotificationStore();
         var kv = new InMemoryKv();
         var positions = new ResolvedPositionStore(kv);
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 5, 3, 12, 0, 0, TimeSpan.Zero));
-        var signalk = NewStubSignalkClient();
-        var svc = new MobService(api, store, kv, positions, clock,
-            logger: null, waypoints: null, resources: null,
-            toastWarning: null, signalk: signalk);
+        var signalk = new FakeSignalkClient();
+        var svc = NewService(api, store, kv, positions, clock, signalk: signalk);
         return (new Fixture(svc, api, store, kv, clock), signalk);
     }
 
@@ -1432,8 +1419,7 @@ public class MobServiceTests
         // and fires OnConnectionChanged; MobService's internal
         // handler detects the edge and kicks ReconcileFromServerAsync.
         // The Mark*+Raise pair mirrors the production WS-loop site.
-        signalk.MarkConnectionOpened();
-        signalk.RaiseConnectionChanged();
+        signalk.Connect();
         await Assert.That(f.Service.LastReconcileTask).IsNotNull();
         await f.Service.LastReconcileTask!;
 
@@ -1456,14 +1442,12 @@ public class MobServiceTests
 
         // Drive a full bounce: connect -> disconnect. Each step
         // calls Mark*+Raise to mirror production.
-        signalk.MarkConnectionOpened();
-        signalk.RaiseConnectionChanged();
+        signalk.Connect();
         var firstReconcile = f.Service.LastReconcileTask;
         await Assert.That(firstReconcile).IsNotNull();
         await firstReconcile!;
 
-        signalk.MarkConnectionClosed();
-        signalk.RaiseConnectionChanged();
+        signalk.Disconnect();
 
         // The disconnect raise must not have replaced LastReconcileTask;
         // it should still point at the first reconcile (completed).

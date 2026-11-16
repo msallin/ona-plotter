@@ -3,11 +3,8 @@ using OnaPlotter.Utilities;
 namespace OnaPlotter.Tests;
 
 /// <summary>Pin the SOG -&gt; rgb(...) ramp at every boundary speed
-/// the helm cares about. The JS layer mirrors this in
-/// <c>wwwroot/js/format.js</c>; if the constants here change, the
-/// JS mirror must move too - otherwise the chart paints the same
-/// track in two different colours depending on which renderer touched
-/// it last.</summary>
+/// the helm cares about, and the per-bucket palette the map renderer
+/// indexes.</summary>
 public class SpeedColorTests
 {
     [Test]
@@ -63,7 +60,7 @@ public class SpeedColorTests
     [Test]
     public async Task Bucket_Null_ZeroBucket()
     {
-        await Assert.That(SpeedColor.Bucket(null)).IsEqualTo(0);
+        await Assert.That(SpeedBuckets.Bucket(null)).IsEqualTo(0);
     }
 
     [Test]
@@ -71,19 +68,87 @@ public class SpeedColorTests
     {
         // Buckets[0] = 0 so 0 m/s lands at bucket 0; -1 below all
         // thresholds also lands at 0 (defensive, shouldn't occur).
-        await Assert.That(SpeedColor.Bucket(0)).IsEqualTo(0);
-        await Assert.That(SpeedColor.Bucket(-1)).IsEqualTo(0);
+        await Assert.That(SpeedBuckets.Bucket(0)).IsEqualTo(0);
+        await Assert.That(SpeedBuckets.Bucket(-1)).IsEqualTo(0);
     }
 
     [Test]
     public async Task Bucket_HitsHighestThresholdAtOrBelow()
     {
         // Buckets [0, 1, 2, 3, 5, 8] - a sog of 4.5 picks index 3 (3<=4.5<5).
-        await Assert.That(SpeedColor.Bucket(0.5)).IsEqualTo(0);
-        await Assert.That(SpeedColor.Bucket(1.0)).IsEqualTo(1);
-        await Assert.That(SpeedColor.Bucket(2.5)).IsEqualTo(2);
-        await Assert.That(SpeedColor.Bucket(4.5)).IsEqualTo(3);
-        await Assert.That(SpeedColor.Bucket(5.0)).IsEqualTo(4);
-        await Assert.That(SpeedColor.Bucket(10.0)).IsEqualTo(5);
+        await Assert.That(SpeedBuckets.Bucket(0.5)).IsEqualTo(0);
+        await Assert.That(SpeedBuckets.Bucket(1.0)).IsEqualTo(1);
+        await Assert.That(SpeedBuckets.Bucket(2.5)).IsEqualTo(2);
+        await Assert.That(SpeedBuckets.Bucket(4.5)).IsEqualTo(3);
+        await Assert.That(SpeedBuckets.Bucket(5.0)).IsEqualTo(4);
+        await Assert.That(SpeedBuckets.Bucket(10.0)).IsEqualTo(5);
+    }
+
+    // - BucketPalette -------------------------------------------
+
+    [Test]
+    public async Task BucketPalette_OneColourPerBucket()
+    {
+        await Assert.That(SpeedColor.BucketPalette.Length).IsEqualTo(SpeedBuckets.Buckets.Length);
+    }
+
+    [Test]
+    public async Task BucketPalette_EntryIsRampAtBucketLowerBound()
+    {
+        // Bucket 0 (stopped) is the blue ramp start; bucket 5 (>= 8 m/s,
+        // ~15.5 kn) clamps at the yellow end.
+        await Assert.That(SpeedColor.BucketPalette[0]).IsEqualTo("rgb(59,130,246)");
+        await Assert.That(SpeedColor.BucketPalette[5]).IsEqualTo("rgb(234,179,8)");
+        for (int i = 0; i < SpeedBuckets.Buckets.Length; i++)
+        {
+            await Assert.That(SpeedColor.BucketPalette[i])
+                .IsEqualTo(SpeedColor.Rgb(SpeedBuckets.Buckets[i]));
+        }
+    }
+
+    // - Night palette -------------------------------------------
+
+    [Test]
+    public async Task NightRgb_NullSog_NightDefault()
+    {
+        await Assert.That(SpeedColor.NightRgb(null)).IsEqualTo(SpeedColor.NightDefaultRgb);
+    }
+
+    [Test]
+    public async Task NightRgb_RampAnchors()
+    {
+        // Stopped -> dim crimson; 4 kn -> the red seam; 8+ kn clamps at
+        // the amber end.
+        await Assert.That(SpeedColor.NightRgb(0)).IsEqualTo("rgb(110,30,45)");
+        await Assert.That(SpeedColor.NightRgb(4.0 / Format.MsToKnots)).IsEqualTo("rgb(190,45,35)");
+        await Assert.That(SpeedColor.NightRgb(8.0 / Format.MsToKnots)).IsEqualTo("rgb(235,120,45)");
+        await Assert.That(SpeedColor.NightRgb(30)).IsEqualTo("rgb(235,120,45)");
+    }
+
+    [Test]
+    public async Task NightPalette_StaysInTheRedFamily()
+    {
+        // Night vision: every bucket red-dominant, so no blue or green
+        // track survives the switch to night mode.
+        foreach (var rgb in SpeedColor.NightBucketPalette)
+        {
+            var c = rgb["rgb(".Length..^1].Split(',').Select(int.Parse).ToArray();
+            await Assert.That(c[0] > c[1] && c[0] > c[2]).IsTrue();
+        }
+    }
+
+    [Test]
+    public async Task NightPalette_KeepsSpeedsDistinguishable()
+    {
+        await Assert.That(SpeedColor.NightBucketPalette.Length).IsEqualTo(SpeedBuckets.Buckets.Length);
+        await Assert.That(SpeedColor.NightBucketPalette.Distinct().Count())
+            .IsEqualTo(SpeedColor.BucketPalette.Distinct().Count());
+    }
+
+    [Test]
+    public async Task PaletteFor_PicksByNightMode()
+    {
+        await Assert.That(SpeedColor.PaletteFor(false)).IsSameReferenceAs(SpeedColor.BucketPalette);
+        await Assert.That(SpeedColor.PaletteFor(true)).IsSameReferenceAs(SpeedColor.NightBucketPalette);
     }
 }

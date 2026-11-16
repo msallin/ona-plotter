@@ -3,132 +3,235 @@ using System.Text.Json.Serialization;
 namespace OnaPlotter.Services.Map;
 
 /// <summary>
-/// Mutable JS-interop payload for the per-tick AIS push. One instance
-/// per visible vessel in the snapshot, mutated in place from a pool
-/// inside <see cref="AisPushService"/> so a 200-vessel harbour at 3 Hz
-/// stops allocating ~600 anonymous-type heap objects per second.
-///
-/// <para>Wire format: explicit <c>[JsonPropertyName]</c> on every
-/// property pins the camelCase JSON keys the existing
-/// <c>aisLayer.js / updateAisTargets</c> consumer expects. Without
-/// these annotations Blazor's interop serializer would default to
-/// PascalCase and break the JS reader; pinning them here keeps the
-/// contract self-documenting and survives a future
-/// <see cref="System.Text.Json.JsonSerializerOptions.PropertyNamingPolicy"/>
-/// flip.</para>
-///
-/// <para>Mutability: PascalCase properties with public setters because
-/// the pool resets fields in place every push. Per-frame the same
-/// instance gets re-filled with the next tick's data; the array
-/// returned to JS interop is a fresh exact-sized array, but its
-/// elements are pool refs.</para>
-///
-/// <para><b>Pool contract:</b> callers must NOT hold references to
-/// payload instances past the next <c>BuildSnapshot</c> call. The
-/// service consumes them synchronously through
-/// <see cref="IMapAisJs.UpdateAisTargetsAsync"/> inside the same
-/// PushAsync call, then releases.</para>
+/// One AIS push to <c>aisLayer.updateAisTargets</c>. A full snapshot
+/// (<see cref="BaseSeq"/> = -1) replaces the renderer's state; a delta
+/// carries only vessels whose rendered state changed since
+/// <see cref="BaseSeq"/>, plus the contexts that left the chart. The
+/// renderer refuses a delta whose base it doesn't hold (map re-init,
+/// deferred update) and <see cref="AisPushService"/> answers with a
+/// full snapshot.
 /// </summary>
-public sealed class AisVesselPayload
+/// <param name="Seq">Sequence number of this push.</param>
+/// <param name="BaseSeq">Sequence the delta applies on top of; -1 for a
+/// full snapshot.</param>
+/// <param name="NowUtc">C# clock at build time (ISO 8601). The popup's
+/// "N min ago" is measured against it so client clock skew can't
+/// change the reading.</param>
+/// <param name="Vessels">New or changed vessels.</param>
+/// <param name="Removed">Contexts to drop from the chart.</param>
+public sealed record AisUpdatePayload(
+    [property: JsonPropertyName("seq")] int Seq,
+    [property: JsonPropertyName("baseSeq")] int BaseSeq,
+    [property: JsonPropertyName("nowUtc")] string NowUtc,
+    [property: JsonPropertyName("vessels")] AisVesselPayload[] Vessels,
+    [property: JsonPropertyName("removed")] string[] Removed)
 {
-    [JsonPropertyName("context")] public string? Context { get; set; }
-    [JsonPropertyName("name")] public string? Name { get; set; }
-    [JsonPropertyName("mmsi")] public string? Mmsi { get; set; }
-    [JsonPropertyName("callsign")] public string? Callsign { get; set; }
-    /// <summary>Pre-resolved label: name -> mmsi -> null, with buddy
-    /// star prefix. Lifted out of JS so the chart label and any other
-    /// label-rendering surface share one fallback chain.</summary>
-    [JsonPropertyName("displayName")] public string? DisplayName { get; set; }
-    [JsonPropertyName("lat")] public double Lat { get; set; }
-    [JsonPropertyName("lon")] public double Lon { get; set; }
-    [JsonPropertyName("headingRad")] public double? HeadingRad { get; set; }
-    [JsonPropertyName("cogRad")] public double? CogRad { get; set; }
-    [JsonPropertyName("sogMs")] public double? SogMs { get; set; }
-    [JsonPropertyName("shipType")] public string? ShipType { get; set; }
-    /// <summary>AIS-static length overall (metres). Often absent;
-    /// see AisVessel.LengthOverallMeters for the source.</summary>
-    [JsonPropertyName("loaM")] public double? LoaM { get; set; }
-    [JsonPropertyName("beamM")] public double? BeamM { get; set; }
-    [JsonPropertyName("buddy")] public bool Buddy { get; set; }
-    /// <summary>"ais" or "radar" - tells JS which icon family to use
-    /// and whether to render buddy / threat overlays (radar targets
-    /// drop those).</summary>
-    [JsonPropertyName("source")] public string Source { get; set; } = "ais";
-    /// <summary>"SART" / "MOB" / "EPIRB" or null. AisSart classification
-    /// lifted out of JS.</summary>
-    [JsonPropertyName("sartCategory")] public string? SartCategory { get; set; }
-    /// <summary>"sail" / "fish" / "commercial" / "service" / null. Drives
-    /// the JS-side glyph variant inside the AIS palette.</summary>
-    [JsonPropertyName("glyphCategory")] public string? GlyphCategory { get; set; }
-    [JsonPropertyName("shipColor")] public string? ShipColor { get; set; }
-    [JsonPropertyName("cpaNm")] public double? CpaNm { get; set; }
-    [JsonPropertyName("tcpaMin")] public double? TcpaMin { get; set; }
-    /// <summary>"none" / "awareness" / "alarm" - precomputed threat
-    /// band for the chart chip. JS used to redo this thresholding
-    /// inline; lifting it up means CpaTests.ClassifyThreat is the
-    /// single source of truth.</summary>
-    [JsonPropertyName("cpaThreat")] public string CpaThreat { get; set; } = "none";
-    [JsonPropertyName("colregsLabel")] public string? ColregsLabel { get; set; }
-    [JsonPropertyName("colregsRole")] public string? ColregsRole { get; set; }
-    /// <summary>Seconds since the last AIS-evidence delta touched this vessel
-    /// (position / motion / static-data). Computed from <c>AisVessel.LastAisSeen</c>
-    /// rather than delta-arrival time so plugin chatter on derived paths
-    /// doesn't keep ghost vessels looking fresh. JS uses it to fade stale
-    /// markers and (past the helm-configured "AIS inactive" threshold)
-    /// suppress their name label.</summary>
-    [JsonPropertyName("ageSec")] public int AgeSec { get; set; }
+    /// <summary><see cref="BaseSeq"/> value marking a full snapshot.</summary>
+    public const int FullSnapshot = -1;
 
-    /// <summary>ISO 8601 (UTC, RFC 3339, e.g. <c>"2026-05-17T11:42:13Z"</c>)
-    /// of the most recent AIS-evidence delta from <c>AisVessel.LastAisSeen</c>.
-    /// The JS popup formats this as a 24h <c>hh:mm</c> with an inline "(N min
-    /// ago)" tail so the helm sees both the exact instant and the elapsed
-    /// time the marker is drawn against. Always populated.</summary>
-    [JsonPropertyName("lastAisSeen")] public string? LastAisSeen { get; set; }
+    /// <summary>True when this push replaces the renderer's state.</summary>
+    [JsonIgnore] public bool IsFull => BaseSeq == FullSnapshot;
+}
 
-    /// <summary>COG-vector endpoint precomputed from current lat / lon +
-    /// CourseOverGround + SpeedOverGround * AisCogVectorMinutes. Lifted
-    /// out of JS so the per-tick vectorEnd() / destPoint() trig (two
-    /// asin/atan2 + four sin/cos per vessel) runs once in WASM per
-    /// snapshot push instead of 200+ times per tick in the JS hot
-    /// path. Null when SOG is below the 0.1 m/s stationary threshold
-    /// or COG / SOG are missing - JS treats null as "don't draw the
-    /// vector".</summary>
-    [JsonPropertyName("vectorEndLat")] public double? VectorEndLat { get; set; }
-    [JsonPropertyName("vectorEndLon")] public double? VectorEndLon { get; set; }
+/// <summary>Theme colour role for a marker or COG vector. The renderer
+/// maps roles to the live <c>--map-*</c> palette (so night mode
+/// re-themes them); <see cref="Ship"/> uses the vessel's
+/// <see cref="AisVesselStatic.ShipColor"/>.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<AisTone>))]
+public enum AisTone
+{
+    [JsonStringEnumMemberName("ship")] Ship,
+    [JsonStringEnumMemberName("buddy")] Buddy,
+    [JsonStringEnumMemberName("danger")] Danger,
+    [JsonStringEnumMemberName("radar")] Radar,
+}
 
-    /// <summary>CPA endpoint precomputed for the vessel's projected
-    /// position at TCPA. Only populated when the CPA threat band is
-    /// Awareness or Alarm (the only states where the JS draws the
-    /// crossing-situation overlay); null otherwise. Same WASM-side
-    /// destPoint() that produced VectorEndLat / Lon.</summary>
-    [JsonPropertyName("cpaPointLat")] public double? CpaPointLat { get; set; }
-    [JsonPropertyName("cpaPointLon")] public double? CpaPointLon { get; set; }
+/// <summary>Closing-encounter overlay for a target. <see cref="Alarm"/>
+/// always draws; <see cref="Awareness"/> draws only while the helm has
+/// the target click-selected (a renderer-local UI state).</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<AisCpaOverlay>))]
+public enum AisCpaOverlay
+{
+    [JsonStringEnumMemberName("none")] None,
+    [JsonStringEnumMemberName("alarm")] Alarm,
+    [JsonStringEnumMemberName("awareness")] Awareness,
+}
 
-    /// <summary>Own-ship's projected position at the same TCPA as
-    /// <see cref="CpaPointLat"/> / <see cref="CpaPointLon"/>. The JS
-    /// overlay draws an X marker here, a dashed line from own boat
-    /// to here, and a third line from this point to the target's
-    /// projected position (the actual CPA segment, with the
-    /// distance/time label at its midpoint).
-    /// <para>Populated for the same threat states as the target CPA
-    /// point - the two are siblings of one rendering pass. Per-vessel
-    /// because TCPA varies per target; same own-ship inputs but the
-    /// projection distance is target-specific.</para></summary>
-    [JsonPropertyName("ownCpaPointLat")] public double? OwnCpaPointLat { get; set; }
-    [JsonPropertyName("ownCpaPointLon")] public double? OwnCpaPointLon { get; set; }
+/// <summary>
+/// Identity fields that change only when AIS static data, the buddy list
+/// or the target source changes. Sent with a vessel on a full snapshot
+/// and whenever it differs from what the renderer holds; otherwise
+/// omitted so a 200-vessel harbour doesn't resend names every tick.
+/// </summary>
+public sealed record AisVesselStatic
+{
+    [JsonPropertyName("name"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Name { get; init; }
 
-    /// <summary>
-    /// Fresh trail coords for this vessel as a flat alternating
-    /// <c>[lat0, lon0, lat1, lon1, ...]</c> array, or <c>null</c> when
-    /// the trail didn't change since the last push (JS leaves the
-    /// existing polyline alone) or is too short to draw. Owned C#-side
-    /// by <see cref="AisTrailBuffer"/>.
-    ///
-    /// <para>When non-null, length is always even and at least 4 (two
-    /// points minimum; JS suppresses degenerate single-vertex
-    /// polylines). The JS side in <c>aisLayer.updateAisTrail</c>
-    /// unpacks the pairs into Leaflet LatLng tuples in a single
-    /// forward pass.</para>
-    /// </summary>
-    [JsonPropertyName("trail")] public double[]? Trail { get; set; }
+    [JsonPropertyName("mmsi"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Mmsi { get; init; }
+
+    [JsonPropertyName("buddy"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Buddy { get; init; }
+
+    /// <summary>Radar ARPA target: outline-triangle icon, no buddy
+    /// affordance.</summary>
+    [JsonPropertyName("radar"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Radar { get; init; }
+
+    /// <summary>"SART" / "MOB" / "EPIRB" or null.</summary>
+    [JsonPropertyName("sartCategory"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SartCategory { get; init; }
+
+    /// <summary>"sail" / "fish" / "commercial" / "service" or null:
+    /// glyph drawn inside the chevron.</summary>
+    [JsonPropertyName("glyphCategory"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? GlyphCategory { get; init; }
+
+    /// <summary>Ship-type palette colour for <see cref="AisTone.Ship"/>.</summary>
+    [JsonPropertyName("shipColor")]
+    public string ShipColor { get; init; } = Utilities.AisPalette.Default;
+
+    /// <summary>On-chart label (name, else MMSI, buddy-starred), or null
+    /// when the vessel has neither.</summary>
+    [JsonPropertyName("displayName"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DisplayName { get; init; }
+
+    /// <summary>Popup title and CPA chip name.</summary>
+    [JsonPropertyName("title")]
+    public string Title { get; init; } = "";
+
+    /// <summary>Popup identity line: "MMSI 538071935 · Call V7A6238 ·
+    /// Sailing · 12.5 × 4.2 m", or null when nothing is known.</summary>
+    [JsonPropertyName("subtitle"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Subtitle { get; init; }
+}
+
+/// <summary>
+/// Rendered state of one vessel. Every presentation decision (tone,
+/// opacity, label visibility, CPA overlay, popup numbers) is resolved
+/// here so <c>aisLayer.js</c> only applies values. The record is the
+/// complete dynamic state: a null field means "absent" (e.g. no COG
+/// vector), not "unchanged". <see cref="Static"/> and the trail fields
+/// are the exceptions, see their docs.
+/// </summary>
+public sealed record AisVesselPayload
+{
+    private const JsonIgnoreCondition SkipNull = JsonIgnoreCondition.WhenWritingNull;
+    private const JsonIgnoreCondition SkipDefault = JsonIgnoreCondition.WhenWritingDefault;
+
+    [JsonPropertyName("context")] public string Context { get; init; } = "";
+
+    /// <summary>Identity fields when they changed (or on a full
+    /// snapshot); null means "keep what you have".</summary>
+    [JsonPropertyName("static"), JsonIgnore(Condition = SkipNull)]
+    public AisVesselStatic? Static { get; init; }
+
+    [JsonPropertyName("lat")] public double Lat { get; init; }
+    [JsonPropertyName("lon")] public double Lon { get; init; }
+
+    /// <summary>Chevron rotation (COG, else heading), null for SART
+    /// beacons and targets with neither.</summary>
+    [JsonPropertyName("rotationRad"), JsonIgnore(Condition = SkipNull)]
+    public double? RotationRad { get; init; }
+
+    [JsonPropertyName("markerTone")] public AisTone MarkerTone { get; init; }
+
+    /// <summary>COG vector colour role. Keeps the vessel's identity
+    /// colour when the CPA alarm turns the marker red: the vector says
+    /// where it's heading, the marker carries the alarm.</summary>
+    [JsonPropertyName("vectorTone")] public AisTone VectorTone { get; init; }
+
+    /// <summary>CPA-alarm pulse ring around the marker.</summary>
+    [JsonPropertyName("pulse"), JsonIgnore(Condition = SkipDefault)]
+    public bool Pulse { get; init; }
+
+    /// <summary>Inline marker opacity from
+    /// <see cref="Utilities.StalenessOpacity"/>, or null for full
+    /// opacity (fresh targets, SART beacons, buddies).</summary>
+    [JsonPropertyName("opacity"), JsonIgnore(Condition = SkipNull)]
+    public string? Opacity { get; init; }
+
+    /// <summary>Name label shown (subject to the renderer's global
+    /// harbour-mode and labels toggles).</summary>
+    [JsonPropertyName("labelVisible"), JsonIgnore(Condition = SkipDefault)]
+    public bool LabelVisible { get; init; }
+
+    /// <summary>COG-vector endpoint, null when stationary or COG / SOG
+    /// unknown.</summary>
+    [JsonPropertyName("vectorEndLat"), JsonIgnore(Condition = SkipNull)]
+    public double? VectorEndLat { get; init; }
+    [JsonPropertyName("vectorEndLon"), JsonIgnore(Condition = SkipNull)]
+    public double? VectorEndLon { get; init; }
+
+    /// <summary>"none" / "awareness" / "alarm" threat band.</summary>
+    [JsonPropertyName("cpaThreat")] public string CpaThreat { get; init; } = "none";
+
+    [JsonPropertyName("cpaOverlay")] public AisCpaOverlay CpaOverlay { get; init; }
+
+    /// <summary>CPA (nm, 2 decimals) and TCPA (min, whole), present only
+    /// for a closing target (TCPA &gt; 0).</summary>
+    [JsonPropertyName("cpaNm"), JsonIgnore(Condition = SkipNull)]
+    public double? CpaNm { get; init; }
+    [JsonPropertyName("tcpaMin"), JsonIgnore(Condition = SkipNull)]
+    public double? TcpaMin { get; init; }
+
+    /// <summary>Target's projected position at TCPA, present whenever
+    /// <see cref="CpaOverlay"/> is not None.</summary>
+    [JsonPropertyName("cpaPointLat"), JsonIgnore(Condition = SkipNull)]
+    public double? CpaPointLat { get; init; }
+    [JsonPropertyName("cpaPointLon"), JsonIgnore(Condition = SkipNull)]
+    public double? CpaPointLon { get; init; }
+
+    /// <summary>Own ship's projected position at the same TCPA; null
+    /// without an own fix (overlay degrades to target side only).</summary>
+    [JsonPropertyName("ownCpaPointLat"), JsonIgnore(Condition = SkipNull)]
+    public double? OwnCpaPointLat { get; init; }
+    [JsonPropertyName("ownCpaPointLon"), JsonIgnore(Condition = SkipNull)]
+    public double? OwnCpaPointLon { get; init; }
+
+    [JsonPropertyName("colregsLabel"), JsonIgnore(Condition = SkipNull)]
+    public string? ColregsLabel { get; init; }
+    [JsonPropertyName("colregsRole"), JsonIgnore(Condition = SkipNull)]
+    public string? ColregsRole { get; init; }
+    /// <summary>Own ship is the give-way vessel.</summary>
+    [JsonPropertyName("colregsGiveWay"), JsonIgnore(Condition = SkipDefault)]
+    public bool ColregsGiveWay { get; init; }
+
+    /// <summary>Popup offers "Snooze alarm" (threatening, not a buddy).</summary>
+    [JsonPropertyName("snoozable"), JsonIgnore(Condition = SkipDefault)]
+    public bool Snoozable { get; init; }
+
+    /// <summary>Popup values, rounded to their display precision so an
+    /// unchanged reading doesn't count as a change.</summary>
+    [JsonPropertyName("sogKn"), JsonIgnore(Condition = SkipNull)]
+    public double? SogKn { get; init; }
+    [JsonPropertyName("cogDeg"), JsonIgnore(Condition = SkipNull)]
+    public double? CogDeg { get; init; }
+    [JsonPropertyName("headingDeg"), JsonIgnore(Condition = SkipNull)]
+    public double? HeadingDeg { get; init; }
+    /// <summary>Range (nm) and bearing (deg true) from own ship; null
+    /// without an own fix.</summary>
+    [JsonPropertyName("rangeNm"), JsonIgnore(Condition = SkipNull)]
+    public double? RangeNm { get; init; }
+    [JsonPropertyName("bearingDeg"), JsonIgnore(Condition = SkipNull)]
+    public double? BearingDeg { get; init; }
+
+    /// <summary>Most recent AIS evidence, ISO 8601 UTC.</summary>
+    [JsonPropertyName("lastAisSeen")] public string LastAisSeen { get; init; } = "";
+
+    /// <summary>Whole trail as flat <c>[lat0, lon0, ...]</c>, replacing
+    /// the renderer's copy. Set on a full snapshot.</summary>
+    [JsonPropertyName("trail"), JsonIgnore(Condition = SkipNull)]
+    public double[]? Trail { get; init; }
+
+    /// <summary>Points to append to the renderer's trail after
+    /// <see cref="TrailTrim"/>.</summary>
+    [JsonPropertyName("trailAppend"), JsonIgnore(Condition = SkipNull)]
+    public double[]? TrailAppend { get; init; }
+
+    /// <summary>Points to drop from the head of the renderer's trail
+    /// (clamped to what it holds).</summary>
+    [JsonPropertyName("trailTrim"), JsonIgnore(Condition = SkipDefault)]
+    public int TrailTrim { get; init; }
 }

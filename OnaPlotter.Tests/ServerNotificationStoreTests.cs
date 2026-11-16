@@ -94,24 +94,58 @@ public class ServerNotificationStoreTests
     }
 
     [Test]
-    public async Task SeverityMapping_StatesMapToCoarseBuckets()
+    [Arguments("emergency", AlarmSeverity.Danger)]
+    [Arguments("alarm", AlarmSeverity.Danger)]
+    [Arguments("warn", AlarmSeverity.Warn)]
+    [Arguments("alert", AlarmSeverity.Warn)]
+    public async Task SeverityMapping_ActiveSignalKStates(string state, AlarmSeverity expected)
     {
-        // Equivalence-class coverage for MapSeverity. emergency + alarm
-        // are danger; warn + alert are warn; normal/cleared/null clear
-        // (returns null sentinel); unknown states fail safe to danger.
-        await Assert.That(ServerNotificationStore.MapSeverity("emergency")).IsEqualTo(AlarmSeverity.Danger);
-        await Assert.That(ServerNotificationStore.MapSeverity("alarm")).IsEqualTo(AlarmSeverity.Danger);
-        await Assert.That(ServerNotificationStore.MapSeverity("warn")).IsEqualTo(AlarmSeverity.Warn);
-        await Assert.That(ServerNotificationStore.MapSeverity("alert")).IsEqualTo(AlarmSeverity.Warn);
-        await Assert.That(ServerNotificationStore.MapSeverity("normal")).IsNull();
-        await Assert.That(ServerNotificationStore.MapSeverity("cleared")).IsNull();
-        await Assert.That(ServerNotificationStore.MapSeverity(null)).IsNull();
-        await Assert.That(ServerNotificationStore.MapSeverity("")).IsNull();
-        // Unknown strings: surface rather than drop. A plugin that
-        // emits "critical" should still ring the bell, not be silently
-        // discarded.
-        await Assert.That(ServerNotificationStore.MapSeverity("critical")).IsEqualTo(AlarmSeverity.Danger);
-        await Assert.That(ServerNotificationStore.MapSeverity("BANG")).IsEqualTo(AlarmSeverity.Danger);
+        await Assert.That(ServerNotificationStore.MapSeverity(state)).IsEqualTo(expected);
+    }
+
+    [Test]
+    [Arguments("nominal")]
+    [Arguments("normal")]
+    [Arguments("cleared")]
+    [Arguments(null)]
+    [Arguments("")]
+    public async Task SeverityMapping_ClearingStates_ReturnNull(string? state)
+    {
+        // SignalK's "nominal" and "normal" both mean "no alarm". Mapping
+        // nominal to Danger raised a klaxon for a healthy sensor.
+        await Assert.That(ServerNotificationStore.MapSeverity(state)).IsNull();
+    }
+
+    [Test]
+    [Arguments("NOMINAL", null)]
+    [Arguments("Normal", null)]
+    [Arguments("Alarm", AlarmSeverity.Danger)]
+    [Arguments("WARN", AlarmSeverity.Warn)]
+    public async Task SeverityMapping_IsCaseInsensitive(string state, AlarmSeverity? expected)
+    {
+        await Assert.That(ServerNotificationStore.MapSeverity(state)).IsEqualTo(expected);
+    }
+
+    [Test]
+    [Arguments("critical")]
+    [Arguments("BANG")]
+    public async Task SeverityMapping_UnknownState_FailsSafeToDanger(string state)
+    {
+        // A plugin emitting an out-of-spec state still rings the bell
+        // rather than being silently dropped.
+        await Assert.That(ServerNotificationStore.MapSeverity(state)).IsEqualTo(AlarmSeverity.Danger);
+    }
+
+    [Test]
+    public async Task Apply_NominalState_ClearsExistingEntry()
+    {
+        var s = new ServerNotificationStore();
+        s.Apply("notifications.environment.depth.belowKeel", "alarm", "shallow");
+
+        bool changed = s.Apply("notifications.environment.depth.belowKeel", "nominal", "ok");
+
+        await Assert.That(changed).IsTrue();
+        await Assert.That(s.Count).IsEqualTo(0);
     }
 
     [Test]

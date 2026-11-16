@@ -123,4 +123,75 @@ public class JsonElementExtensionsTests
         var bounds = doc.RootElement.LineStringBounds();
         await Assert.That(bounds.HasValue).IsFalse();
     }
+
+    // --- TryGetLatLon ------------------------------------------------
+
+    private static (bool Ok, double Lat, double Lon) LatLon(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        bool ok = doc.RootElement.TryGetLatLon(out double lat, out double lon);
+        return (ok, lat, lon);
+    }
+
+    [Test]
+    public async Task TryGetLatLon_BareForm()
+    {
+        // navigation.position as signalk-server publishes it.
+        var r = LatLon("""{"latitude": 59.91, "longitude": 10.75, "altitude": 2.1}""");
+        await Assert.That(r).IsEqualTo((true, 59.91, 10.75));
+    }
+
+    [Test]
+    public async Task TryGetLatLon_NestedPositionForm()
+    {
+        // navigation.course.nextPoint parent object (v2 course API).
+        var r = LatLon("""{"type": "RoutePoint", "href": null, "position": {"latitude": -33.86, "longitude": 151.21}}""");
+        await Assert.That(r).IsEqualTo((true, -33.86, 151.21));
+    }
+
+    [Test]
+    public async Task TryGetLatLon_BareWinsOverNested()
+    {
+        var r = LatLon("""{"latitude": 1, "longitude": 2, "position": {"latitude": 3, "longitude": 4}}""");
+        await Assert.That(r).IsEqualTo((true, 1.0, 2.0));
+    }
+
+    [Test]
+    public async Task TryGetLatLon_FallsBackToNested_WhenBareIncomplete()
+    {
+        var r = LatLon("""{"latitude": 1, "position": {"latitude": 3, "longitude": 4}}""");
+        await Assert.That(r).IsEqualTo((true, 3.0, 4.0));
+    }
+
+    [Test]
+    [Arguments("""{"latitude": 0, "longitude": 0}""", 0.0, 0.0)]
+    [Arguments("""{"latitude": 90, "longitude": 180}""", 90.0, 180.0)]
+    [Arguments("""{"latitude": -90, "longitude": -180}""", -90.0, -180.0)]
+    [Arguments("""{"latitude": 47, "longitude": 8}""", 47.0, 8.0)]
+    [Arguments("""{"latitude": 4.7e1, "longitude": 8e0}""", 47.0, 8.0)]
+    public async Task TryGetLatLon_NumericBoundaries(string json, double lat, double lon)
+    {
+        await Assert.That(LatLon(json)).IsEqualTo((true, lat, lon));
+    }
+
+    [Test]
+    [Arguments("""{"latitude": 47.0}""")]
+    [Arguments("""{"longitude": 8.0}""")]
+    [Arguments("""{"latitude": "47.0", "longitude": 8.0}""")]
+    [Arguments("""{"latitude": 47.0, "longitude": null}""")]
+    [Arguments("""{"latitude": 1e400, "longitude": 8.0}""")]
+    [Arguments("""{}""")]
+    [Arguments("""{"position": null}""")]
+    [Arguments("""{"position": {"latitude": 47.0}}""")]
+    [Arguments("""{"value": {"position": {"latitude": 1, "longitude": 2}}}""")]
+    [Arguments("""{"position": {"position": {"latitude": 1, "longitude": 2}}}""")]
+    [Arguments("""[8.0, 47.0]""")]
+    [Arguments("""null""")]
+    [Arguments("""47.0""")]
+    [Arguments("\"47,8\"")]
+    public async Task TryGetLatLon_RejectsMalformed_WithZeroedOutputs(string json)
+    {
+        // A half-parsed fix must never leak: outputs are zeroed on false.
+        await Assert.That(LatLon(json)).IsEqualTo((false, 0.0, 0.0));
+    }
 }

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Net;
 using OnaPlotter.Services.Api;
 
@@ -28,7 +29,7 @@ public class NotificationsApiTests
             capturedBody = req.Content?.ReadAsStringAsync().Result;
             return new HttpResponseMessage(HttpStatusCode.OK);
         });
-        var api = new NotificationsApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new NotificationsApi(http, ApiTestHelpers.FixedBaseUrl(), NullLogger<NotificationsApi>.Instance);
 
         var r = await api.AcknowledgeAsync("550e8400-e29b-41d4-a716-446655440000");
 
@@ -50,7 +51,7 @@ public class NotificationsApiTests
             capturedUrl = req.RequestUri?.AbsoluteUri;
             return new HttpResponseMessage(HttpStatusCode.OK);
         });
-        var api = new NotificationsApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new NotificationsApi(http, ApiTestHelpers.FixedBaseUrl(), NullLogger<NotificationsApi>.Instance);
 
         var r = await api.SilenceAsync("anchor-uuid-1");
 
@@ -80,7 +81,7 @@ public class NotificationsApiTests
                 Content = new StringContent("\"new-id-42\"")
             };
         });
-        var api = new NotificationsApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new NotificationsApi(http, ApiTestHelpers.FixedBaseUrl(), NullLogger<NotificationsApi>.Instance);
 
         var body = new NotificationPayload(
             State: "alarm",
@@ -114,7 +115,7 @@ public class NotificationsApiTests
             capturedUrl = req.RequestUri?.AbsoluteUri;
             return new HttpResponseMessage(HttpStatusCode.NoContent);
         });
-        var api = new NotificationsApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new NotificationsApi(http, ApiTestHelpers.FixedBaseUrl(), NullLogger<NotificationsApi>.Instance);
 
         var r = await api.ClearAsync("anchor-uuid-1");
 
@@ -136,7 +137,7 @@ public class NotificationsApiTests
             capturedUrl = req.RequestUri?.AbsoluteUri;
             return new HttpResponseMessage(HttpStatusCode.OK);
         });
-        var api = new NotificationsApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new NotificationsApi(http, ApiTestHelpers.FixedBaseUrl(), NullLogger<NotificationsApi>.Instance);
 
         await api.AcknowledgeAsync("id with/space");
 
@@ -155,7 +156,7 @@ public class NotificationsApiTests
             {
                 Content = new StringContent("Not Found")
             });
-        var api = new NotificationsApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new NotificationsApi(http, ApiTestHelpers.FixedBaseUrl(), NullLogger<NotificationsApi>.Instance);
 
         var r = await api.AcknowledgeAsync("missing");
 
@@ -169,7 +170,7 @@ public class NotificationsApiTests
         // disappearing): ResourceHttp catches inside and returns Fail.
         // The plotter UI doesn't crash on a flaky helm-LAN.
         var http = ApiTestHelpers.MockClient(req => throw new HttpRequestException("nope"));
-        var api = new NotificationsApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new NotificationsApi(http, ApiTestHelpers.FixedBaseUrl(), NullLogger<NotificationsApi>.Instance);
 
         var r = await api.AcknowledgeAsync("anything");
 
@@ -195,7 +196,7 @@ public class NotificationsApiTests
                     """{"state":"FAILED","statusCode":400,"message":"Alarm already acknowledged!"}""",
                     System.Text.Encoding.UTF8, "application/json")
             });
-        var api = new NotificationsApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new NotificationsApi(http, ApiTestHelpers.FixedBaseUrl(), NullLogger<NotificationsApi>.Instance);
 
         var r = await api.AcknowledgeAsync("dup-ack");
 

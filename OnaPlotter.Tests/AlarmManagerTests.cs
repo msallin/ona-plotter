@@ -45,7 +45,7 @@ public class AlarmManagerTests
         // OnaPlotter has [InternalsVisibleTo("OnaPlotter.Tests")] so the
         // internal clock-injecting ctor is reachable directly. The
         // earlier reflection ceremony predated that wiring.
-        var mgr = new AlarmManager(rules, () => clock.Now);
+        var mgr = new AlarmManager(rules, new DelegateTimeProvider(() => clock.Now));
         int fires = 0;
         mgr.OnAlarmChanged += _ => fires++;
         return (mgr, clock, settings, fires);
@@ -133,18 +133,48 @@ public class AlarmManagerTests
     }
 
     [Test]
-    public async Task RegisteredRuleTitles_ReturnsEveryWiredRule()
+    public async Task RegisteredRuleIds_ReturnsEveryWiredRule()
     {
-        // Settings -> Alarms reads this to render the per-rule
-        // toggles. Pin the contract: every rule the manager owns
-        // must show up here, in priority order, so a new rule
-        // registered in DI surfaces in the UI without hardcoding.
+        // Settings -> Alarms reads this for the master "all off"
+        // switch. Pin the contract: every rule the manager owns
+        // must show up here so a new rule registered in DI is
+        // covered without hardcoding.
         var (mgr, _, _, _) = NewMgr();
-        var titles = mgr.RegisteredRuleTitles;
+        var ids = mgr.RegisteredRuleIds;
 
-        await Assert.That(titles).Contains("SHALLOW");
-        await Assert.That(titles).Contains("CPA");
-        await Assert.That(titles).Contains("WIND SHIFT");
+        await Assert.That(ids).Contains(AlarmRuleId.Shallow);
+        await Assert.That(ids).Contains(AlarmRuleId.Cpa);
+        await Assert.That(ids).Contains(AlarmRuleId.WindShift);
+    }
+
+    [Test]
+    public async Task DisabledApproach_SilencesServerSourcedApproachAlarm()
+    {
+        // The course-provider plugin's arrival notifications reach the
+        // banner through the server bridge rule, which carries the
+        // APPROACH id. With server-side approach alarms on (the
+        // default) that is the ONLY approach source, so the helm's
+        // APPROACH toggle must silence it.
+        var store = new OnaPlotter.Services.ServerNotifications.ServerNotificationStore();
+        store.Apply("notifications.navigation.course.arrivalCircleEntered", "alert", "Arrived");
+        store.Apply("notifications.mob", "emergency", "MOB");
+        var clock = new MutableClock();
+        var settings = new FakeSettings();
+        IAlarmRule[] rules = [new OnaPlotter.Services.Alarms.ServerNotificationsAlarmRule(store)];
+        var mgr = new AlarmManager(rules, new DelegateTimeProvider(() => clock.Now));
+
+        settings.DisabledAlarmRulesSet.Add("APPROACH");
+        mgr.Evaluate(Nav(), [], settings);
+
+        await Assert.That(mgr.AllActiveAlarms.Select(a => a.RuleId))
+            .IsEquivalentTo([AlarmRuleId.ServerNotification]);
+
+        settings.DisabledAlarmRulesSet.Remove("APPROACH");
+        clock.Now = clock.Now.AddSeconds(2);
+        mgr.Evaluate(Nav(), [], settings);
+
+        await Assert.That(mgr.AllActiveAlarms.Select(a => a.RuleId))
+            .Contains(AlarmRuleId.Approach);
     }
 
     // --- CPA ------------------------------------------------------------
@@ -240,7 +270,9 @@ public class AlarmManagerTests
     {
         var (mgr, clock, settings, _) = NewMgr();
         int calls = 0;
-        mgr.OnAlarmChanged += _ => calls++;
+        // OnAlarmsChanged: the message update below is a render-only
+        // change and does not re-fire the audio event.
+        mgr.OnAlarmsChanged += () => calls++;
 
         var data = Nav(depth: 2.0);
         mgr.Evaluate(data, [], settings);
@@ -249,7 +281,7 @@ public class AlarmManagerTests
         mgr.Evaluate(data, [], settings);            // still inside 1 s window
         clock.Now = clock.Now.AddMilliseconds(900);  // now past the window
 
-        // Message changes to make SetAlarm fire again.
+        // Message changes so the stack updates again.
         var data2 = Nav(depth: 1.5);
         mgr.Evaluate(data2, [], settings);
 
@@ -279,6 +311,7 @@ public class AlarmManagerTests
     private sealed class StubRule(string title, int priority, AlarmSeverity sev,
         string? targetKey = null, bool autoClear = true) : IAlarmRule
     {
+        public AlarmRuleId Id => TestRuleIds.For(title);
         public string Title => title;
         public int Priority => priority;
         public bool AutoClear => autoClear;
@@ -286,7 +319,7 @@ public class AlarmManagerTests
         public string Message { get; set; } = "msg";
         public AlarmInfo? Check(AlarmEvaluationContext ctx)
             => ShouldFire
-                ? new AlarmInfo(title, Message, sev, targetKey, targetKey)
+                ? new AlarmInfo(Id, title, Message, sev, targetKey, targetKey)
                 : null;
     }
 
@@ -294,7 +327,7 @@ public class AlarmManagerTests
     {
         var clock = new MutableClock();
         var settings = new FakeSettings();
-        var mgr = new AlarmManager(rules, () => clock.Now);
+        var mgr = new AlarmManager(rules, new DelegateTimeProvider(() => clock.Now));
         return (mgr, clock, settings);
     }
 
@@ -304,7 +337,7 @@ public class AlarmManagerTests
         NewMgrWithSettings(FakeSettings settings, params IAlarmRule[] rules)
     {
         var clock = new MutableClock();
-        var mgr = new AlarmManager(rules, () => clock.Now, kv: null, settings: settings);
+        var mgr = new AlarmManager(rules, new DelegateTimeProvider(() => clock.Now), kv: null, settings: settings);
         return (mgr, clock, settings);
     }
 
@@ -546,7 +579,7 @@ public class AlarmManagerTests
         // Temporarily resurrect so we have an alarm to snooze.
         // With cooldown suppressing, ActiveAlarm is null - snooze needs
         // an alarm instance. Build one directly instead.
-        var toSnooze = new AlarmInfo("CPA", "msg",
+        var toSnooze = new AlarmInfo(AlarmRuleId.Cpa, "CPA", "msg",
             AlarmSeverity.Danger, "vessels.x", "vessels.x");
         await mgr.SnoozeAsync(toSnooze);
 
@@ -565,12 +598,13 @@ public class AlarmManagerTests
     // Dismiss_EscalatedSeverity_BypassesCooldown.
     private sealed class EscalatingStub(string title, int priority, string? target) : IAlarmRule
     {
+        public AlarmRuleId Id => TestRuleIds.For(title);
         public string Title => title;
         public int Priority => priority;
         public bool AutoClear => true;
         public AlarmSeverity CurrentSeverity { get; set; } = AlarmSeverity.Warn;
         public AlarmInfo? Check(AlarmEvaluationContext ctx)
-            => new AlarmInfo(title, "msg", CurrentSeverity, target, target);
+            => new AlarmInfo(Id, title, "msg", CurrentSeverity, target, target);
     }
 
     [Test]
@@ -741,11 +775,12 @@ public class AlarmManagerTests
     private sealed class TtiStubRule(string title, int priority, AlarmSeverity sev,
         double? tti, string? targetKey = null, bool autoClear = true) : IAlarmRule
     {
+        public AlarmRuleId Id => TestRuleIds.For(title);
         public string Title => title;
         public int Priority => priority;
         public bool AutoClear => autoClear;
         public AlarmInfo? Check(AlarmEvaluationContext ctx)
-            => new AlarmInfo(title, "stub", sev, targetKey, targetKey,
+            => new AlarmInfo(Id, title, "stub", sev, targetKey, targetKey,
                 TimeToEventMinutes: tti);
     }
 
@@ -763,7 +798,7 @@ public class AlarmManagerTests
     }
 
     private static AlarmManager NewMgrWithKv(IKeyValueStore kv, MutableClock clock, params IAlarmRule[] rules)
-        => new(rules, () => clock.Now, kv);
+        => new(rules, new DelegateTimeProvider(() => clock.Now), kv);
 
     [Test]
     public async Task Snooze_PersistsToKv()
@@ -856,6 +891,29 @@ public class AlarmManagerTests
     }
 
     [Test]
+    public async Task MessageOnlyUpdate_RedrawsButDoesNotReArmAudio()
+    {
+        // Live CPA numbers change the top alarm's message every tick.
+        // OnAlarmChanged drives the audio cadence (startAlarm) and must
+        // fire only on identity / severity transitions; the new text
+        // still reaches the banner through OnAlarmsChanged.
+        var rule = new StubRule("CPA", 200, AlarmSeverity.Danger, targetKey: "vessels.a");
+        var (mgr, clock, settings) = NewMgrWith(rule);
+        int audio = 0, redraw = 0;
+        mgr.OnAlarmChanged += _ => audio++;
+        mgr.OnAlarmsChanged += () => redraw++;
+
+        mgr.Evaluate(Nav(), [], settings);
+        rule.Message = "CPA 0.08nm";
+        clock.Now = clock.Now.AddSeconds(2);
+        mgr.Evaluate(Nav(), [], settings);
+
+        await Assert.That(audio).IsEqualTo(1);
+        await Assert.That(redraw).IsEqualTo(2);
+        await Assert.That(mgr.ActiveAlarm!.Message).IsEqualTo("CPA 0.08nm");
+    }
+
+    [Test]
     public async Task OnAlarmChanged_FiresOnlyOnTopChange()
     {
         // Two dangers active; dismissing the NON-top one should not
@@ -895,6 +953,7 @@ public class AlarmManagerTests
     {
         private readonly Func<IEnumerable<AlarmInfo>> _supply;
         public MultiAlarmRule(Func<IEnumerable<AlarmInfo>> supply) { _supply = supply; }
+        public AlarmRuleId Id => AlarmRuleId.ServerNotification;
         public string Title => "MULTI";
         public int Priority => 250;
         public bool AutoClear => true;
@@ -907,7 +966,7 @@ public class AlarmManagerTests
         var clock = new MutableClock();
         var settings = new FakeSettings();
         IAlarmRule[] rules = [rule];
-        var mgr = new AlarmManager(rules, () => clock.Now);
+        var mgr = new AlarmManager(rules, new DelegateTimeProvider(() => clock.Now));
         return (mgr, clock, settings);
     }
 
@@ -919,9 +978,9 @@ public class AlarmManagerTests
         // first.
         var alarms = new List<AlarmInfo>
         {
-            new("DEPTH",     "shallow",    AlarmSeverity.Danger, TargetKey: "notifications.environment.depth"),
-            new("ANCHOR",    "dragging",   AlarmSeverity.Danger, TargetKey: "notifications.navigation.anchor"),
-            new("COLLISION", "approaching", AlarmSeverity.Warn,  TargetKey: "notifications.security.collision"),
+            new(AlarmRuleId.ServerNotification, "DEPTH",     "shallow",    AlarmSeverity.Danger, TargetKey: "notifications.environment.depth"),
+            new(AlarmRuleId.ServerNotification, "ANCHOR",    "dragging",   AlarmSeverity.Danger, TargetKey: "notifications.navigation.anchor"),
+            new(AlarmRuleId.ServerNotification, "COLLISION", "approaching", AlarmSeverity.Warn,  TargetKey: "notifications.security.collision"),
         };
         var (mgr, _, settings) = NewMgrWithMulti(new MultiAlarmRule(() => alarms));
 
@@ -941,8 +1000,8 @@ public class AlarmManagerTests
         // banner entry.
         var supply = new List<AlarmInfo>
         {
-            new("DEPTH",  "shallow",  AlarmSeverity.Danger, TargetKey: "notifications.environment.depth"),
-            new("ANCHOR", "dragging", AlarmSeverity.Danger, TargetKey: "notifications.navigation.anchor"),
+            new(AlarmRuleId.ServerNotification, "DEPTH",  "shallow",  AlarmSeverity.Danger, TargetKey: "notifications.environment.depth"),
+            new(AlarmRuleId.ServerNotification, "ANCHOR", "dragging", AlarmSeverity.Danger, TargetKey: "notifications.navigation.anchor"),
         };
         var (mgr, clock, settings) = NewMgrWithMulti(new MultiAlarmRule(() => supply));
         mgr.Evaluate(new NavigationData(), [], settings);
@@ -1051,7 +1110,7 @@ public class AlarmManagerTests
 
         var clock = new MutableClock();
         var rule = new StubRule("CPA", 200, AlarmSeverity.Danger, "vessels.urn:mrn:imo:mmsi:111");
-        var mgr = new AlarmManager(new IAlarmRule[] { rule }, () => clock.Now, kv);
+        var mgr = new AlarmManager(new IAlarmRule[] { rule }, new DelegateTimeProvider(() => clock.Now), kv);
 
         await mgr.InitializeAsync();
         await Assert.That(mgr.SnoozedTargets.Count).IsEqualTo(1);
@@ -1073,7 +1132,7 @@ public class AlarmManagerTests
         await kv.SetAsync("alarmSnoozes.v1", json);
 
         var clock = new MutableClock();
-        var mgr = new AlarmManager(Array.Empty<IAlarmRule>(), () => clock.Now, kv);
+        var mgr = new AlarmManager(Array.Empty<IAlarmRule>(), new DelegateTimeProvider(() => clock.Now), kv);
 
         await mgr.InitializeAsync();
         await Assert.That(mgr.SnoozedTargets.Count).IsEqualTo(0);
@@ -1089,7 +1148,7 @@ public class AlarmManagerTests
         await kv.SetAsync("alarmSnoozes.v1", "{not-json");
 
         var clock = new MutableClock();
-        var mgr = new AlarmManager(Array.Empty<IAlarmRule>(), () => clock.Now, kv);
+        var mgr = new AlarmManager(Array.Empty<IAlarmRule>(), new DelegateTimeProvider(() => clock.Now), kv);
 
         await mgr.InitializeAsync();   // must not throw
         await Assert.That(mgr.SnoozedTargets.Count).IsEqualTo(0);
@@ -1105,7 +1164,7 @@ public class AlarmManagerTests
         // _initialized flag guards this.
         var kv = new CountingKv();
         var clock = new MutableClock();
-        var mgr = new AlarmManager(Array.Empty<IAlarmRule>(), () => clock.Now, kv);
+        var mgr = new AlarmManager(Array.Empty<IAlarmRule>(), new DelegateTimeProvider(() => clock.Now), kv);
 
         await mgr.InitializeAsync();
         await mgr.InitializeAsync();
@@ -1172,7 +1231,7 @@ public class AlarmManagerTests
         // Standard v2 path: acknowledger present + CanAcknowledge=true.
         // Dismiss must invoke the handle so other plotters see the ack.
         var ack = new FakeAcknowledger("anchor-uuid-1", canAcknowledge: true);
-        var alarm = new AlarmInfo("ANCHOR", "dragging", AlarmSeverity.Danger,
+        var alarm = new AlarmInfo(AlarmRuleId.ServerNotification, "ANCHOR", "dragging", AlarmSeverity.Danger,
             TargetKey: "notifications.navigation.anchor.position",
             Acknowledger: ack);
         var (mgr, _, settings) = NewMgrWithMulti(new MultiAlarmRule(() => new[] { alarm }));
@@ -1189,7 +1248,7 @@ public class AlarmManagerTests
         // No acknowledger means we have nothing to call. Dismiss is
         // purely local; nothing should be invoked. The negative is
         // pinned by confirming the active set cleared without throwing.
-        var alarm = new AlarmInfo("SHALLOW", "x", AlarmSeverity.Danger);
+        var alarm = new AlarmInfo(AlarmRuleId.Shallow, "SHALLOW", "x", AlarmSeverity.Danger);
         var (mgr, _, settings) = NewMgrWithMulti(new MultiAlarmRule(() => new[] { alarm }));
         mgr.Evaluate(new NavigationData(), [], settings);
 
@@ -1206,7 +1265,7 @@ public class AlarmManagerTests
         // local dismiss is still allowed (the helm can clear the
         // banner from THIS plotter's view), but no cross-plotter sync.
         var ack = new FakeAcknowledger("mob-1", canAcknowledge: false);
-        var alarm = new AlarmInfo("MOB", "Man overboard", AlarmSeverity.Danger,
+        var alarm = new AlarmInfo(AlarmRuleId.ServerNotification, "MOB", "Man overboard", AlarmSeverity.Danger,
             TargetKey: "notifications.mob", Acknowledger: ack);
         var (mgr, _, settings) = NewMgrWithMulti(new MultiAlarmRule(() => new[] { alarm }));
         mgr.Evaluate(new NavigationData(), [], settings);
@@ -1226,13 +1285,13 @@ public class AlarmManagerTests
         var ackDepth = new FakeAcknowledger("depth-1", canAcknowledge: true);
         var alarms = new[]
         {
-            new AlarmInfo("ANCHOR", "dragging", AlarmSeverity.Danger,
+            new AlarmInfo(AlarmRuleId.ServerNotification, "ANCHOR", "dragging", AlarmSeverity.Danger,
                 TargetKey: "notifications.navigation.anchor",
                 Acknowledger: ackAnchor),
-            new AlarmInfo("DEPTH", "shallow", AlarmSeverity.Danger,
+            new AlarmInfo(AlarmRuleId.ServerNotification, "DEPTH", "shallow", AlarmSeverity.Danger,
                 TargetKey: "notifications.environment.depth",
                 Acknowledger: ackDepth),
-            new AlarmInfo("WIND SHIFT", "30 deg", AlarmSeverity.Warn,
+            new AlarmInfo(AlarmRuleId.WindShift, "WIND SHIFT", "30 deg", AlarmSeverity.Warn,
                 TargetKey: "wind"), // client-side, no acknowledger
         };
         var (mgr, _, settings) = NewMgrWithMulti(new MultiAlarmRule(() => alarms));
@@ -1255,7 +1314,7 @@ public class AlarmManagerTests
         // acknowledger; the manager just calls AcknowledgeAsync()
         // fire-and-forget. Pin the basic happy path.
         var ack = new FakeAcknowledger("anchor-1", canAcknowledge: true);
-        var alarm = new AlarmInfo("ANCHOR", "dragging", AlarmSeverity.Danger,
+        var alarm = new AlarmInfo(AlarmRuleId.ServerNotification, "ANCHOR", "dragging", AlarmSeverity.Danger,
             TargetKey: "notifications.navigation.anchor",
             Acknowledger: ack);
         var (mgr, _, settings) = NewMgrWithMulti(new MultiAlarmRule(() => new[] { alarm }));

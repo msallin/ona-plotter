@@ -20,149 +20,21 @@ public class NavigationAveragesTests
     private static FakeTimeProvider NewClock() =>
         new(new DateTimeOffset(2026, 5, 5, 12, 0, 0, TimeSpan.Zero));
 
-    /// <summary>NavigationAverages still requires a SignalkClient for
-    /// the subscribe-on-ctor wiring even when tests drive sampling
-    /// via the internal seam. Reflection lets the fixture construct
-    /// one without bringing the full HTTP / WS surface online.</summary>
-    private static SignalkClient NewStubClient()
-    {
-        // SignalkClient has a public ctor but takes heavy infra.
-        // For these tests we only need the OnDataChanged event +
-        // Data property to exist; nothing actually fires it.
-        // Using FormatterServices.GetUninitializedObject would need
-        // unsafe reflection. The cleaner path is to refactor to an
-        // interface seam later if these tests grow; for now we use
-        // SampleForTest which doesn't require a working client at
-        // all. We still need an instance for the ctor; a minimal
-        // construction isn't worth chasing - skip the ctor wiring
-        // verification and test the Sample() pipeline directly via
-        // a NavigationAverages built around a stub.
-        return null!;   // see SampleHarness below for the actual approach.
-    }
-
-    /// <summary>Test fixture that sidesteps SignalkClient entirely
-    /// by exposing the rolling buffers directly via the public
-    /// Tws / Aws / Sog / etc. properties + a Sample() method.
-    /// Production wiring (ctor subscribes to OnDataChanged) is
-    /// covered by the host integration - not unit-tested here.</summary>
+    /// <summary>Production NavigationAverages built through its
+    /// subscription-free test constructor, fed via SampleForTest.</summary>
     private sealed class SampleHarness
     {
-        public TestNavigationAverages Avg { get; }
+        public NavigationAverages Avg { get; }
         public FakeTimeProvider Clock { get; }
         public NavigationData Nav { get; } = new();
 
         public SampleHarness()
         {
             Clock = NewClock();
-            Avg = new TestNavigationAverages(Clock);
+            Avg = new NavigationAverages(Clock);
         }
 
-        public void Sample() => Avg.PublicSample(Nav);
-    }
-
-    /// <summary>NavigationAverages variant that skips the
-    /// SignalkClient subscription so unit tests don't need a working
-    /// client - production NavigationAverages is identical except
-    /// for the event hookup.</summary>
-    private sealed class TestNavigationAverages : INavigationAverages, IDisposable
-    {
-        private readonly TimeProvider _time;
-        public OnaPlotter.Utilities.RollingScalarSeries Tws { get; }
-        public OnaPlotter.Utilities.RollingScalarSeries Aws { get; }
-        public OnaPlotter.Utilities.RollingDirectionSeries Twd { get; }
-        public OnaPlotter.Utilities.RollingDirectionSeries Awa { get; }
-        public OnaPlotter.Utilities.RollingDirectionSeries Twa { get; }
-        public OnaPlotter.Utilities.RollingScalarSeries Sog { get; }
-        public OnaPlotter.Utilities.RollingScalarSeries Vmg { get; }
-        public OnaPlotter.Utilities.RollingDirectionSeries Cog { get; }
-        public OnaPlotter.Utilities.RollingDirectionSeries CogTrue { get; }
-        public OnaPlotter.Utilities.RollingDirectionSeries CogMagnetic { get; }
-
-        public TestNavigationAverages(TimeProvider time)
-        {
-            _time = time;
-            var windRetention = TimeSpan.FromMinutes(NavigationAverages.WindRetentionMin);
-            Tws = new(windRetention, time);
-            Aws = new(windRetention, time);
-            Twd = new(windRetention, time);
-            Awa = new(windRetention, time);
-            Twa = new(TimeSpan.FromMinutes(5), time);
-            Sog = new(TimeSpan.FromMinutes(5), time);
-            Vmg = new(TimeSpan.FromMinutes(5), time);
-            Cog = new(TimeSpan.FromMinutes(5), time);
-            CogTrue = new(TimeSpan.FromMinutes(5), time);
-            CogMagnetic = new(TimeSpan.FromMinutes(5), time);
-        }
-
-        public double? TwsMean1Min => Tws.Mean(TimeSpan.FromMinutes(1));
-        public double? TwsMean10Min => Tws.Mean(TimeSpan.FromMinutes(10));
-        public double? AwsMean1Min => Aws.Mean(TimeSpan.FromMinutes(1));
-        public double? AwsMean10Min => Aws.Mean(TimeSpan.FromMinutes(10));
-        public double? SogMean30Sec => Sog.Mean(TimeSpan.FromSeconds(30));
-        public double? VmgMean1Min => Vmg.Mean(TimeSpan.FromMinutes(1));
-        public double? CogMean30Sec => Cog.Mean(TimeSpan.FromSeconds(30));
-        public double? CogTrueMean30Sec => CogTrue.Mean(TimeSpan.FromSeconds(30));
-        public double? CogMagneticMean30Sec => CogMagnetic.Mean(TimeSpan.FromSeconds(30));
-        public double? AwaMean30Sec => Awa.Mean(TimeSpan.FromSeconds(30));
-        public double? TwaMean30Sec => Twa.Mean(TimeSpan.FromSeconds(30));
-
-        public Task<OnaPlotter.Models.TrackPoint[]?> SeedWindAsync(
-            OnaPlotter.Services.Api.ITrackApi trackApi,
-            TimeSpan? window = null,
-            string resolution = "5s",
-            CancellationToken ct = default)
-            => NavigationAverages.SeedWindBuffersAsync(
-                Aws, Tws, Twd, Awa,
-                trackApi,
-                window ?? TimeSpan.FromHours(1),
-                resolution,
-                ct);
-
-        // Per-channel 5 s gate, mirroring production.
-        private DateTime _twsGate = DateTime.MinValue;
-        private DateTime _awsGate = DateTime.MinValue;
-        private DateTime _twdGate = DateTime.MinValue;
-        private DateTime _awaGate = DateTime.MinValue;
-
-        // Mirror of NavigationAverages.Sample to keep the unit-test
-        // sampler in lockstep with production logic. Any change to
-        // production must also land here - a parity test would
-        // close the loop, but the mirror is short enough to inspect.
-        public void PublicSample(NavigationData d)
-        {
-            var now = _time.GetUtcNow().UtcDateTime;
-            if (d.WindSpeedTrue is double tws && Gate(_twsGate, now))
-            {
-                Tws.Add(tws); _twsGate = now;
-            }
-            if (d.WindSpeedApparent is double aws && Gate(_awsGate, now))
-            {
-                Aws.Add(aws); _awsGate = now;
-            }
-            if (d.WindDirectionTrue is double twd && Gate(_twdGate, now))
-            {
-                Twd.Add(twd); _twdGate = now;
-            }
-            if (d.WindAngleApparent is double awa && Gate(_awaGate, now))
-            {
-                Awa.Add(awa); _awaGate = now;
-            }
-            if (d.WindAngleTrue is double twa) Twa.Add(twa);
-            if (d.SpeedOverGround is double sog)
-            {
-                Sog.Add(sog);
-                var weight = sog >= NavigationAverages.StationarySogMs ? 1.0 : 0.0;
-                if (d.CourseOverGround is double cog) Cog.Add(cog, weight);
-                if (d.CourseOverGroundTrue is double cogT) CogTrue.Add(cogT, weight);
-                if (d.CourseOverGroundMagnetic is double cogM) CogMagnetic.Add(cogM, weight);
-            }
-            if (d.CourseNextPointVmg is double vmg) Vmg.Add(vmg);
-        }
-
-        private static bool Gate(DateTime last, DateTime now) =>
-            (now - last).TotalMilliseconds >= NavigationAverages.LiveWindSamplePeriodMs;
-
-        public void Dispose() { }
+        public void Sample() => Avg.SampleForTest(Nav);
     }
 
     [Test]
@@ -303,12 +175,10 @@ public class NavigationAveragesTests
     }
 
     [Test]
-    public async Task Twa_LiveAdds_Unthrottled()
+    public async Task Twa_LiveAdds_OneHertz()
     {
-        // TWA feeds the HUD dial only and stays full-rate (5 min
-        // retention bounds memory). Pins this to keep the dial's
-        // smoothness from regressing if a future change generalises
-        // the wind gate to every channel.
+        // TWA feeds the HUD dial: one sample a second keeps the 30 s
+        // mean smooth without the 5 s wind-history gate's lag.
         var h = new SampleHarness();
         for (int i = 0; i < 5; i++)
         {
@@ -547,5 +417,82 @@ public class NavigationAveragesTests
 
         await Assert.That(h.Avg.Aws.Mean(TimeSpan.FromMinutes(10), warmupRatio: 0))
             .IsEqualTo(5.0);
+    }
+
+    // - 1 Hz motion gate ------------------------------------------------
+
+    [Test]
+    public async Task MotionChannels_DeltaBurst_KeepsOneSamplePerSecond()
+    {
+        // 30 self deltas inside one second (a typical burst): SOG, the
+        // three COG buffers, TWA and VMG each keep only the first.
+        var h = new SampleHarness();
+        for (int i = 0; i < 30; i++)
+        {
+            h.Nav.Apply("navigation.speedOverGround", 3.0 + i * 0.01);
+            h.Nav.Apply("navigation.courseOverGroundTrue", 1.0);
+            h.Nav.Apply("environment.wind.angleTrueWater", 0.5);
+            h.Nav.Apply("navigation.course.calcValues.velocityMadeGood", 2.0);
+            h.Sample();
+            h.Clock.Advance(TimeSpan.FromMilliseconds(33));
+        }
+
+        await Assert.That(h.Avg.Sog.Count).IsEqualTo(1);
+        await Assert.That(h.Avg.CogTrue.Count).IsEqualTo(1);
+        await Assert.That(h.Avg.Twa.Count).IsEqualTo(1);
+        await Assert.That(h.Avg.Vmg.Count).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task MotionGate_OpensAtExactlyOneSecond()
+    {
+        var h = new SampleHarness();
+        h.Nav.Apply("navigation.speedOverGround", 3.0);
+        h.Sample();
+        h.Clock.Advance(TimeSpan.FromMilliseconds(999));
+        h.Sample();
+        await Assert.That(h.Avg.Sog.Count).IsEqualTo(1);
+
+        h.Clock.Advance(TimeSpan.FromMilliseconds(1));
+        h.Sample();
+        await Assert.That(h.Avg.Sog.Count).IsEqualTo(2);
+    }
+
+    [Test]
+    public async Task SogMean_IsTimeWeighted_NotBurstWeighted()
+    {
+        // 15 s at 4 kn reported once a second, then 15 s at 6 kn reported
+        // in 20-delta bursts each second. Without the gate the burst half
+        // dominates (mean ~5.9); time-weighted the halves count equally.
+        var h = new SampleHarness();
+        for (int sec = 0; sec < 30; sec++)
+        {
+            int deltas = sec < 15 ? 1 : 20;
+            for (int k = 0; k < deltas; k++)
+            {
+                h.Nav.Apply("navigation.speedOverGround", sec < 15 ? 4.0 : 6.0);
+                h.Sample();
+                h.Clock.Advance(TimeSpan.FromMilliseconds(1000.0 / deltas));
+            }
+        }
+
+        var mean = h.Avg.Sog.Mean(TimeSpan.FromSeconds(30), warmupRatio: 0);
+        await Assert.That(mean).IsNotNull();
+        await Assert.That(Math.Abs(mean!.Value - 5.0)).IsLessThan(0.1);
+    }
+
+    [Test]
+    public async Task MotionGates_ArePerChannel()
+    {
+        // A VMG-only delta must not close the SOG gate.
+        var h = new SampleHarness();
+        h.Nav.Apply("navigation.course.calcValues.velocityMadeGood", 2.0);
+        h.Sample();
+        h.Clock.Advance(TimeSpan.FromMilliseconds(200));
+        h.Nav.Apply("navigation.speedOverGround", 3.0);
+        h.Sample();
+
+        await Assert.That(h.Avg.Vmg.Count).IsEqualTo(1);
+        await Assert.That(h.Avg.Sog.Count).IsEqualTo(1);
     }
 }

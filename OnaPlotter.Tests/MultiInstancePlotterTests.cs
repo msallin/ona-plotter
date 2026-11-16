@@ -91,7 +91,7 @@ public class MultiInstancePlotterTests
             // is last so its emissions overlay if a (Title, TargetKey)
             // collides - matches the production rule order.
             var allRules = new List<IAlarmRule>(localRules) { bridgeRule };
-            Manager = new AlarmManager(allRules, () => Clock.Now, kv: null, settings: null);
+            Manager = new AlarmManager(allRules, new DelegateTimeProvider(() => Clock.Now), kv: null, settings: null);
             Publisher = new AlarmPublisher(Manager, api, Tracker);
         }
 
@@ -111,6 +111,7 @@ public class MultiInstancePlotterTests
     /// contained so the file can be read top-to-bottom.</summary>
     private sealed class LocalStubRule : IAlarmRule
     {
+        public AlarmRuleId Id => TestRuleIds.For(Title);
         public string Title { get; }
         public int Priority { get; }
         public bool AutoClear => true;
@@ -138,7 +139,7 @@ public class MultiInstancePlotterTests
 
         public AlarmInfo? Check(AlarmEvaluationContext ctx)
             => ShouldFire
-                ? new AlarmInfo(Title, Message, Severity, TargetKey, TargetKey)
+                ? new AlarmInfo(Id, Title, Message, Severity, TargetKey, TargetKey)
                 : null;
 
         public string? GetPublishPath(AlarmInfo alarm)

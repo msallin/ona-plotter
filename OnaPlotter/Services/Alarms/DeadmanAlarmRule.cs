@@ -24,6 +24,8 @@ public sealed class DeadmanAlarmRule : IAlarmRule
         _tracker = tracker;
     }
 
+    public AlarmRuleId Id => AlarmRuleId.Deadman;
+
     public string Title => "DEADMAN";
     public int Priority => 150;
     public bool AutoClear => true;
@@ -60,6 +62,7 @@ public sealed class DeadmanAlarmRule : IAlarmRule
             : AlarmSeverity.Warn;
 
         return new AlarmInfo(
+            RuleId: Id,
             Title: Title,
             Message: $"No interaction for {(int)elapsed.TotalMinutes} min - still there?",
             Severity: severity,

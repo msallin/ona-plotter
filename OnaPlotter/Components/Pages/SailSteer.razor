@@ -92,7 +92,7 @@
                     </div>
                     <div class="perf-meter">
                         <div class="perf-meter-fill @(onPolar ? "" : "off-polar")"
-                             style="width: @(Math.Clamp(actual / Math.Max(target, 0.1) * 100, 0, 100).ToString("F0"))%;"></div>
+                             style="transform: scaleX(@(Math.Clamp(actual / Math.Max(target, 0.1), 0, 1).ToString("F3", System.Globalization.CultureInfo.InvariantCulture)));"></div>
                     </div>
                 </div>
             </foreignObject>
@@ -690,15 +690,22 @@
 
     private static string Esc(string s) => System.Net.WebUtility.HtmlEncode(s);
 
+    /// <summary>Caps re-renders at 4 Hz: the steering SVG is rebuilt on
+    /// every render and self deltas arrive 25-35 times a second.</summary>
+    private RenderThrottle? _renderThrottle;
+
     protected override async Task OnInitializedAsync()
     {
+        _renderThrottle = new RenderThrottle(TimeSpan.FromMilliseconds(250), RequestRender);
         SignalkClient.OnDataChanged += HandleDataChanged;
         // Polar is lazily loaded; InitializeAsync is idempotent.
         await Polar.InitializeAsync();
         Polar.OnPolarChanged += HandlePolarChanged;
     }
 
-    private async void HandleDataChanged()
+    private void HandleDataChanged() => _renderThrottle?.Request();
+
+    private async void RequestRender()
     {
         try { await InvokeAsync(StateHasChanged); }
         catch (ObjectDisposedException) { }
@@ -714,5 +721,6 @@
     {
         SignalkClient.OnDataChanged -= HandleDataChanged;
         Polar.OnPolarChanged -= HandlePolarChanged;
+        _renderThrottle?.Dispose();
     }
 }

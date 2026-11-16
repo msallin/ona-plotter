@@ -19,7 +19,7 @@
 @inject IConfirmationService Confirmations
 @inject OnaPlotter.Services.ShareService ShareService
 @inject OnaPlotter.Services.State.HistoryPageState State
-@using OnaPlotter.Services.Json
+@using OnaPlotter.Services.Js
 
 <PageTitle>History</PageTitle>
 
@@ -77,13 +77,13 @@
                 <input type="datetime-local" class="form-control form-control-sm"
                        data-history-input
                        title="Start of window (local time)"
-                       value="@FormatLocalForInput(customFromLocal)"
+                       value="@Format.DateTimeLocalInput(customFromLocal)"
                        @onchange="OnCustomFromChanged" />
                 <span class="history-muted-sm">to</span>
                 <input type="datetime-local" class="form-control form-control-sm"
                        data-history-input
                        title="End of window (local time)"
-                       value="@FormatLocalForInput(customToLocal)"
+                       value="@Format.DateTimeLocalInput(customToLocal)"
                        @onchange="OnCustomToChanged" />
             }
             @* Sampling resolution. Wider range than the Stats page
@@ -398,6 +398,7 @@
 
 @code {
     private IJSObjectReference? module;
+    private HistoryMapJs? _map;
     /// <summary>DotNet ref handed to JS so the Leaflet moveend
     /// handler can invoke <see cref="OnHistoryViewportChanged"/> when
     /// the helm pans / zooms. The chart-picker's bbox filter listens
@@ -543,7 +544,8 @@
         if (!firstRender) return;
         try
         {
-            module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/leafletInterop.js");
+            module = await JS.InvokeAsync<IJSObjectReference>("import", HistoryMapJs.ModulePath);
+            _map = new HistoryMapJs(module);
 
             // Initialize map. Default center on the boat's current position if available,
             // otherwise a generic fallback.
@@ -551,49 +553,12 @@
             double lon = SignalkClient.Data.Longitude ?? 8.5;
             int zoom = SignalkClient.Data.Latitude is not null ? 13 : 8;
 
-            // Build a DotNet ref before constructing the map so the
-            // moveend handler can call back into C# to refresh the
-            // viewport-bounds cache for the bbox-filtered chart
-            // picker. The ref is disposed alongside the page (see
-            // DisposeAsync).
+            // The DotNet ref lets the map's moveend handler refresh the
+            // viewport-bounds cache for the bbox-filtered chart picker and
+            // report segment clicks. Disposed alongside the page.
             _historyDotNet = DotNetObjectReference.Create(this);
-            // Stash the dotnet-ref globally first so the moveend
-            // handler attached below has it ready by the time the
-            // helm pans. Two-step (set ref, then create map +
-            // listeners) keeps the wire-up race-free.
-            //
-            // Was previously eval("window._historyDotNet = arguments[0]",
-            // ref). That threw "arguments is not defined" - eval
-            // runs in the surrounding strict-module context where
-            // `arguments` isn't bound, and Blazor's eval interop
-            // doesn't pass extra args to the eval'd code anyway.
-            // The exported helper receives serialised args
-            // correctly because it's a real exported function.
-            await module.InvokeVoidAsync("setHistoryDotNetRef", _historyDotNet);
-            await JS.InvokeVoidAsync("eval", $@"
-                (function() {{
-                    if (window._historyMap) window._historyMap.remove();
-                    var m = L.map('historyMapDiv', {{ zoomControl: true }}).setView([{lat}, {lon}], {zoom});
-                    // OpenSeaMap as the primary visual reference (matches user preference).
-                    L.tileLayer('https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',
-                        {{ maxZoom: 19, attribution: '&copy; OSM', referrerPolicy: 'strict-origin-when-cross-origin' }}).addTo(m);
-                    L.tileLayer('https://tiles.openseamap.org/seamark/{{z}}/{{x}}/{{y}}.png',
-                        {{ maxZoom: 19, opacity: 0.8, referrerPolicy: 'strict-origin-when-cross-origin' }}).addTo(m);
-                    window._historyMap = m;
-                    window._historyMarker = null;
-                    window._historyTrack = null;
-                    window._historyBoatMarker = null;
-
-                    // moveend / zoomend invoke C# so the chart-picker
-                    // bbox filter stays in sync with the visible map.
-                    var ref = window._historyDotNet;
-                    if (ref) {{
-                        m.on('moveend zoomend', function() {{
-                            ref.invokeMethodAsync('OnHistoryViewportChanged');
-                        }});
-                    }}
-                }})()
-            ");
+            await _map.InitAsync("historyMapDiv", lat, lon, zoom,
+                HistoryMapJs.DefaultBaseLayers, _historyDotNet);
 
             // Draw boat position if available.
             if (SignalkClient.Data.Latitude is not null && SignalkClient.Data.Longitude is not null)
@@ -642,45 +607,16 @@
     private async Task DrawBoatMarker()
     {
         if (SignalkClient.Data.Latitude is null || SignalkClient.Data.Longitude is null) return;
-        double lat = SignalkClient.Data.Latitude.Value;
-        double lon = SignalkClient.Data.Longitude.Value;
-        try
-        {
-            await JS.InvokeVoidAsync("eval", $@"
-                (function() {{
-                    var m = window._historyMap;
-                    if (!m) return;
-                    if (window._historyBoatMarker) m.removeLayer(window._historyBoatMarker);
-                    // Pull --sk-accent so the marker tracks theme. Falls
-                    // back to the previous frozen sky-blue if the token
-                    // isn't set (defensive; in practice every theme block
-                    // defines it).
-                    var col = getComputedStyle(document.documentElement)
-                        .getPropertyValue('--sk-accent').trim() || '#60a5fa';
-                    window._historyBoatMarker = L.circleMarker([{lat}, {lon}], {{
-                        radius: 7, color: col, fillColor: col, fillOpacity: 1, weight: 2
-                    }}).bindTooltip('Current position').addTo(m);
-                }})()
-            ");
-        }
-        catch (JSDisconnectedException) { }
+        if (_map is null) return;
+        await _map.SetBoatMarkerAsync(SignalkClient.Data.Latitude.Value,
+            SignalkClient.Data.Longitude.Value, HistorySegmentRender.BoatColor);
     }
 
     private async Task GoToBoat()
     {
         if (SignalkClient.Data.Latitude is null || SignalkClient.Data.Longitude is null) return;
-        double lat = SignalkClient.Data.Latitude.Value;
-        double lon = SignalkClient.Data.Longitude.Value;
-        try
-        {
-            await JS.InvokeVoidAsync("eval", $@"
-                (function() {{
-                    var m = window._historyMap;
-                    if (m) m.setView([{lat}, {lon}], 14);
-                }})()
-            ");
-        }
-        catch (JSDisconnectedException) { return; }
+        if (_map is null) return;
+        await _map.SetViewAsync(SignalkClient.Data.Latitude.Value, SignalkClient.Data.Longitude.Value, 14);
         await DrawBoatMarker();
     }
 
@@ -765,29 +701,6 @@
         }
     }
 
-    /// <summary>Format a local DateTime for an HTML datetime-local
-    /// input: <c>yyyy-MM-ddTHH:mm</c>. Anything else (full ISO with
-    /// offset, etc.) renders the input blank because the spec is
-    /// strict about the format. Invariant culture so the helm's
-    /// locale doesn't accidentally produce <c>05.06.2024</c>.</summary>
-    private static string FormatLocalForInput(DateTime t) =>
-        t.ToString("yyyy-MM-ddTHH:mm", System.Globalization.CultureInfo.InvariantCulture);
-
-    // JS-interop literal-embed helpers. Each wraps a typed source-gen
-    // Serialize so the eval-template call sites read as
-    // `var x = {JsLit(value)};` instead of carrying the full
-    // `JsonSerializer.Serialize(value, OnaJsonContext.Default.X)`
-    // pipeline inside the interpolation. Pure-function statics; no
-    // allocation beyond the Serialize itself.
-    private static string JsLit(string s) =>
-        System.Text.Json.JsonSerializer.Serialize(s, OnaJsonContext.Default.String);
-    private static string JsLit(double[] v) =>
-        System.Text.Json.JsonSerializer.Serialize(v, OnaJsonContext.Default.DoubleArray);
-    private static string JsLit(double[][] v) =>
-        System.Text.Json.JsonSerializer.Serialize(v, OnaJsonContext.Default.DoubleArrayArray);
-    private static string JsLit(List<OnaPlotter.Utilities.HistorySegmentRender.SegmentPayload> v) =>
-        System.Text.Json.JsonSerializer.Serialize(v, OnaJsonContext.Default.ListSegmentPayload);
-
     private async Task ToggleChartsPanel()
     {
         chartsPanelOpen = !chartsPanelOpen;
@@ -808,25 +721,9 @@
     /// crash the page.</summary>
     private async Task RefreshViewportBoundsAsync()
     {
-        try
-        {
-            var raw = await JS.InvokeAsync<double[]?>("eval", $@"
-                (function() {{
-                    var m = window._historyMap;
-                    if (!m) return null;
-                    var b = m.getBounds();
-                    return [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()];
-                }})()
-            ");
-            if (raw is { Length: 4 }
-                && double.IsFinite(raw[0]) && double.IsFinite(raw[1])
-                && double.IsFinite(raw[2]) && double.IsFinite(raw[3]))
-            {
-                viewportBounds = raw;
-            }
-        }
-        catch (JSDisconnectedException) { }
-        catch (JSException) { }
+        if (_map is null) return;
+        var raw = await _map.GetViewportBoundsAsync();
+        if (raw is not null) viewportBounds = raw;
     }
 
     /// <summary>Charts whose declared bounds intersect (or are
@@ -873,13 +770,6 @@
     private IEnumerable<TrackSegment> VisibleSegments(TrackSegment[] all) =>
         tableShowStationary ? all : all.Where(s => !s.IsStationary);
 
-    /// <summary>Row click: switch back to map view and ask Leaflet to
-    /// fit the segment's bounds. Index is into the full
-    /// <c>segments</c> array (NOT the filtered one) so the JS can
-    /// look up the matching polyline by position in
-    /// <c>window._historySegments</c>. The flip + fly happens in two
-    /// frames - viewMode change re-renders, then a one-shot timer
-    /// gives the map a chance to catch up before we call fitBounds.</summary>
     /// <summary>Promote a moving segment to a saved SignalK route.
     /// Helm wants this when an unplanned passage turned out useful
     /// ("we found a nice anchorage; do that again next time"); the
@@ -947,9 +837,8 @@
     /// <summary>Row "Open" button: switch to map view and ask Leaflet
     /// to fit the segment's bounds. Index is into the full
     /// <c>segments</c> array (NOT the filtered one) so the JS can
-    /// look up the matching polyline by position in
-    /// <c>window._historySegments</c>. Closes the trip-detail panel
-    /// if it was open over the table.</summary>
+    /// look up the matching layer. Closes the trip-detail panel if it
+    /// was open over the table.</summary>
     private async Task OpenSegmentOnMap(int segmentIndex)
     {
         tripDetailIdx = null;
@@ -961,22 +850,7 @@
         // tile fetch then misses the visible area entirely).
         StateHasChanged();
         await Task.Yield();
-        try
-        {
-            await JS.InvokeVoidAsync("eval", $@"
-                (function() {{
-                    var m = window._historyMap;
-                    var segs = window._historySegments;
-                    if (!m || !segs) return;
-                    var idx = {segmentIndex.ToString(System.Globalization.CultureInfo.InvariantCulture)};
-                    var poly = segs[idx];
-                    if (!poly) return;
-                    m.invalidateSize();
-                    m.fitBounds(poly.getBounds(), {{ padding: [40, 40] }});
-                }})()
-            ");
-        }
-        catch (JSDisconnectedException) { }
+        if (_map is not null) await _map.FitSegmentAsync(segmentIndex);
     }
 
     /// <summary>Row click: open the trip detail panel for the segment
@@ -1139,83 +1013,27 @@
         }
     }
 
-    /// <summary>Adds a chart tile layer to <c>_historyMap</c>. We can't
-    /// reuse <c>leafletInterop.js::addChartLayer</c> because that
-    /// targets the Map page's global <c>map</c> variable; the History
-    /// page has its own map instance under <c>_historyMap</c>. The
-    /// helper below is a minimal version: bounds-clipped tile layer
-    /// with the standard 0.85 opacity. No multi-chart opacity ramp,
-    /// no z-index reordering - the helm rarely stacks charts on
-    /// History (one passage = one chart series), so the simpler
-    /// behaviour is enough.</summary>
+    /// <summary>Adds a bounds-clipped chart tile layer to the History
+    /// map at the standard 0.85 opacity. The Map page's chart stack
+    /// (opacity ramp, z-ordering, upscale) is not reused: the helm rarely
+    /// stacks charts on History (one passage = one chart series).</summary>
     private async Task AddHistoryChartLayerAsync(
         OnaPlotter.Models.SignalkChart chart, string tileUrl)
     {
-        // Resolve relative tile URLs against the SK server. This
-        // matches what the Map page's interop does for the same
-        // chart resource. The SK base URL is whatever the running
-        // page was served from - the same origin the WebSocket
-        // connects to. ISignalKBaseUrl resolves config-override or
-        // falls back to the page origin.
+        if (_map is null) return;
+        // Relative tile URLs resolve against the SK server, matching what
+        // the Map page does for the same chart resource.
         var resolved = tileUrl.StartsWith("http://") || tileUrl.StartsWith("https://")
             ? tileUrl
             : new Uri(new Uri(SkBaseUrl.BaseUrl + "/"), tileUrl.TrimStart('/')).ToString();
-        // Bounds shape from SignalkChart: [west, south, east, north].
-        // Leaflet wants [[s,w],[n,e]] so we reorder server-side.
-        double[]? bounds = chart.Bounds;
-        try
-        {
-            await JS.InvokeVoidAsync("eval", $@"
-                (function() {{
-                    var m = window._historyMap;
-                    if (!m) return;
-                    if (!window._historyChartLayers) window._historyChartLayers = {{}};
-                    var id = {JsLit(chart.Identifier)};
-                    if (window._historyChartLayers[id]) return;
-                    var opts = {{
-                        minZoom: {(chart.MinZoom ?? 1).ToString(System.Globalization.CultureInfo.InvariantCulture)},
-                        maxZoom: {(chart.MaxZoom ?? 18).ToString(System.Globalization.CultureInfo.InvariantCulture)},
-                        opacity: 0.85,
-                        keepBuffer: 6,
-                        crossOrigin: 'anonymous',
-                        attribution: '',
-                        errorTileUrl: ''
-                    }};
-                    // Filter NaN / infinity out of bounds: a chart-resource
-                    // payload from the SK server with non-finite extents
-                    // (rare but seen on hand-rolled tile sets) would otherwise
-                    // serialise as bare NaN (invalid JSON) and crash the
-                    // surrounding eval with SyntaxError. Fall back to the
-                    // literal null if any element trips the finite check.
-                    var b = {(bounds is { Length: 4 } && bounds.All(double.IsFinite) ? JsLit(bounds) : "null")};
-                    if (b) opts.bounds = L.latLngBounds([b[1], b[0]], [b[3], b[2]]);
-                    var layer = L.tileLayer({JsLit(resolved)}, opts);
-                    layer.setZIndex(50);
-                    layer.addTo(m);
-                    window._historyChartLayers[id] = layer;
-                }})()
-            ");
-        }
-        catch (JSDisconnectedException) { }
+        await _map.AddChartLayerAsync(chart.Identifier, resolved,
+            chart.MinZoom ?? 1, chart.MaxZoom ?? 18, 0.85,
+            HistoryMapJs.ToLeafletBounds(chart.Bounds));
     }
 
     private async Task RemoveHistoryChartLayerAsync(string id)
     {
-        try
-        {
-            await JS.InvokeVoidAsync("eval", $@"
-                (function() {{
-                    var m = window._historyMap;
-                    if (!m) return;
-                    var bag = window._historyChartLayers;
-                    if (!bag) return;
-                    var id = {JsLit(id)};
-                    var l = bag[id];
-                    if (l) {{ m.removeLayer(l); delete bag[id]; }}
-                }})()
-            ");
-        }
-        catch (JSDisconnectedException) { }
+        if (_map is not null) await _map.RemoveChartLayerAsync(id);
     }
 
     private async Task LoadTrack()
@@ -1342,201 +1160,14 @@
         if (points is null || points.Length == 0
             || segments is null || segments.Length == 0) return;
 
-        // Build per-segment payloads in C#. Each entry carries the
-        // segment's [lat, lon] coordinate list (sliced from the
-        // chronological points by timestamp window) plus a
-        // pre-formatted tooltip body. Formatting in C# keeps the
-        // JS dumb (just pass strings through to Leaflet's
-        // bindTooltip) and matches the project's preference for
-        // C# over JS for anything past pure rendering.
-        var segPayload = HistorySegmentRender.BuildSegmentPayload(points, segments);
-        // Playback marker only needs (lat, lon). Pass a flat array
-        // so MoveMarker doesn't have to thread the rich record
-        // shape through JSON every scrub.
-        var coords = points.Select(p => new[] { p.Latitude, p.Longitude }).ToArray();
-
-        // Bool flags interpolated as JS literals (not JSON-serialised)
-        // so the eval template stays readable without the
-        // {System.Text.Json.JsonSerializer.Serialize(...)} ceremony.
-        string statAsDotJs = mapStationaryAsDot ? "true" : "false";
-        string fitBoundsJs = fitBounds ? "true" : "false";
-
-        try
-        {
-            await JS.InvokeVoidAsync("eval", $@"
-                (function() {{
-                    var m = window._historyMap;
-                    if (!m) return;
-                    if (window._historySegments) {{
-                        window._historySegments.forEach(function(l) {{ m.removeLayer(l); }});
-                    }}
-                    window._historySegments = [];
-
-                    // Property names follow C# PascalCase since the
-                    // segPayload record is serialised with default
-                    // System.Text.Json options (no naming policy). Reads
-                    // below use s.Coords / s.IsStationary / s.Tooltip
-                    // accordingly. A previous version read s.coords and
-                    // crashed at L.polyline(undefined, ...) on every
-                    // History mount.
-                    var segs = {JsLit(segPayload)};
-                    var statAsDot = {statAsDotJs};
-                    var movingBaseColor = getComputedStyle(document.documentElement)
-                        .getPropertyValue('--map-own').trim() || '#ec4899';
-                    // Pull the dedicated --map-stationary token. The
-                    // previous code used --sk-text-muted (slate-grey
-                    // body-copy ink) which on the light-theme OSM
-                    // basemap was effectively invisible against the
-                    // slate-blue water tiles. The new token has a
-                    // theme-specific value designed for legibility on
-                    // both dark and light water.
-                    var stationaryColor = getComputedStyle(document.documentElement)
-                        .getPropertyValue('--map-stationary').trim() || '#94a3b8';
-
-                    // Trip palette: cycles through 8 distinct hues so
-                    // consecutive moving segments are visually
-                    // distinguishable on the map (helm wants to pick
-                    // out the Tuesday passage from the Wednesday one
-                    // without checking the tooltip). The first slot
-                    // is the live-track magenta so a one-trip view
-                    // keeps the colour the helm has built muscle
-                    // memory for. Stationary always uses the neutral
-                    // stationary token regardless of trip index.
-                    var palette = [
-                        movingBaseColor,
-                        '#a78bfa', '#fbbf24', '#34d399',
-                        '#60a5fa', '#f87171', '#22d3ee', '#fb923c'
-                    ];
-
-                    var bounds = null;
-                    var movingCount = 0;
-                    var ref_ = window._historyDotNet;
-
-                    // Per-segment hover follower: when the helm
-                    // hovers a moving polyline, append a 'Depth here:
-                    // X m' line to the static tooltip showing the
-                    // depth at the closest underlying TrackPoint.
-                    // Linear scan over Coords is fine for typical
-                    // multi-hour tracks (low thousands of points);
-                    // ring-radii / k-d-tree shaving is overkill for
-                    // a hover-rate event. Skipped when s.Depths is
-                    // null (segment has no depth samples) so no-
-                    // transducer boats pay no per-tick cost.
-                    function attachDepthHover(s, layer) {{
-                        if (!s.Depths) return;
-                        layer.on('mousemove', function(ev) {{
-                            var ll = ev.latlng;
-                            var coords = s.Coords;
-                            var bestIdx = 0;
-                            var bestDist = Infinity;
-                            for (var i = 0; i < coords.length; i++) {{
-                                var dLat = coords[i][0] - ll.lat;
-                                var dLon = coords[i][1] - ll.lng;
-                                var d = dLat * dLat + dLon * dLon;
-                                if (d < bestDist) {{ bestDist = d; bestIdx = i; }}
-                            }}
-                            var depth = s.Depths[bestIdx];
-                            var content = s.Tooltip;
-                            if (depth !== null && depth !== undefined) {{
-                                content += '<br>Depth here: ' + depth.toFixed(1) + ' m';
-                            }}
-                            layer.setTooltipContent(content);
-                        }});
-                        // Restore the static tooltip on mouseout so a
-                        // re-hover doesn't carry over the previous
-                        // hover's depth row until the mouse moves.
-                        layer.on('mouseout', function() {{
-                            layer.setTooltipContent(s.Tooltip);
-                        }});
-                    }}
-
-                    segs.forEach(function(s, idx) {{
-                        var leafletObj;
-                        if (s.IsStationary) {{
-                            // Stationary rendering branches on the
-                            // helm's preference. Dot mode: a single
-                            // circleMarker at the segment's centroid
-                            // (middle index of the coord list, the
-                            // typical anchorage centre). Track mode:
-                            // the legacy dashed grey polyline.
-                            if (statAsDot) {{
-                                var mid = s.Coords[Math.floor(s.Coords.length / 2)] || s.Coords[0];
-                                leafletObj = L.circleMarker(mid, {{
-                                    radius: 5,
-                                    color: stationaryColor, fillColor: stationaryColor,
-                                    fillOpacity: 0.6, weight: 1
-                                }}).bindTooltip(s.Tooltip, {{ sticky: true, direction: 'top' }})
-                                  .addTo(m);
-                                if (!bounds) bounds = L.latLngBounds(mid, mid);
-                                else bounds.extend(mid);
-                            }} else {{
-                                var statStyle = {{
-                                    color: stationaryColor, weight: 2.5,
-                                    opacity: 0.55, dashArray: '4 4',
-                                    lineJoin: 'round', lineCap: 'round'
-                                }};
-                                leafletObj = L.polyline(s.Coords, statStyle)
-                                    .bindTooltip(s.Tooltip, {{ sticky: true, direction: 'top' }})
-                                    .addTo(m);
-                                attachDepthHover(s, leafletObj);
-                                var b = leafletObj.getBounds();
-                                bounds = bounds ? bounds.extend(b) : b;
-                            }}
-                        }} else {{
-                            // Moving segments cycle through the
-                            // palette. movingCount counts only moving
-                            // segments so palette[0] always lands on
-                            // the FIRST trip regardless of how many
-                            // stationary segments precede it.
-                            var color = palette[movingCount % palette.length];
-                            movingCount++;
-                            var moveStyle = {{
-                                color: color, weight: 3.5, opacity: 0.9,
-                                lineJoin: 'round', lineCap: 'round'
-                            }};
-                            leafletObj = L.polyline(s.Coords, moveStyle)
-                                .bindTooltip(s.Tooltip, {{ sticky: true, direction: 'top' }})
-                                .addTo(m);
-                            attachDepthHover(s, leafletObj);
-                            var b = leafletObj.getBounds();
-                            bounds = bounds ? bounds.extend(b) : b;
-                        }}
-
-                        // Click on a polyline / dot opens the trip
-                        // detail panel for that segment, mirroring
-                        // the table row click. stopPropagation so
-                        // the map's own click handler (dismiss
-                        // context menu) doesn't also fire. Wrapped
-                        // in catch(noop) for the page-teardown race
-                        // where dotNetRef has been disposed but a
-                        // stale click event lands.
-                        leafletObj.on('click', function(ev) {{
-                            L.DomEvent.stopPropagation(ev);
-                            if (ref_) {{
-                                ref_.invokeMethodAsync('OpenTripDetailFromMap', idx)
-                                    .catch(function() {{}});
-                            }}
-                        }});
-                        window._historySegments.push(leafletObj);
-                    }});
-                    if ({fitBoundsJs} && bounds) m.fitBounds(bounds, {{ padding: [40, 40] }});
-
-                    if (window._historyMarker) m.removeLayer(window._historyMarker);
-                    var coords = {JsLit(coords)};
-                    // Playback marker pulls --map-playback so a future
-                    // palette tweak doesn't leave a frozen amber here.
-                    var playbackCol = getComputedStyle(document.documentElement)
-                        .getPropertyValue('--map-playback').trim() || '#fbbf24';
-                    window._historyMarker = L.circleMarker(coords[0], {{
-                        radius: 8, color: playbackCol, fillColor: playbackCol, fillOpacity: 1, weight: 2
-                    }}).bindTooltip('Playback').addTo(m);
-                    // Stash the flat coords for the scrub path so
-                    // MoveMarker stays a one-liner.
-                    window._historyCoords = coords;
-                }})()
-            ");
-        }
-        catch (JSDisconnectedException) { /* page teardown race */ }
+        if (_map is null) return;
+        // Style, colour and tooltip are all decided in C#; the JS layer
+        // only turns the payload into Leaflet layers.
+        var segPayload = HistorySegmentRender.BuildSegmentPayload(
+            points, segments, stationaryAsDot: mapStationaryAsDot);
+        await _map.RenderSegmentsAsync(segPayload, fitBounds);
+        var pt = points[Math.Clamp(playbackIndex, 0, points.Length - 1)];
+        await _map.SetPlaybackMarkerAsync(pt.Latitude, pt.Longitude, HistorySegmentRender.PlaybackColor);
     }
 
     /// <summary>Bound to the "Stationary as dot" checkbox via
@@ -1561,10 +1192,6 @@
         tripDetailIdx = idx;
         await InvokeAsync(StateHasChanged);
     }
-
-    // Segment-payload + tooltip formatting moved to
-    // OnaPlotter.Utilities.HistorySegmentRender so the pure-function
-    // logic can be unit-tested without standing up the Razor page.
 
     private async Task OnScrub(ChangeEventArgs e)
     {
@@ -1639,37 +1266,24 @@
     {
         if (points is null || points.Length == 0) return;
         if (playbackIndex < 0 || playbackIndex >= points.Length) return;
+        if (_map is null) return;
         var pt = points[playbackIndex];
         try
         {
-            // Use invariant culture on the coordinate doubles - the
-            // helm's locale (e.g. de-CH) would otherwise render the
-            // decimal as a comma and Leaflet would parse 47,4 as
-            // [47, 4] silently. Matches the JSON-serialised format
-            // used by LoadTrack's per-segment payload.
-            string lat = pt.Latitude.ToString(CultureInfo.InvariantCulture);
-            string lon = pt.Longitude.ToString(CultureInfo.InvariantCulture);
-            await JS.InvokeVoidAsync("eval", $@"
-                (function() {{
-                    var m = window._historyMap;
-                    if (!m || !window._historyMarker) return;
-                    window._historyMarker.setLatLng([{lat}, {lon}]);
-                }})()
-            ");
+            await _map.MovePlaybackMarkerAsync(pt.Latitude, pt.Longitude);
         }
-        catch (JSDisconnectedException) { }
         catch (ObjectDisposedException) { }
     }
 
-    /// <summary>JS-invoked callback wired to Leaflet's moveend +
-    /// zoomend events. Refreshes the cached viewport bounds and
-    /// re-renders so the chart-picker's bbox filter shows the
-    /// charts that actually cover the map area in front of the
-    /// helm. Cheap; doesn't refetch chart metadata.</summary>
+    /// <summary>JS-invoked callback wired to Leaflet's moveend (which
+    /// also follows every zoom), carrying the new viewport bounds.
+    /// Re-renders so the chart-picker's bbox filter shows the charts
+    /// that actually cover the map area in front of the helm. Cheap;
+    /// doesn't refetch chart metadata.</summary>
     [JSInvokable]
-    public async Task OnHistoryViewportChanged()
+    public void OnHistoryViewportChanged(double south, double west, double north, double east)
     {
-        await RefreshViewportBoundsAsync();
+        viewportBounds = [south, west, north, east];
         // Only fire StateHasChanged when the chart panel is actually
         // visible - otherwise every pan would re-render the page
         // for no UX win.
@@ -1690,20 +1304,20 @@
         try { _loadCts?.Cancel(); _loadCts?.Dispose(); _loadCts = null; }
         catch (ObjectDisposedException) { /* already disposed */ }
         if (playTimer is not null) await playTimer.DisposeAsync();
-        try
+        if (_map is not null)
         {
-            await JS.InvokeVoidAsync("eval",
-                "if(window._historyMap){window._historyMap.remove();window._historyMap=null;}"
-                + "window._historyDotNet=null;");
+            // A Leaflet teardown error must not surface in Blazor's error
+            // UI while the helm is already navigating away.
+            try { await _map.DisposeMapAsync(); }
+            catch (JSException ex) { Console.Error.WriteLine($"[history] dispose: {ex.Message}"); }
+            catch (TaskCanceledException) { }
+            _map.MarkDisposed();
         }
-        // Narrow to disconnect / interop errors so a future regression
-        // in the eval string (typo, leaked promise rejection, Leaflet
-        // teardown bug) propagates to the global boundary instead of
-        // being silenced under a long passage's heap leak.
-        catch (Microsoft.JSInterop.JSDisconnectedException) { }
-        catch (Microsoft.JSInterop.JSException) { }
-        catch (TaskCanceledException) { }
         _historyDotNet?.Dispose();
-        if (module is not null) await module.DisposeAsync();
+        if (module is not null)
+        {
+            try { await module.DisposeAsync(); }
+            catch (JSDisconnectedException) { /* page teardown race */ }
+        }
     }
 }

@@ -1,5 +1,9 @@
-// RainViewer radar-precipitation tile overlay. Sits between the base
-// map (z=0) and chart layers (z=50). Caps at z=12 server-side because
+// RainViewer radar-precipitation tile overlay. Drawn in its own pane
+// above every chart tile layer (tilePane, z 200; chart layers can be
+// opaque, so anything inside the tile pane underneath them is hidden)
+// and below the vector overlays (overlayPane, z 400) so routes, AIS
+// vectors and the course line stay on top. Semi-transparent, so the
+// charts and seamark overlays show through. Caps at z=12 server-side because
 // that's RainViewer's native max; Leaflet upscales above that so the
 // nowcast just blurs instead of erroring out from the upstream CDN.
 // (OpenWeatherMap would need an API key - not threaded through yet.)
@@ -14,8 +18,15 @@ let mapRef = null;
 let weatherLayer = null;
 let weatherOpacity = WEATHER_OPACITY_DEFAULT;
 
+const WEATHER_PANE = 'weatherPane';
+
 export function init(map) {
     mapRef = map;
+    if (!map.getPane(WEATHER_PANE)) {
+        const pane = map.createPane(WEATHER_PANE);
+        pane.style.zIndex = '250';
+        pane.style.pointerEvents = 'none';
+    }
 }
 
 export function setWeatherOverlay(tileUrl, opacity) {
@@ -29,9 +40,9 @@ export function setWeatherOverlay(tileUrl, opacity) {
         maxZoom: 22,
         opacity: weatherOpacity,
         errorTileUrl: '',
-        attribution: '&copy; RainViewer'
+        attribution: '&copy; RainViewer',
+        pane: WEATHER_PANE,
     }).addTo(mapRef);
-    weatherLayer.setZIndex(40); // Below chart layers (50) but above base map.
 }
 
 // Live opacity update without re-fetching tiles. Helm dragging the

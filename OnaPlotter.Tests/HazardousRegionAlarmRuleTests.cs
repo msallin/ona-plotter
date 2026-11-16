@@ -227,7 +227,7 @@ public class HazardousRegionAlarmRuleTests
         // so a region id like "urn:mrn:..." can't smuggle hierarchy
         // past the notifications.security.hazard. namespace.
         var rule = new HazardousRegionAlarmRule(new StubRegionStore());
-        var alarm = new AlarmInfo("HAZARD", "Inside X", AlarmSeverity.Danger,
+        var alarm = new AlarmInfo(AlarmRuleId.Hazard, "HAZARD", "Inside X", AlarmSeverity.Danger,
             TargetKey: "urn:mrn:abc.def/123");
         var path = rule.GetPublishPath(alarm);
         await Assert.That(path).IsNotNull();
@@ -242,7 +242,7 @@ public class HazardousRegionAlarmRuleTests
         // Defensive: an alarm without a target key shouldn't get
         // published at notifications.security.hazard. (no suffix).
         var rule = new HazardousRegionAlarmRule(new StubRegionStore());
-        var alarm = new AlarmInfo("HAZARD", "Inside", AlarmSeverity.Danger);
+        var alarm = new AlarmInfo(AlarmRuleId.Hazard, "HAZARD", "Inside", AlarmSeverity.Danger);
         await Assert.That(rule.GetPublishPath(alarm)).IsNull();
     }
 }

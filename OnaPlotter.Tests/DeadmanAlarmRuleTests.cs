@@ -22,7 +22,7 @@ public class DeadmanAlarmRuleTests
     public async Task Disabled_When_Timeout_Is_Zero()
     {
         // Default is 0 = off. Long-dormant tracker must not fire.
-        var tracker = new DeadmanTracker();
+        var tracker = new DeadmanTracker(TimeProvider.System);
         tracker.ForceLastInteraction(DateTime.UtcNow.AddHours(-2));
         var rule = new DeadmanAlarmRule(tracker);
 
@@ -33,7 +33,7 @@ public class DeadmanAlarmRuleTests
     public async Task Silent_While_Inside_Window()
     {
         var now = DateTime.UtcNow;
-        var tracker = new DeadmanTracker();
+        var tracker = new DeadmanTracker(TimeProvider.System);
         tracker.ForceLastInteraction(now.AddMinutes(-4));
         var rule = new DeadmanAlarmRule(tracker);
 
@@ -45,7 +45,7 @@ public class DeadmanAlarmRuleTests
     public async Task Fires_When_Window_Exceeded()
     {
         var now = DateTime.UtcNow;
-        var tracker = new DeadmanTracker();
+        var tracker = new DeadmanTracker(TimeProvider.System);
         tracker.ForceLastInteraction(now.AddMinutes(-6));
         var rule = new DeadmanAlarmRule(tracker);
 
@@ -63,7 +63,7 @@ public class DeadmanAlarmRuleTests
     {
         // Simulates the user tapping the map: tracker.Touch() resets
         // LastInteractionUtc, rule goes silent again.
-        var tracker = new DeadmanTracker();
+        var tracker = new DeadmanTracker(TimeProvider.System);
         tracker.ForceLastInteraction(DateTime.UtcNow.AddMinutes(-10));
         var rule = new DeadmanAlarmRule(tracker);
 
@@ -76,7 +76,7 @@ public class DeadmanAlarmRuleTests
     [Test]
     public async Task AutoClear_Is_True_So_Tap_Clears_Banner()
     {
-        await Assert.That(new DeadmanAlarmRule(new DeadmanTracker()).AutoClear).IsTrue();
+        await Assert.That(new DeadmanAlarmRule(new DeadmanTracker(TimeProvider.System)).AutoClear).IsTrue();
     }
 
     [Test]
@@ -86,7 +86,7 @@ public class DeadmanAlarmRuleTests
         // "still there?" becomes a danger-level "WAKE UP". Sleeping
         // watchkeeper may have already slept through the first Warn.
         var now = DateTime.UtcNow;
-        var tracker = new DeadmanTracker();
+        var tracker = new DeadmanTracker(TimeProvider.System);
         tracker.ForceLastInteraction(now.AddMinutes(-11));
         var rule = new DeadmanAlarmRule(tracker);
 
@@ -114,7 +114,7 @@ public class DeadmanAlarmRuleTests
         // window from the day value (say, 0 / off). A 16-min idle
         // triggers at night but wouldn't have during the day.
         var now = DateTime.UtcNow;
-        var tracker = new DeadmanTracker();
+        var tracker = new DeadmanTracker(TimeProvider.System);
         tracker.ForceLastInteraction(now.AddMinutes(-16));
         var rule = new DeadmanAlarmRule(tracker);
 
@@ -137,7 +137,7 @@ public class DeadmanAlarmRuleTests
         // Users who don't want a night-specific override set DeadmanNightMinutes
         // to 0; the day value applies at night too (legacy behaviour).
         var now = DateTime.UtcNow;
-        var tracker = new DeadmanTracker();
+        var tracker = new DeadmanTracker(TimeProvider.System);
         tracker.ForceLastInteraction(now.AddMinutes(-6));
         var rule = new DeadmanAlarmRule(tracker);
 
@@ -160,7 +160,7 @@ public class DeadmanAlarmRuleTests
         // the larger of the two) would silently re-enable a watch the
         // user explicitly turned off for daytime cruising.
         var now = DateTime.UtcNow;
-        var tracker = new DeadmanTracker();
+        var tracker = new DeadmanTracker(TimeProvider.System);
         tracker.ForceLastInteraction(now.AddHours(-2));
         var rule = new DeadmanAlarmRule(tracker);
 
@@ -181,7 +181,7 @@ public class DeadmanAlarmRuleTests
     {
         // Both timeouts off -> feature fully disabled regardless of mode.
         var now = DateTime.UtcNow;
-        var tracker = new DeadmanTracker();
+        var tracker = new DeadmanTracker(TimeProvider.System);
         tracker.ForceLastInteraction(now.AddHours(-3));
         var rule = new DeadmanAlarmRule(tracker);
 

@@ -4,9 +4,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-    haversineMeters, bearingDeg, destPoint, vectorEnd,
-    speedColor, speedBucket,
-    RAD, DEG, NM_PER_METER
+    haversineMeters, bearingDeg, destPoint, vectorEnd, chartBoundsBoxes,
 } from './geoMath.js';
 
 // --- haversineMeters ---
@@ -104,60 +102,35 @@ describe('vectorEnd', () => {
     });
 });
 
-// --- speedColor ---
+// --- chartBoundsBoxes ---
 
-describe('speedColor', () => {
-    it('null returns blue', () => {
-        assert.equal(speedColor(null), '#3b82f6');
+describe('chartBoundsBoxes', () => {
+    it('passes ordinary bounds through as one box', () => {
+        // A Baltic chart.
+        assert.deepEqual(chartBoundsBoxes([9.5, 53.8, 14.2, 55.1]),
+            [[[53.8, 9.5], [55.1, 14.2]]]);
     });
 
-    it('0 speed returns blue-ish', () => {
-        const color = speedColor(0);
-        assert.ok(color.startsWith('rgb('));
+    it('unwraps a chart crossing the antimeridian instead of inverting it', () => {
+        // Fiji: 177 E to 178 W.
+        assert.deepEqual(chartBoundsBoxes([177, -19, -178, -16]), [
+            [[-19, 177], [-16, 182]],
+            [[-19, -183], [-16, -178]],
+        ]);
     });
 
-    it('high speed returns warm color', () => {
-        const color = speedColor(10); // ~19 knots
-        assert.ok(color.startsWith('rgb('));
-        // Extract R channel - should be high (warm)
-        const r = parseInt(color.match(/rgb\((\d+)/)[1]);
-        assert.ok(r > 100, `Expected warm red channel, got ${r}`);
+    it('keeps a zero-width or whole-world chart as one box', () => {
+        assert.deepEqual(chartBoundsBoxes([10, 0, 10, 1]), [[[0, 10], [1, 10]]]);
+        assert.deepEqual(chartBoundsBoxes([-180, -85, 180, 85]), [[[-85, -180], [85, 180]]]);
     });
 
-    it('different speeds produce different colors', () => {
-        assert.notEqual(speedColor(0), speedColor(5));
-        assert.notEqual(speedColor(2), speedColor(8));
-    });
-});
-
-// --- speedBucket ---
-
-describe('speedBucket', () => {
-    it('null returns 0', () => {
-        assert.equal(speedBucket(null), 0);
-    });
-
-    it('0 m/s returns bucket 0', () => {
-        assert.equal(speedBucket(0), 0);
-    });
-
-    it('0.5 m/s returns bucket 0', () => {
-        assert.equal(speedBucket(0.5), 0);
-    });
-
-    it('1.5 m/s returns bucket 1', () => {
-        assert.equal(speedBucket(1.5), 1);
-    });
-
-    it('10 m/s returns highest bucket', () => {
-        assert.equal(speedBucket(10), 5);
-    });
-
-    it('bucket increases with speed', () => {
-        const b0 = speedBucket(0);
-        const b3 = speedBucket(3);
-        const b8 = speedBucket(8);
-        assert.ok(b0 <= b3);
-        assert.ok(b3 <= b8);
+    it('rejects unusable bounds', () => {
+        assert.equal(chartBoundsBoxes(null), null);
+        assert.equal(chartBoundsBoxes([1, 2, 3]), null);
+        assert.equal(chartBoundsBoxes([NaN, 0, 1, 1]), null);
+        assert.equal(chartBoundsBoxes([0, -91, 1, 1]), null);
+        assert.equal(chartBoundsBoxes([0, 0, 1, 91]), null);
+        assert.equal(chartBoundsBoxes([0, 5, 1, 4]), null);
+        assert.equal(chartBoundsBoxes([-541, 0, 1, 1]), null);
     });
 });

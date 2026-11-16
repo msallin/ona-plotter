@@ -30,8 +30,8 @@ public sealed class MapRouteJs : IMapRouteJs
     public Task RemoveRouteAsync(string id)
         => InvokeSafe("removeRoute", id);
 
-    public Task SetActiveRouteAsync(double[][] coords, int wpIndex, string routeId, string routeName)
-        => InvokeSafe("setActiveRoute", (object)coords, wpIndex, routeId, routeName);
+    public Task SetActiveRouteAsync(double[][] coords, int wpIndex, string routeId, string routeName, double totalNm)
+        => InvokeSafe("setActiveRoute", (object)coords, wpIndex, routeId, routeName, totalNm);
 
     public Task ClearActiveRouteAsync()
         => InvokeSafe("clearActiveRoute");
@@ -41,9 +41,6 @@ public sealed class MapRouteJs : IMapRouteJs
 
     public Task SetActiveRouteStoppingAsync(bool stopping)
         => InvokeSafe("setActiveRouteStopping", stopping);
-
-    public Task SetActiveRouteTtgSecondsAsync(double? seconds)
-        => InvokeSafe("setActiveRouteTtgSeconds", seconds);
 
     public Task ClearCourseLineAsync()
         => InvokeSafe("clearCourseLine");

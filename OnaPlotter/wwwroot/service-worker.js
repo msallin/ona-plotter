@@ -1249,7 +1249,21 @@
 //               page. Helm-visible bug fixed: after deploys, reload
 //               would freeze for tens of seconds until enough
 //               modules trickled in.
-const CACHE_NAME = 'ona-plotter-v115';
+// v115 -> v116: routing resolves against the registration scope, so
+//               /js/ + /css/ stay network-first under the
+//               /signalk-onaplotter/ subpath; fingerprinted _framework
+//               files are served from cache without a background
+//               re-fetch; History page map moves to historyMapLayer.js.
+// v116 -> v117: AlarmRuleEnableToggle; versioned delta AIS push, MapHud
+//               RefreshAsync, MapControls ShouldRender, shortcut table,
+//               initMap options (rangeScale.js + trackRuns.js added).
+// v117 -> v118: CSS pass (purged bootstrap, Inter subset, keyframes) with
+//               both precached for an offline first boot; navigations
+//               network-first with index fallback; /signalk/* no longer
+//               intercepted; course-up rotation (mapRotation.js), in-icon
+//               AIS labels, boatIcons / keyboardShortcuts / ownBoatPopup
+//               modules; MapHud depth glyph; night track palette.
+const CACHE_NAME = 'ona-plotter-v118';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
@@ -1266,9 +1280,16 @@ const TILE_CACHE_MAX_ENTRIES = 5000;
 // Use relative URLs so the worker works both at root and under a subpath
 // (SignalK webapp serves at /signalk-onaplotter/).
 const SCOPE = self.registration ? self.registration.scope : self.location.href;
+// Path the app is served under: "/" standalone, "/signalk-onaplotter/"
+// as a SignalK webapp. Route checks below are relative to it.
+const SCOPE_PATH = new URL(SCOPE).pathname;
 const APP_SHELL = [
     SCOPE,
     new URL('css/app.css', SCOPE).toString(),
+    // Render-blocking stylesheet and the HUD font: without them an
+    // offline first boot after install lays out unstyled.
+    new URL('css/bootstrap/bootstrap.min.css', SCOPE).toString(),
+    new URL('fonts/InterVariable.woff2', SCOPE).toString(),
     new URL('favicon.svg', SCOPE).toString(),
     new URL('manifest.json', SCOPE).toString(),
     // errorRelayBoot.js is loaded synchronously from index.html before
@@ -1355,16 +1376,16 @@ async function getTileCache() {
     return tileCacheRef;
 }
 
-// Cumulative-puts counter that throttles the trimTileCache scan.
-// trimTileCache used to fire after every successful put, which meant
-// a full cache.keys() walk (5000 entries on a busy passage) on every
-// tile cached - the bookkeeping cost dwarfed the actual put. Now we
-// only scan after every TRIM_CHECK_EVERY puts, so a single tile-load
-// burst pays the scan once instead of N times. Choice of 50 keeps
-// the high-water-mark slop bounded (we may exceed the cap by ~50
-// entries before the next trim catches up; 5050 vs 5000 is fine).
-const TRIM_CHECK_EVERY = 50;
-let putsSinceLastTrim = 0;
+// Entry count of the tile cache, tracked in memory so a put doesn't
+// need a cache.keys() walk (up to 5000 Request objects) to know whether
+// the cap is reached. null until the first put seeds it with one walk;
+// after that the cache is only enumerated when the count passes the
+// cap. A trim evicts down to TILE_CACHE_MAX_ENTRIES - TILE_TRIM_BATCH so
+// the next few hundred puts don't each trigger another walk. Puts that
+// replace an existing entry over-count slightly; the next walk resets
+// the count to the real size.
+const TILE_TRIM_BATCH = 250;
+let tileCount = null;
 let trimInFlight = false;
 
 async function tileCacheFirstInner(request) {
@@ -1424,33 +1445,75 @@ async function tileCacheFirstInner(request) {
     return response;
 }
 
-// Throttled + single-flight trim. Counts puts; only scans the cache
-// every TRIM_CHECK_EVERY puts, and never runs more than one trim at
-// a time. Prevents the cache.keys() walk from running on every put
-// (was a measurable perf hit at 5000+ entries) while still keeping
-// the cap honest within ~50 entries of slop.
+// Single-flight trim after a put (see tileCount).
 async function maybeTrimTileCache(cache) {
-    putsSinceLastTrim++;
-    if (putsSinceLastTrim < TRIM_CHECK_EVERY) return;
+    if (tileCount !== null) {
+        tileCount++;
+        if (tileCount <= TILE_CACHE_MAX_ENTRIES) return;
+    }
     if (trimInFlight) return;
-    putsSinceLastTrim = 0;
     trimInFlight = true;
     try {
         const keys = await cache.keys();
-        if (keys.length <= TILE_CACHE_MAX_ENTRIES) return;
-        // Delete oldest in parallel (FIFO by insertion order). Cache.keys()
-        // returns in insertion order per the spec; sufficient for our
-        // approximate eviction. Promise.all over the slice rather than
-        // sequential awaits cuts trim time by ~10x on a Pi-class device
-        // when many entries need eviction at once.
-        const excess = keys.length - TILE_CACHE_MAX_ENTRIES;
-        await Promise.all(keys.slice(0, excess).map((k) => cache.delete(k)));
+        let count = keys.length;
+        if (count > TILE_CACHE_MAX_ENTRIES) {
+            // Delete oldest in parallel (FIFO: Cache.keys() returns
+            // insertion order per the spec). Promise.all rather than
+            // sequential awaits: ~10x faster on a Pi-class device.
+            const excess = count - (TILE_CACHE_MAX_ENTRIES - TILE_TRIM_BATCH);
+            await Promise.all(keys.slice(0, excess).map((k) => cache.delete(k)));
+            count -= excess;
+        }
+        tileCount = count;
     } catch (_) {
-        // Trim is best-effort; cache cap may be temporarily exceeded
-        // but the next put will trigger another attempt.
+        // Trim is best-effort; the cap may be exceeded until the next
+        // put triggers another attempt.
     } finally {
         trimInFlight = false;
     }
+}
+
+// Fingerprinted Blazor asset name: "<name>.<10-char base36 hash>.<ext>",
+// e.g. "dotnet.native.l9w6gmu0b1.wasm" or "System.Runtime.x7k2p0q9ab.wasm".
+// Unfingerprinted loaders ("blazor.webassembly.js") do not match.
+const FINGERPRINTED_ASSET = /\.[a-z0-9]{10}\.[a-z]+$/;
+// Release interop bundle (scripts/bundle-interop.mjs), named by its
+// content hash: "js/leafletInterop.5QWJ3KXR.js". Debug never has one.
+const JS_BUNDLE = /^js\/[\w-]+\.[A-Z0-9]{8}\.js$/;
+
+/**
+ * Which strategy serves a same-origin GET for pathname.
+ *   'tiles'         chart tiles, cache-first in the tile cache
+ *   'signalk'       SignalK API, not intercepted
+ *   'navigate'      a page load anywhere under the scope (client routes
+ *                   such as /map included): network-first, offline
+ *                   falls back to the cached index document
+ *   'network-first' js/, css/, the document root, *.html
+ *   'immutable'     fingerprinted _framework files and the hashed js/
+ *                   interop bundle, cache-only once cached
+ *   'app-shell'     everything else, cache-first with background refresh
+ * scopePath is the registration scope's path ("/" or "/signalk-onaplotter/");
+ * mode is the request mode ('navigate' for a document load).
+ * The SignalK paths are absolute because the SignalK server owns them
+ * regardless of where the webapp is mounted.
+ */
+function routeFor(pathname, scopePath, mode) {
+    if (pathname.startsWith('/signalk/chart-tiles/')) return 'tiles';
+    if (pathname === '/signalk' || pathname.startsWith('/signalk/')) return 'signalk';
+    const inScope = pathname.startsWith(scopePath);
+    const rel = inScope ? pathname.slice(scopePath.length) : null;
+    if (mode === 'navigate' && inScope) return 'navigate';
+    if (rel !== null && JS_BUNDLE.test(rel)) return 'immutable';
+    if (rel === ''
+        || pathname === '/'
+        || (rel !== null && (rel.startsWith('js/') || rel.startsWith('css/')))
+        || pathname.endsWith('.html')) {
+        return 'network-first';
+    }
+    if (rel !== null && rel.startsWith('_framework/') && FINGERPRINTED_ASSET.test(rel)) {
+        return 'immutable';
+    }
+    return 'app-shell';
 }
 
 self.addEventListener('fetch', (event) => {
@@ -1464,55 +1527,55 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // Chart tiles served by signalk-charts-plugin. Cache-on-view so a
-    // re-visit to a cove the user sailed through earlier works offline.
-    // Separate cache from the app shell so it can be evicted
-    // independently and capped by entry count. Cache-first: tiles
-    // never invalidate on their own (charts don't change), so a
-    // single freshness pass at install / cache-bump is enough. The
-    // FIFO cap rolls in newer tiles to displace stale ones over time.
-    if (url.pathname.startsWith('/signalk/chart-tiles/')) {
-        event.respondWith(tileCacheFirst(event.request));
-        return;
+    switch (routeFor(url.pathname, SCOPE_PATH, event.request.mode)) {
+        // Chart tiles served by signalk-charts-plugin. Cache-on-view so a
+        // re-visit to a cove the user sailed through earlier works offline.
+        // Separate cache from the app shell so it can be evicted
+        // independently and capped by entry count. Cache-first: tiles
+        // never invalidate on their own (charts don't change), so a
+        // single freshness pass at install / cache-bump is enough. The
+        // FIFO cap rolls in newer tiles to displace stale ones over time.
+        case 'tiles':
+            event.respondWith(tileCacheFirst(event.request));
+            return;
+        // Other SignalK API calls go straight to the network: nothing is
+        // cached, and an intercept would only add a hop per request (the
+        // HUD polls several endpoints) and turn a network error into a
+        // synthetic 504.
+        case 'signalk':
+            return;
+        // Document loads, including deep links to client routes. The
+        // server answers every route under the scope with index.html;
+        // that answer is cached under the scope root, which is also the
+        // offline fallback for any route.
+        case 'navigate':
+            event.respondWith(navigationNetworkFirst(event.request));
+            return;
+        // Network-first for "evolves with C# bundle" assets (JS modules,
+        // CSS, the SPA document root). C# code that calls a JS export
+        // ships in a content-hashed wasm filename, so the new wasm is
+        // always fetched fresh - but the JS module URLs are stable
+        // (`./js/leafletInterop.js`, no hash), so a cache-first SW would
+        // happily serve yesterday's leafletInterop.js (no new export) to
+        // today's wasm (which calls it) and crash on the
+        // not-a-function lookup. Network-first fixes that without losing
+        // offline launch (cache is the fallback when fetch rejects).
+        case 'network-first':
+            event.respondWith(networkFirstWithCacheFallback(event.request));
+            return;
+        // A fingerprinted file's bytes never change under its name, so a
+        // cached copy is final: no background re-fetch of the multi-MB
+        // runtime on every launch.
+        case 'immutable':
+            event.respondWith(immutableCacheFirst(event.request));
+            return;
+        // Cache-first for app shell (icons, fonts, version stamps), network
+        // fallback otherwise. Wrapped for the same reason as above:
+        // caches.match / caches.open / put can all reject; the outer try
+        // guarantees respondWith resolves to a Response.
+        default:
+            event.respondWith(appShellCacheFirst(event.request));
     }
-
-    // Network-first for other SignalK API calls and WebSocket upgrades.
-    // Match /signalk/ and /signalk/v* paths exactly (not webapp names like /signalk-onaplotter).
-    // Wrap in try/catch + 504 fallback so a fetch rejection (offline,
-    // CORS, abort) never bubbles into the respondWith promise. Without
-    // this guard, Firefox surfaces every transient network blip on a
-    // /signalk/* path as the same "ServiceWorker intercepted ...
-    // unexpected error" message that the tile cache handler had
-    // pre-v20.
-    if (url.pathname === '/signalk' || url.pathname.startsWith('/signalk/')
-        || event.request.mode === 'websocket') {
-        event.respondWith(passThroughOrPlaceholder(event.request));
-        return;
-    }
-
-    // Network-first for "evolves with C# bundle" assets (JS modules,
-    // CSS, the SPA document root). C# code that calls a JS export
-    // ships in a content-hashed wasm filename, so the new wasm is
-    // always fetched fresh - but the JS module URLs are stable
-    // (`./js/leafletInterop.js`, no hash), so a cache-first SW would
-    // happily serve yesterday's leafletInterop.js (no new export) to
-    // today's wasm (which calls it) and crash on the
-    // not-a-function lookup. Network-first fixes that without losing
-    // offline launch (cache is the fallback when fetch rejects).
-    if (url.pathname.startsWith('/js/')
-        || url.pathname.startsWith('/css/')
-        || url.pathname === '/'
-        || url.pathname === SCOPE.replace(self.location.origin, '')
-        || url.pathname.endsWith('.html')) {
-        event.respondWith(networkFirstWithCacheFallback(event.request));
-        return;
-    }
-
-    // Cache-first for app shell (icons, fonts, version stamps), network
-    // fallback otherwise. Wrapped for the same reason as above:
-    // caches.match / caches.open / put can all reject; the outer try
-    // guarantees respondWith resolves to a Response.
-    event.respondWith(appShellCacheFirst(event.request));
 });
 
 /** Network-first with cache fallback. Always tries network first so
@@ -1570,16 +1633,59 @@ async function networkFirstWithCacheFallback(request) {
     }
 }
 
-/** Plain pass-through fetch with a safety net. Used for /signalk/*
- *  and WebSocket upgrades - we don't cache or transform those, but
- *  we still own the respondWith promise and need to settle it. */
-async function passThroughOrPlaceholder(request) {
+/** Network-first for a document load under the scope, with the same
+ *  timeout as networkFirstWithCacheFallback. A deep link such as
+ *  /signalk-onaplotter/map has no cache entry of its own; the fresh
+ *  index document is stored under the scope root (the precached app
+ *  shell entry) and served for any route when the network fails, so
+ *  an offline reload on a client route still boots and a deploy
+ *  replaces the cached index on the next online load. */
+async function navigationNetworkFirst(request) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), NETWORK_FIRST_TIMEOUT_MS);
     try {
-        return await fetch(request);
+        const response = await fetch(request, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        // Only the index document stands in for the scope root, not a
+        // file opened directly in a tab (manifest.json, an icon).
+        const isHtml = (response.headers.get('content-type') || '').includes('text/html');
+        if (response.ok && isHtml) {
+            try {
+                const clone = response.clone();
+                const cache = await caches.open(CACHE_NAME);
+                cache.put(SCOPE, clone).catch(() => { /* best-effort */ });
+            } catch (_) { /* clone / open / put threw */ }
+        }
+        return response;
     } catch (_) {
-        // Offline / aborted / blocked. 504 lets the caller (the
-        // SignalK API client or the Blazor circuit) handle it as a
-        // server error rather than an undefined-response intercept.
+        clearTimeout(timeoutId);
+        try {
+            const cached = await caches.match(SCOPE);
+            if (cached) return cached;
+        } catch (_) { /* cache layer unavailable */ }
+        return new Response('', { status: 504, statusText: 'Offline' });
+    }
+}
+
+/** Cache-only once cached, for fingerprinted files whose content is
+ *  fixed by their name. A miss fetches, stores and returns the network
+ *  response; failures resolve to a 504 so respondWith never rejects. */
+async function immutableCacheFirst(request) {
+    try {
+        const cached = await caches.match(request);
+        if (cached) return cached;
+    } catch (_) { /* cache layer unavailable */ }
+    try {
+        const response = await fetch(request);
+        if (response.ok) {
+            try {
+                const clone = response.clone();
+                const cache = await caches.open(CACHE_NAME);
+                cache.put(request, clone).catch(() => { /* best-effort */ });
+            } catch (_) { /* clone / open / put threw */ }
+        }
+        return response;
+    } catch (_) {
         return new Response('', { status: 504, statusText: 'Offline' });
     }
 }

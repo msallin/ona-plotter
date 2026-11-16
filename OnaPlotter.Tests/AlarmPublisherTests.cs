@@ -75,7 +75,7 @@ public class AlarmPublisherTests
         public IReadOnlyList<SnoozedTarget> SnoozedTargets => [];
         public IReadOnlyList<DismissedAlarm> DismissedHistory => [];
         public int SnoozeDurationMinutes => 10;
-        public IReadOnlyList<string> RegisteredRuleTitles => [];
+        public IReadOnlyList<AlarmRuleId> RegisteredRuleIds => [];
         public IReadOnlyList<AlarmRearmInfo> RearmStatuses(DateTime now) => [];
         public event Action<AlarmInfo?>? OnAlarmChanged;
         public event Action? OnAlarmsChanged;
@@ -95,6 +95,7 @@ public class AlarmPublisherTests
         }
 
         public void Evaluate(NavigationData data, IReadOnlyCollection<AisVessel> vessels, IAppSettings settings) { }
+        public void Evaluate(NavigationData data, Func<IReadOnlyCollection<AisVessel>> vessels, IAppSettings settings) { }
         public Task DismissAsync() { Set([]); return Task.CompletedTask; }
         public Task DismissAsync(AlarmInfo a)
         {
@@ -115,6 +116,7 @@ public class AlarmPublisherTests
     {
         private readonly string? _publishPath;
         public PassThroughRule(string? publishPath = null) { _publishPath = publishPath; }
+        public AlarmRuleId Id => AlarmRuleId.ServerNotification;
         public string Title => "_STUB_";
         public int Priority => 999;
         public bool AutoClear => true;
@@ -152,11 +154,15 @@ public class AlarmPublisherTests
                 ?? ApiResult<string>.Ok($"id-{Raised.Count}");
             return Task.FromResult(result);
         }
+        /// <summary>When set, ClearAsync returns this task instead of
+        /// completing synchronously, so tests can hold a clear in flight.</summary>
+        public Func<string, Task<ApiResult>>? AsyncClearHandler { get; set; }
+
         public Task<ApiResult> ClearAsync(string id, CancellationToken ct = default)
         {
             Cleared.Add(id);
             OnCleared?.Invoke(id);
-            return Task.FromResult(ApiResult.Ok);
+            return AsyncClearHandler?.Invoke(id) ?? Task.FromResult(ApiResult.Ok);
         }
 
         // MOB-specific verbs: not exercised by AlarmPublisher tests
@@ -212,7 +218,7 @@ public class AlarmPublisherTests
         var tracker = new PublishedAlarmTracker();
         await using var pub = new AlarmPublisher(mgr, api, tracker);
 
-        mgr.Set(new AlarmInfo("SHALLOW", "Depth 1.8m", AlarmSeverity.Danger));
+        mgr.Set(new AlarmInfo(AlarmRuleId.Shallow, "SHALLOW", "Depth 1.8m", AlarmSeverity.Danger));
         // Yield to give the fire-and-forget RaiseAsync time to complete.
         await Task.Yield();
 
@@ -232,7 +238,7 @@ public class AlarmPublisherTests
         var tracker = new PublishedAlarmTracker();
         await using var pub = new AlarmPublisher(mgr, api, tracker);
 
-        mgr.Set(new AlarmInfo("SHALLOW", "Depth 1.8m", AlarmSeverity.Danger));
+        mgr.Set(new AlarmInfo(AlarmRuleId.Shallow, "SHALLOW", "Depth 1.8m", AlarmSeverity.Danger));
         await Task.Yield();
         await Assert.That(api.Raised.Count).IsEqualTo(1);
         var raisedId = "id-1";
@@ -259,7 +265,7 @@ public class AlarmPublisherTests
         var tracker = new PublishedAlarmTracker();
         await using var pub = new AlarmPublisher(mgr, api, tracker);
 
-        var alarm = new AlarmInfo("SHALLOW", "Depth 1.8m", AlarmSeverity.Danger);
+        var alarm = new AlarmInfo(AlarmRuleId.Shallow, "SHALLOW", "Depth 1.8m", AlarmSeverity.Danger);
         mgr.Set(alarm);
         await Task.Yield();
         mgr.Set(alarm);    // re-render, same alarm
@@ -287,7 +293,7 @@ public class AlarmPublisherTests
         // the actual ack call is irrelevant here - we're testing
         // the publisher's skip logic.
         var serverAck = new StubAcknowledger(canAcknowledge: true);
-        var serverAlarm = new AlarmInfo("ANCHOR", "dragging",
+        var serverAlarm = new AlarmInfo(AlarmRuleId.ServerNotification, "ANCHOR", "dragging",
             AlarmSeverity.Danger,
             TargetKey: "notifications.navigation.anchor.position",
             Acknowledger: serverAck);
@@ -308,9 +314,9 @@ public class AlarmPublisherTests
         await using var pub = new AlarmPublisher(mgr, api, tracker);
 
         mgr.Set(
-            new AlarmInfo("SART", "Beacon", AlarmSeverity.Danger),
-            new AlarmInfo("APPROACH", "100m to WP", AlarmSeverity.Warn),
-            new AlarmInfo("FUTURE_RULE", "msg", AlarmSeverity.Warn));
+            new AlarmInfo(AlarmRuleId.Sart, "SART", "Beacon", AlarmSeverity.Danger),
+            new AlarmInfo(AlarmRuleId.Approach, "APPROACH", "100m to WP", AlarmSeverity.Warn),
+            new AlarmInfo(AlarmRuleId.ServerNotification, "FUTURE_RULE", "msg", AlarmSeverity.Warn));
         await Task.Yield();
 
         await Assert.That(api.Raised.Count).IsEqualTo(0);
@@ -334,7 +340,7 @@ public class AlarmPublisherTests
         };
         await using var pub = new AlarmPublisher(mgr, api, tracker);
 
-        var alarm = new AlarmInfo("SHALLOW", "Depth 1.8m", AlarmSeverity.Danger);
+        var alarm = new AlarmInfo(AlarmRuleId.Shallow, "SHALLOW", "Depth 1.8m", AlarmSeverity.Danger);
         mgr.Set(alarm);
         await Task.Yield();
         // First raise failed: ownership released, ID not tracked.
@@ -361,11 +367,11 @@ public class AlarmPublisherTests
         await using var pub = new AlarmPublisher(mgr, api, tracker);
 
         mgr.Set(
-            new AlarmInfo("CPA", "Aurora", AlarmSeverity.Danger,
+            new AlarmInfo(AlarmRuleId.Cpa, "CPA", "Aurora", AlarmSeverity.Danger,
                 TargetKey: "vessels.urn:mrn:imo:mmsi:111"),
-            new AlarmInfo("CPA", "Beluga", AlarmSeverity.Danger,
+            new AlarmInfo(AlarmRuleId.Cpa, "CPA", "Beluga", AlarmSeverity.Danger,
                 TargetKey: "vessels.urn:mrn:imo:mmsi:222"),
-            new AlarmInfo("CPA", "Calypso", AlarmSeverity.Warn,
+            new AlarmInfo(AlarmRuleId.Cpa, "CPA", "Calypso", AlarmSeverity.Warn,
                 TargetKey: "vessels.urn:mrn:imo:mmsi:333"));
         await Task.Yield();
 
@@ -394,8 +400,8 @@ public class AlarmPublisherTests
         var tracker = new PublishedAlarmTracker();
         var pub = new AlarmPublisher(mgr, api, tracker);
         mgr.Set(
-            new AlarmInfo("SHALLOW", "x", AlarmSeverity.Danger),
-            new AlarmInfo("WIND SHIFT", "y", AlarmSeverity.Warn));
+            new AlarmInfo(AlarmRuleId.Shallow, "SHALLOW", "x", AlarmSeverity.Danger),
+            new AlarmInfo(AlarmRuleId.WindShift, "WIND SHIFT", "y", AlarmSeverity.Warn));
         await Task.Yield();
         await Assert.That(api.Raised.Count).IsEqualTo(2);
 
@@ -421,7 +427,7 @@ public class AlarmPublisherTests
         // but defensive guard inside HandleAlarmsChanged covers the
         // race where an event fires between the unsubscribe and the
         // subscriber-list update.
-        mgr.Set(new AlarmInfo("SHALLOW", "x", AlarmSeverity.Danger));
+        mgr.Set(new AlarmInfo(AlarmRuleId.Shallow, "SHALLOW", "x", AlarmSeverity.Danger));
         await Task.Yield();
 
         await Assert.That(api.Raised.Count).IsEqualTo(0);
@@ -438,8 +444,8 @@ public class AlarmPublisherTests
         var tracker = new PublishedAlarmTracker();
         await using var pub = new AlarmPublisher(mgr, api, tracker);
 
-        var shallow = new AlarmInfo("SHALLOW", "x", AlarmSeverity.Danger);
-        var wind = new AlarmInfo("WIND SHIFT", "y", AlarmSeverity.Warn);
+        var shallow = new AlarmInfo(AlarmRuleId.Shallow, "SHALLOW", "x", AlarmSeverity.Danger);
+        var wind = new AlarmInfo(AlarmRuleId.WindShift, "WIND SHIFT", "y", AlarmSeverity.Warn);
         mgr.Set(shallow, wind);
         await Task.Yield();
         await Assert.That(api.Raised.Count).IsEqualTo(2);
@@ -482,7 +488,7 @@ public class AlarmPublisherTests
         api.OnCleared += id => { if (id == "late-id") lateClearSeen.TrySetResult(); };
         await using var pub = new AlarmPublisher(mgr, api, tracker);
 
-        mgr.Set(new AlarmInfo("SHALLOW", "x", AlarmSeverity.Danger));
+        mgr.Set(new AlarmInfo(AlarmRuleId.Shallow, "SHALLOW", "x", AlarmSeverity.Danger));
         // The raise's await is suspended on the TCS; the publisher
         // has reserved the slot in _raised. Now the alarm clears -
         // HandleAlarmsChanged removes the slot and the late-completion
@@ -498,5 +504,139 @@ public class AlarmPublisherTests
         // happy path completes in microseconds.
         await lateClearSeen.Task.WaitAsync(TimeSpan.FromSeconds(2));
         await Assert.That(api.Cleared).Contains("late-id");
+    }
+
+    /// <summary>Yields until the fire-and-forget continuations scheduled
+    /// by RunContinuationsAsynchronously TCS completions have run.</summary>
+    private static async Task Settle()
+    {
+        for (int i = 0; i < 20; i++) await Task.Delay(1);
+    }
+
+    [Test]
+    public async Task SeverityEscalation_RepublishesWithNewState()
+    {
+        // A raised Warn that escalates to Danger must reach the other
+        // plotters as an alarm (sound) rather than staying a silent
+        // warn there.
+        var mgr = new StubAlarmManager();
+        // SignalK derives the id from (context, path, $source): a
+        // re-raise on the same path overlays the same notification.
+        var api = new FakeApi { RaiseHandler = (path, _) => ApiResult<string>.Ok("id-" + path) };
+        await using var pub = new AlarmPublisher(mgr, api, new PublishedAlarmTracker());
+
+        var warn = new AlarmInfo(AlarmRuleId.Shallow, "SHALLOW", "Depth 2.1m", AlarmSeverity.Warn);
+        mgr.Set(warn);
+        await Settle();
+        mgr.Set(warn with { Severity = AlarmSeverity.Danger, Message = "Depth 1.4m" });
+        await Settle();
+
+        await Assert.That(api.Raised.Count).IsEqualTo(2);
+        await Assert.That(api.Raised[1].Body.State).IsEqualTo("alarm");
+        await Assert.That(api.Raised[1].Body.Method).Contains("sound");
+        await Assert.That(api.Cleared.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task SeverityEscalation_NewServerId_RetiresPreviousNotification()
+    {
+        // A server that mints a fresh id on re-raise instead of
+        // overlaying would otherwise leave the warn-level notification
+        // behind next to the alarm-level one.
+        var mgr = new StubAlarmManager();
+        var api = new FakeApi();   // id-1, id-2, ... per raise
+        await using var pub = new AlarmPublisher(mgr, api, new PublishedAlarmTracker());
+
+        var warn = new AlarmInfo(AlarmRuleId.Shallow, "SHALLOW", "Depth 2.1m", AlarmSeverity.Warn);
+        mgr.Set(warn);
+        await Settle();
+        mgr.Set(warn with { Severity = AlarmSeverity.Danger });
+        await Settle();
+
+        await Assert.That(api.Cleared).IsEquivalentTo(["id-1"]);
+        mgr.Set();
+        await Settle();
+        await Assert.That(api.Cleared).IsEquivalentTo(["id-1", "id-2"]);
+    }
+
+    [Test]
+    public async Task SameSeverity_MessageChange_DoesNotRepublish()
+    {
+        var mgr = new StubAlarmManager();
+        var api = new FakeApi();
+        await using var pub = new AlarmPublisher(mgr, api, new PublishedAlarmTracker());
+
+        var a = new AlarmInfo(AlarmRuleId.Shallow, "SHALLOW", "Depth 1.8m", AlarmSeverity.Danger);
+        mgr.Set(a);
+        await Settle();
+        mgr.Set(a with { Message = "Depth 1.7m" });
+        await Settle();
+
+        await Assert.That(api.Raised.Count).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task RaiseInFlight_ClearThenReRaise_LeavesNoOrphanedId()
+    {
+        // Raise in flight, alarm clears, alarm re-raises, then the first
+        // raise resolves. Every id the server handed out must end up
+        // cleared once the alarm finally goes away; an overwritten
+        // in-flight id would linger on every plotter until server GC.
+        var mgr = new StubAlarmManager();
+        var api = new FakeApi();
+        var pending = new Queue<TaskCompletionSource<ApiResult<string>>>();
+        api.AsyncRaiseHandler = (_, _) =>
+        {
+            var tcs = new TaskCompletionSource<ApiResult<string>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            pending.Enqueue(tcs);
+            return tcs.Task;
+        };
+        var tracker = new PublishedAlarmTracker();
+        await using var pub = new AlarmPublisher(mgr, api, tracker);
+        var a = new AlarmInfo(AlarmRuleId.Shallow, "SHALLOW", "x", AlarmSeverity.Danger);
+
+        mgr.Set(a);
+        mgr.Set();
+        mgr.Set(a);
+        int n = 0;
+        var issued = new List<string>();
+        while (pending.Count > 0)
+        {
+            var id = $"id-{++n}";
+            issued.Add(id);
+            pending.Dequeue().SetResult(ApiResult<string>.Ok(id));
+            await Settle();
+        }
+        mgr.Set();
+        await Settle();
+
+        await Assert.That(api.Cleared).IsEquivalentTo(issued);
+        await Assert.That(tracker.IsOwnedPath("notifications.environment.depth.belowSurface")).IsFalse();
+    }
+
+    [Test]
+    public async Task ClearInFlight_ReRaiseWaitsForClearToComplete()
+    {
+        // A DELETE still in flight could land after a fresh POST for the
+        // same path and wipe it on the server. Operations on one alarm
+        // key are serialised: the re-raise goes out after the clear.
+        var mgr = new StubAlarmManager();
+        var api = new FakeApi();
+        var clearTcs = new TaskCompletionSource<ApiResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var pub = new AlarmPublisher(mgr, api, new PublishedAlarmTracker());
+        var a = new AlarmInfo(AlarmRuleId.Shallow, "SHALLOW", "x", AlarmSeverity.Danger);
+
+        mgr.Set(a);
+        await Settle();
+        api.AsyncClearHandler = _ => clearTcs.Task;
+        mgr.Set();
+        mgr.Set(a);
+        await Settle();
+        await Assert.That(api.Raised.Count).IsEqualTo(1);
+
+        clearTcs.SetResult(ApiResult.Ok);
+        await Settle();
+
+        await Assert.That(api.Raised.Count).IsEqualTo(2);
     }
 }

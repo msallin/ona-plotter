@@ -100,9 +100,11 @@ public interface IMapControlsJs
 
     /// <summary>Wire keyboard shortcuts to the given .NET reference so
     /// JS-side keydown handlers can call back into <c>OnKeyShortcut</c>.
-    /// Generic on the call site's component type so this Services
-    /// namespace doesn't need to know about <c>Map</c>.</summary>
-    Task EnableKeyboardShortcutsAsync<T>(DotNetObjectReference<T> dotNetRef) where T : class;
+    /// Only <paramref name="keys"/> (lower-cased KeyboardEvent.key values)
+    /// are forwarded; everything else stays with the browser. Generic on
+    /// the call site's component type so this Services namespace doesn't
+    /// need to know about <c>Map</c>.</summary>
+    Task EnableKeyboardShortcutsAsync<T>(DotNetObjectReference<T> dotNetRef, string[] keys) where T : class;
 
     /// <summary>Unhook the keyboard-shortcut handlers (called on
     /// dispose).</summary>
@@ -129,7 +131,7 @@ public interface IMapControlsJs
     /// <summary>Hide / show the bottom-centre range-scale chip. The
     /// chip occupies the same vertical column as the active-route
     /// HUD card; we hide the chip while a route is active so they
-    /// don't overlap. Called from ActiveRouteSync on activate /
+    /// don't overlap. Called from ActiveRouteController on activate /
     /// deactivate.</summary>
     Task SetRangeScaleHiddenAsync(bool hidden);
 }

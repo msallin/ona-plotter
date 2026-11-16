@@ -14,15 +14,23 @@ namespace OnaPlotter.Services.Alarms;
 /// way.
 /// <para>
 /// Wired by subscribing to <see cref="IAlarmManager.OnAlarmsChanged"/>.
-/// On each event we diff the live <see cref="IAlarmManager.AllActiveAlarms"/>
-/// against our own <see cref="_raised"/> map of "we raised this id":
+/// On each event we reconcile the live <see cref="IAlarmManager.AllActiveEntries"/>
+/// against our own <see cref="_raised"/> map of "we raised this":
 /// </para>
 /// <list type="bullet">
 /// <item>Active locally + not yet raised -> POST raise.</item>
+/// <item>Raised at a different severity -> POST again (the server
+/// overlays the same path) so other plotters see the escalation.</item>
 /// <item>Previously raised + no longer active -> DELETE clear.</item>
-/// <item>Active and already raised -> no-op (idempotent on the
-/// server side: a re-raise overlays).</item>
+/// <item>Active and raised at the same severity -> no-op.</item>
 /// </list>
+/// <para>
+/// At most one request is in flight per alarm key. A change that arrives
+/// while a raise or clear is pending is picked up by the reconcile that
+/// runs when that request completes. Without this a clear still in flight
+/// could land after a newer raise for the same path and wipe it, and two
+/// overlapping raises could leave the first server id orphaned.
+/// </para>
 /// <para>
 /// The publisher reads <see cref="IAlarmManager.AllActiveAlarms"/>
 /// (uncapped) rather than <see cref="IAlarmManager.ActiveAlarms"/>
@@ -62,14 +70,14 @@ public sealed class AlarmPublisher : IAsyncDisposable
     private readonly INotificationsApi _api;
     private readonly PublishedAlarmTracker _tracker;
     private readonly ClientErrorRelay? _relay;
-    private readonly SignalkClient? _signalk;
+    private readonly ISignalkClient? _signalk;
     private readonly Dictionary<AlarmKey, RaisedEntry> _raised = [];
     private bool _disposed;
 
     public AlarmPublisher(IAlarmManager manager, INotificationsApi api,
         PublishedAlarmTracker tracker,
         ClientErrorRelay? relay = null,
-        SignalkClient? signalk = null)
+        ISignalkClient? signalk = null)
     {
         _manager = manager;
         _api = api;
@@ -91,59 +99,66 @@ public sealed class AlarmPublisher : IAsyncDisposable
         }
     }
 
-    /// <summary>Async-aware reaction to the alarm-manager's change
-    /// event. Diffs active vs raised, fires raise/clear as needed.
-    /// Each API call is fire-and-forget; the next OnAlarmsChanged
-    /// reconciles state if a call fails.</summary>
-    private void HandleAlarmsChanged()
+    private void HandleAlarmsChanged() => Reconcile(allowRaise: true);
+
+    /// <summary>Diffs active vs raised and starts raise / clear requests
+    /// for keys with nothing in flight. <paramref name="allowRaise"/> is
+    /// false right after a failed raise so a server that rejects every
+    /// POST isn't retried in a tight loop; the next manager change
+    /// retries.</summary>
+    private void Reconcile(bool allowRaise)
     {
         if (_disposed) return;
         // AllActiveEntries is the UNCAPPED (info, rule) view -
         // ActiveAlarms is the banner stack (capped at MaxActiveAlarms).
         // Cross-plotter sync must not silently drop pile-up alarms,
         // and the rule pairing lets each rule declare its own publish
-        // path via IAlarmRule.GetPublishPath rather than the publisher
-        // reverse-engineering one from the title.
+        // path via IAlarmRule.GetPublishPath.
         var entries = _manager.AllActiveEntries;
         var activeKeys = new HashSet<AlarmKey>(entries.Count);
 
-        // Pass 1: raise newcomers. Skip alarms that are already
-        // server-emitted (they round-trip through this plotter via the
-        // bridge rule - republishing would loop). The acknowledger
-        // handle is the marker: only bridge-rule output sets it.
+        // Pass 1: raise newcomers and severity changes. Skip alarms that
+        // are already server-emitted (they round-trip through this
+        // plotter via the bridge rule - republishing would loop). The
+        // acknowledger handle is the marker: only bridge-rule output
+        // sets it.
         foreach (var (a, rule) in entries)
         {
             if (a.Acknowledger is not null) continue;
-            // Ask the rule itself for the path. Rules that don't
-            // participate in cross-plotter publish (e.g. SART - AIS
-            // feed already publishes; bridge rule - already came
-            // from the server) return null and we skip.
+            // Rules that don't participate in cross-plotter publish
+            // (e.g. SART - AIS feed already publishes) return null.
             var path = rule.GetPublishPath(a);
             if (string.IsNullOrEmpty(path)) continue;
-            var key = new AlarmKey(a.Title, a.TargetKey);
+            var key = new AlarmKey(a.RuleId, a.TargetKey);
             activeKeys.Add(key);
-            if (_raised.ContainsKey(key)) continue;
-            _ = TryRaiseAsync(a, path, key);
+            if (_raised.TryGetValue(key, out var existing))
+            {
+                if (existing.Busy) continue;
+                if (existing.Id is not null && existing.Severity == a.Severity) continue;
+            }
+            if (!allowRaise) continue;
+            var entry = existing ?? new RaisedEntry(path);
+            entry.Busy = true;
+            _raised[key] = entry;
+            // Tag the path as ours before the POST so the bridge rule
+            // suppresses the echo even before the id is known.
+            _tracker.Add(path);
+            _ = TryRaiseAsync(a, key, entry);
         }
 
-        // Pass 2: clear ones that left the active set. Snapshot the
-        // keys to avoid mutating the dictionary mid-iteration.
-        // Lazy-allocate the snapshot list so the steady state - "no
-        // alarms cleared this tick", which is most ticks once raise
-        // settles - doesn't allocate an enumerator chain + List<>.
-        List<(AlarmKey Key, RaisedEntry Raised)>? toClear = null;
+        // Pass 2: clear ones that left the active set. Lazy-allocate
+        // the snapshot list so the steady state doesn't allocate.
+        List<(AlarmKey Key, RaisedEntry Entry)>? toClear = null;
         foreach (var kv in _raised)
         {
-            if (activeKeys.Contains(kv.Key)) continue;
-            (toClear ??= new List<(AlarmKey, RaisedEntry)>(2))
-                .Add((kv.Key, kv.Value));
+            if (activeKeys.Contains(kv.Key) || kv.Value.Busy) continue;
+            (toClear ??= new List<(AlarmKey, RaisedEntry)>(2)).Add((kv.Key, kv.Value));
         }
         if (toClear is null) return;
-        foreach (var (key, raised) in toClear)
+        foreach (var (key, entry) in toClear)
         {
-            _raised.Remove(key);
-            _tracker.Remove(raised.Path);
-            _ = TryClearAsync(raised.Id);
+            entry.Busy = true;
+            _ = ClearOwnedAsync(key, entry);
         }
     }
 
@@ -219,18 +234,9 @@ public sealed class AlarmPublisher : IAsyncDisposable
         }
     }
 
-    private async Task TryRaiseAsync(AlarmInfo a, string path, AlarmKey key)
+    private async Task TryRaiseAsync(AlarmInfo a, AlarmKey key, RaisedEntry entry)
     {
-        // Reserve the slot synchronously so a second event before the
-        // POST resolves doesn't double-fire. Id stays null while the
-        // raise is in flight; HandleAlarmsChanged uses presence-in-dict
-        // to decide "raised vs not", and the late-clear path below
-        // checks the id for null to know the response hasn't arrived
-        // yet. We also tag the path as ours immediately so the bridge
-        // rule suppresses the echo even before the id is finalised.
-        _raised[key] = new RaisedEntry(path, Id: null);
-        _tracker.Add(path);
-
+        var path = entry.Path;
         var payload = new NotificationPayload(
             State: a.Severity == AlarmSeverity.Danger ? "alarm" : "warn",
             // Sound + visual on Danger so other plotters' speakers fire
@@ -245,71 +251,91 @@ public sealed class AlarmPublisher : IAsyncDisposable
         {
             r = await _api.RaiseAsync(path, payload);
         }
-        catch (HttpRequestException ex)
-        {
-            // ResourceHttp normally swallows HttpRequestException, but
-            // the per-call timeout CTS surfaces TaskCanceledException
-            // (a subclass of HttpRequestException-adjacent path) and
-            // some socket-level errors propagate directly. Drop the
-            // optimistic state so the next change retries; surface
-            // through the relay so a stuck publish flow is visible.
-            _raised.Remove(key);
-            _tracker.Remove(path);
-            _ = LogErrorAsync($"alarm.publish raise failed for {path}", ex);
-            return;
-        }
-        catch (Exception ex) when (ex is System.Text.Json.JsonException
-                                 || ex is TaskCanceledException
+        catch (Exception ex) when (ex is HttpRequestException
+                                 || ex is System.Text.Json.JsonException
                                  || ex is OperationCanceledException
                                  || ex is ObjectDisposedException)
         {
-            // Narrow catch set: serializer hiccup, per-call timeout, or
-            // disposed HttpClient on shutdown. None of these should
-            // propagate up the fire-and-forget continuation; all of
-            // them deserve a log so the failure is fixable post-hoc.
-            _raised.Remove(key);
-            _tracker.Remove(path);
+            // Socket error, serializer hiccup, per-call timeout, or a
+            // disposed HttpClient on shutdown. None should propagate up
+            // the fire-and-forget continuation; all deserve a log.
             _ = LogErrorAsync($"alarm.publish raise failed for {path}", ex);
+            CompleteFailedRaise(key, entry);
             return;
         }
 
         if (!r.Success || r.Value is null)
         {
             // Server rejected (404 on a pre-2.21 server, 5xx on a busy
-            // one) or 2xx with no parseable id. Release the slot so
-            // the next OnAlarmsChanged can try again; meanwhile the
-            // local banner still works. Logged so a sustained failure
-            // is visible.
-            _raised.Remove(key);
-            _tracker.Remove(path);
+            // one) or 2xx with no parseable id. The local banner still
+            // works; logged so a sustained failure is visible.
             _ = LogWarnAsync($"alarm.publish raise non-success for {path}: {r.Error ?? "(no body)"}");
+            CompleteFailedRaise(key, entry);
             return;
         }
 
-        // Late-clear race: the alarm may have left the active set while
-        // we were awaiting. If our entry was removed by HandleAlarmsChanged
-        // in the meantime, fire the clear now - otherwise the server
-        // notification would linger until the 60s GC.
-        if (!_raised.ContainsKey(key))
+        string id = r.Value;
+        if (!IsCurrent(key, entry))
         {
-            _ = TryClearAsync(r.Value);
-            _tracker.Remove(path);
+            // The entry was dropped while we awaited (WS disconnect or
+            // dispose). Clear the notification we just created unless a
+            // newer entry already owns this path: the server derives the
+            // id from (context, path, $source), so that entry's raise
+            // overlays the same notification and a clear would wipe it.
+            if (!_raised.ContainsKey(key))
+            {
+                _ = TryClearAsync(id);
+                if (!_disposed) _tracker.Remove(path);
+            }
             return;
         }
 
-        _raised[key] = new RaisedEntry(path, r.Value);
-        _ = LogInfoAsync($"alarm.publish ok title={a.Title} path={path} id={r.Value}");
+        // A different id for the same path means the server minted a new
+        // notification instead of overlaying; retire the previous one.
+        if (entry.Id is string previous && previous != id) _ = TryClearAsync(previous);
+        entry.Id = id;
+        entry.Severity = a.Severity;
+        entry.Busy = false;
+        _ = LogInfoAsync($"alarm.publish ok rule={a.RuleId} path={path} id={id}");
+        // Pick up anything that changed while the raise was in flight
+        // (alarm cleared, severity changed again).
+        Reconcile(allowRaise: true);
     }
+
+    private void CompleteFailedRaise(AlarmKey key, RaisedEntry entry)
+    {
+        if (!IsCurrent(key, entry)) return;
+        entry.Busy = false;
+        if (entry.Id is null)
+        {
+            // Nothing on the server: release ownership so the next
+            // manager change retries.
+            _raised.Remove(key);
+            _tracker.Remove(entry.Path);
+        }
+        // Clears only: if the alarm left while the raise was failing,
+        // retire whatever this key still owns on the server.
+        Reconcile(allowRaise: false);
+    }
+
+    private async Task ClearOwnedAsync(AlarmKey key, RaisedEntry entry)
+    {
+        await TryClearAsync(entry.Id);
+        if (!IsCurrent(key, entry)) return;
+        // Clear failures are not retried: the server's 60 s GC retires
+        // the notification anyway, and holding the key would block a
+        // re-raise of the same alarm.
+        _raised.Remove(key);
+        _tracker.Remove(entry.Path);
+        Reconcile(allowRaise: true);
+    }
+
+    private bool IsCurrent(AlarmKey key, RaisedEntry entry) =>
+        !_disposed && _raised.TryGetValue(key, out var cur) && ReferenceEquals(cur, entry);
 
     private async Task TryClearAsync(string? id)
     {
-        if (id is null)
-        {
-            // Race: a clear arrived before the raise resolved. The
-            // raise-completion path will issue the clear when it sees
-            // the slot was already removed. Nothing to do here.
-            return;
-        }
+        if (id is null) return;
         try
         {
             var r = await _api.ClearAsync(id);
@@ -318,12 +344,8 @@ public sealed class AlarmPublisher : IAsyncDisposable
                 _ = LogWarnAsync($"alarm.publish clear non-success for id={id}: {r.Error ?? "(no body)"}");
             }
         }
-        catch (HttpRequestException ex)
-        {
-            _ = LogErrorAsync($"alarm.publish clear failed for id={id}", ex);
-        }
-        catch (Exception ex) when (ex is System.Text.Json.JsonException
-                                 || ex is TaskCanceledException
+        catch (Exception ex) when (ex is HttpRequestException
+                                 || ex is System.Text.Json.JsonException
                                  || ex is OperationCanceledException
                                  || ex is ObjectDisposedException)
         {
@@ -391,12 +413,19 @@ public sealed class AlarmPublisher : IAsyncDisposable
         return _relay.ReportAsync(message, ex);
     }
 
-    private readonly record struct AlarmKey(string Title, string? TargetKey);
+    private readonly record struct AlarmKey(AlarmRuleId RuleId, string? TargetKey);
 
-    /// <summary>Tracking record for a notification we've raised on the
-    /// server. <c>Id</c> is null while the raise POST is in flight;
-    /// the late-clear path checks <c>id is null</c> to know the
-    /// response hasn't arrived yet. Once the server responds with a
-    /// real id the record is replaced with the populated form.</summary>
-    private readonly record struct RaisedEntry(string Path, string? Id);
+    /// <summary>Per-key publish state. <c>Id</c> / <c>Severity</c> describe
+    /// what the server last confirmed (Id null until the first raise
+    /// succeeds); <c>Busy</c> is true while a raise or clear for this key
+    /// is in flight. Mutable and compared by reference so a completion
+    /// can tell whether its entry was replaced (disconnect, dispose)
+    /// while it awaited.</summary>
+    private sealed class RaisedEntry(string path)
+    {
+        public string Path { get; } = path;
+        public string? Id { get; set; }
+        public AlarmSeverity Severity { get; set; }
+        public bool Busy { get; set; }
+    }
 }

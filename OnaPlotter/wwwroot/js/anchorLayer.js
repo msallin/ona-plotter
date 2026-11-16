@@ -39,6 +39,11 @@ let anchorTrailLayer = null;
 // in sync without the module reaching back into leafletInterop state.
 let selfLat = 0, selfLon = 0;
 
+// 0/0 is the "no fix yet" sentinel the mux never sends for a real fix.
+function hasBoatFix() {
+    return !!(selfLat && selfLon);
+}
+
 // Cached inside/outside bucket from the previous setBoatPosition.
 // Anchor-circle restyle (the green<->red flip) only needs to fire on
 // the transition; without this cache every tick at anchor wrote a
@@ -85,27 +90,26 @@ export function init(map, deps) {
 export function setBoatPosition(lat, lon) {
     selfLat = lat;
     selfLon = lon;
-    // Skip the inside/outside circle recolour while the anchor is in
-    // the incomplete state - the alarm circle isn't really armed
-    // yet and the green/red colour would mislead. setAnchorIncomplete
-    // owns the styling in that state.
-    if (anchorMarker && anchorCircle && !anchorIncomplete) {
-        const all = anchorMarker.getLatLng();
-        const dist = haversineMeters(lat, lon, all.lat, all.lng);
-        const inside = dist <= anchorCircle.getRadius();
-        // Only restyle on the bucket transition. setStyle is not a
-        // no-op when the value matches: Leaflet's vector path writes
-        // every style attribute and invalidates the renderer layer
-        // even when the resulting paint is identical. At anchor in
-        // harbor, inside stays true for the whole watch; the every-
-        // tick setStyle was a recurring compositor wake-up.
-        if (inside !== _lastInside) {
-            _lastInside = inside;
-            const acColor = inside ? colors.anchorOk : colors.anchorDrag;
-            anchorCircle.setStyle({ color: acColor, fillColor: acColor });
-        }
-    }
+    restyleForBoatPosition();
     updateAnchorTrail(lat, lon);
+}
+
+// Recolours the alarm circle green / red for the boat inside / outside
+// it. Skipped while the anchor is incomplete: the circle isn't armed
+// yet, setAnchorIncomplete owns the styling in that state.
+function restyleForBoatPosition() {
+    if (!anchorMarker || !anchorCircle || anchorIncomplete) return;
+    const all = anchorMarker.getLatLng();
+    const dist = haversineMeters(selfLat, selfLon, all.lat, all.lng);
+    const inside = dist <= anchorCircle.getRadius();
+    // Only restyle on the bucket transition. setStyle is not a no-op
+    // when the value matches: Leaflet's vector path writes every style
+    // attribute and invalidates the renderer layer even when the paint
+    // is identical, and at anchor `inside` stays true for hours.
+    if (inside === _lastInside) return;
+    _lastInside = inside;
+    const acColor = inside ? colors.anchorOk : colors.anchorDrag;
+    anchorCircle.setStyle({ color: acColor, fillColor: acColor });
 }
 
 export function setAnchor(lat, lon, radiusM) {
@@ -126,7 +130,7 @@ export function setAnchor(lat, lon, radiusM) {
     }).addTo(mapRef);
     // Seed the trail with the current boat position so the first segment
     // renders without waiting for ANCHOR_TRAIL_SAMPLE_MS.
-    if (selfLat && selfLon) anchorTrail.push({ lat: selfLat, lon: selfLon, t: Date.now() });
+    if (hasBoatFix()) anchorTrail.push({ lat: selfLat, lon: selfLon, t: Date.now() });
     redrawAnchorRadiusOverlay(lat, lon, radiusM);
 }
 
@@ -175,15 +179,18 @@ export function setAnchorIncomplete(incomplete) {
             fillOpacity: 0.04, weight: 1.5, dashArray: '2,8'
         });
     } else {
-        // Restore the fully-armed look. setBoatPosition will replace
-        // the colour on the next tick based on inside/outside the
-        // circle; we set anchorOk here so the brief pre-tick render
-        // doesn't flash amber.
+        // Restore the fully-armed look, then colour the circle for
+        // where the boat is right now. The cached inside/outside bucket
+        // is stale (the incomplete styling overwrote the colour), so
+        // drop it; otherwise a boat already outside keeps the anchorOk
+        // restyle until it crosses the line again.
         anchorMarker.setStyle({ color: colors.anchorOk, fillColor: colors.anchorOk, weight: 1 });
         anchorCircle.setStyle({
             color: colors.anchorOk, fillColor: colors.anchorOk,
             fillOpacity: 0.06, weight: 2, dashArray: '6,4'
         });
+        _lastInside = null;
+        if (hasBoatFix()) restyleForBoatPosition();
     }
 }
 

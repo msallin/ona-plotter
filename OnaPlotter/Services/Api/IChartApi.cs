@@ -3,8 +3,9 @@ using OnaPlotter.Models;
 namespace OnaPlotter.Services.Api;
 
 /// <summary>
-/// Reads available chart layers from the SignalK server.
-/// Throws <see cref="HttpRequestException"/> on network failure; callers decide how to surface it.
+/// Reads available chart layers from the SignalK server, prefixed by
+/// the built-in basemaps. Server failures degrade to the built-ins
+/// alone; only caller cancellation throws.
 /// </summary>
 public interface IChartApi
 {

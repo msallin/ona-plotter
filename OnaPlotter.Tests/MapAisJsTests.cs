@@ -11,25 +11,86 @@ namespace OnaPlotter.Tests;
 /// </summary>
 public class MapAisJsTests
 {
+    private static OnaPlotter.Services.Map.AisUpdatePayload Update() => new(
+        Seq: 1, BaseSeq: OnaPlotter.Services.Map.AisUpdatePayload.FullSnapshot,
+        NowUtc: "2026-01-01T12:00:00Z",
+        Vessels: [new() { Context = "abc", Lat = 0, Lon = 0 }],
+        Removed: []);
+
     [Test]
-    public async Task UpdateAisTargetsAsync_ForwardsArrayAsSingleArg()
+    public async Task UpdateAisTargetsAsync_ForwardsUpdateAndReturnsAcceptance()
     {
         var fake = new RecordingJsRef();
+        fake.Returns["updateAisTargets"] = true;
         var sut = new MapAisJs(fake);
-        var vessels = new OnaPlotter.Services.Map.AisVesselPayload[]
-        {
-            new() { Context = "abc", Lat = 0, Lon = 0 },
-            new() { Context = "def", Lat = 1, Lon = 1 },
-        };
+        var update = Update();
 
-        await sut.UpdateAisTargetsAsync(vessels);
+        bool accepted = await sut.UpdateAisTargetsAsync(update);
 
         await Assert.That(fake.Calls.Count).IsEqualTo(1);
         await Assert.That(fake.Calls[0].id).IsEqualTo("updateAisTargets");
-        // Array is passed as a single object argument so the JS side
-        // sees one parameter, not N spread args.
         await Assert.That(fake.Calls[0].args.Length).IsEqualTo(1);
-        await Assert.That(fake.Calls[0].args[0]).IsSameReferenceAs(vessels);
+        await Assert.That(fake.Calls[0].args[0]).IsSameReferenceAs(update);
+        await Assert.That(accepted).IsTrue();
+    }
+
+    [Test]
+    public async Task UpdateAisTargetsAsync_RefusedByRenderer_ReturnsFalse()
+    {
+        var fake = new RecordingJsRef();
+        fake.Returns["updateAisTargets"] = false;
+        var sut = new MapAisJs(fake);
+
+        await Assert.That(await sut.UpdateAisTargetsAsync(Update())).IsFalse();
+    }
+
+    [Test]
+    public async Task UpdateAisTargetsAsync_OnDisconnected_ReturnsFalse()
+    {
+        var fake = new RecordingJsRef { ThrowDisconnectedNext = true };
+        var sut = new MapAisJs(fake);
+
+        await Assert.That(await sut.UpdateAisTargetsAsync(Update())).IsFalse();
+    }
+
+    [Test]
+    public async Task AisUpdatePayload_SerialisesCompactCamelCaseWire()
+    {
+        // Pins the renderer contract: camelCase keys, enum roles as
+        // lower-case strings, null / default fields omitted so an idle
+        // vessel costs only a few bytes.
+        var update = new OnaPlotter.Services.Map.AisUpdatePayload(
+            Seq: 4, BaseSeq: 3, NowUtc: "2026-01-01T12:00:00Z",
+            Vessels:
+            [
+                new()
+                {
+                    Context = "v1", Lat = 1.5, Lon = 2.5,
+                    MarkerTone = OnaPlotter.Services.Map.AisTone.Danger,
+                    VectorTone = OnaPlotter.Services.Map.AisTone.Ship,
+                    CpaOverlay = OnaPlotter.Services.Map.AisCpaOverlay.Awareness,
+                    LastAisSeen = "2026-01-01T11:59:00Z",
+                    TrailAppend = [1.5, 2.5],
+                    TrailTrim = 2,
+                },
+            ],
+            Removed: ["v2"]);
+
+        string json = System.Text.Json.JsonSerializer.Serialize(update);
+        var root = System.Text.Json.JsonDocument.Parse(json).RootElement;
+        var v = root.GetProperty("vessels")[0];
+
+        await Assert.That(root.GetProperty("baseSeq").GetInt32()).IsEqualTo(3);
+        await Assert.That(root.GetProperty("removed")[0].GetString()).IsEqualTo("v2");
+        await Assert.That(v.GetProperty("markerTone").GetString()).IsEqualTo("danger");
+        await Assert.That(v.GetProperty("vectorTone").GetString()).IsEqualTo("ship");
+        await Assert.That(v.GetProperty("cpaOverlay").GetString()).IsEqualTo("awareness");
+        await Assert.That(v.GetProperty("trailTrim").GetInt32()).IsEqualTo(2);
+        await Assert.That(v.TryGetProperty("static", out _)).IsFalse();
+        await Assert.That(v.TryGetProperty("trail", out _)).IsFalse();
+        await Assert.That(v.TryGetProperty("opacity", out _)).IsFalse();
+        await Assert.That(v.TryGetProperty("labelVisible", out _)).IsFalse();
+        await Assert.That(v.TryGetProperty("cpaNm", out _)).IsFalse();
     }
 
     [Test]
@@ -37,7 +98,7 @@ public class MapAisJsTests
     {
         var fake = new RecordingJsRef();
         var sut = new MapAisJs(fake);
-        var atons = new object[] { new { id = "buoy1" } };
+        var atons = new OnaPlotter.Services.Map.AtonPayload[] { new("buoy1", 1, 2, "Lateral", "Port", false, "B1", null, null) };
 
         await sut.SetAtonsAsync(atons);
 
@@ -89,8 +150,8 @@ public class MapAisJsTests
         var sut = new MapAisJs(fake);
 
         sut.MarkDisposed();
-        await sut.UpdateAisTargetsAsync(System.Array.Empty<OnaPlotter.Services.Map.AisVesselPayload>());
-        await sut.SetAtonsAsync(new object[] { });
+        await sut.UpdateAisTargetsAsync(Update());
+        await sut.SetAtonsAsync([]);
         await sut.SetAtonsVisibleAsync(true);
         await sut.SetOwnMmsiAsync("x");
         await sut.SetHarborModeAsync(true);

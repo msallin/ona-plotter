@@ -30,6 +30,7 @@ namespace OnaPlotter.Services.Alarms;
 /// </summary>
 public sealed class WindShiftAlarmRule : IAlarmRule
 {
+    public AlarmRuleId Id => AlarmRuleId.WindShift;
     public string Title => "WIND SHIFT";
     public int Priority => 300;    // below collision / grounding
     public bool AutoClear => false;
@@ -101,6 +102,7 @@ public sealed class WindShiftAlarmRule : IAlarmRule
                 if (shift > ctx.Settings.WindShiftAlarmThreshold)
                 {
                     alarm = new AlarmInfo(
+                        Id,
                         Title,
                         $"TWD shifted {shift:F0}° in {lookback:F0} min",
                         AlarmSeverity.Warn);

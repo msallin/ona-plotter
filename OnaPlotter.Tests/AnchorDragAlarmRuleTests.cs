@@ -132,7 +132,7 @@ public class AnchorDragAlarmRuleTests
         // ~30s) silences the alarm; the HUD's separate freshness pill
         // is what flags the dropout to the helm.
         var nowProvider = new MutableNow { Value = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc) };
-        var nav = new NavigationData(() => nowProvider.Value);
+        var nav = new NavigationData(new DelegateTimeProvider(() => nowProvider.Value));
         nav.ApplyAnchorPosition(47.4, 8.5);
         nav.Apply("navigation.anchor.maxRadius", 30.0);
         // Apply a "dragging" current radius now, then advance the clock
@@ -156,7 +156,7 @@ public class AnchorDragAlarmRuleTests
         // Pinning it so a refactor that "tidied up" the latch reset
         // doesn't silently change the post-recovery behaviour.
         var nowProvider = new MutableNow { Value = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc) };
-        var nav = new NavigationData(() => nowProvider.Value);
+        var nav = new NavigationData(new DelegateTimeProvider(() => nowProvider.Value));
         nav.ApplyAnchorPosition(47.4, 8.5);
         nav.Apply("navigation.anchor.maxRadius", 30.0);
         nav.Apply("navigation.anchor.currentRadius", 40.0);

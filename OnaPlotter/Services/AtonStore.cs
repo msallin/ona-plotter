@@ -39,7 +39,7 @@ public sealed class AtonStore
     /// <summary>Apply a delta. Creates the AtoN entry on first sight,
     /// then forwards to <see cref="Aton.Apply"/>. Bumps the version on
     /// changes so <see cref="GetAtons"/> rebuilds its snapshot lazily.</summary>
-    public void Apply(string context, string path, object? value)
+    public void Apply(string context, string path, DeltaValue value)
     {
         var aton = _atons.GetOrAdd(context, ctx => new Aton(ctx));
         if (aton.Apply(path, value))
@@ -73,6 +73,11 @@ public sealed class AtonStore
     }
 
     public int Count => _atons.Count;
+
+    /// <summary>Monotonic change counter; bumps on every apply that
+    /// changed an AtoN, on prune and on reset. Lets a consumer skip a
+    /// push when nothing changed since the last one.</summary>
+    public int Version => Volatile.Read(ref _version);
 
     /// <summary>Drop everything. Called from SignalkClient on a websocket
     /// drop so a stale AtoN from before the disconnect doesn't haunt

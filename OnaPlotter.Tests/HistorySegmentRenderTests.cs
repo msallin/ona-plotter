@@ -128,9 +128,9 @@ public class HistorySegmentRenderTests
         await Assert.That(payloads[0].Coords.Length).IsEqualTo(10);
         await Assert.That(payloads[1].Coords.Length).IsEqualTo(10);
         await Assert.That(payloads[2].Coords.Length).IsEqualTo(10);
-        await Assert.That(payloads[0].IsStationary).IsTrue();
-        await Assert.That(payloads[1].IsStationary).IsFalse();
-        await Assert.That(payloads[2].IsStationary).IsTrue();
+        await Assert.That(payloads[0].Style).IsEqualTo(HistorySegmentRender.StyleStationaryDot);
+        await Assert.That(payloads[1].Style).IsEqualTo(HistorySegmentRender.StyleMoving);
+        await Assert.That(payloads[2].Style).IsEqualTo(HistorySegmentRender.StyleStationaryDot);
         // Seam: segment 0 ends at point 9, segment 1 starts at point
         // 10. The latitudes are unique (47.4 + i*0.001) so a one-coord
         // overlap would show up as the same value at both seam ends.
@@ -233,19 +233,12 @@ public class HistorySegmentRenderTests
     }
 
     [Test]
-    public async Task BuildSegmentPayload_JsonRoundTrip_KeysMatchHistoryJsContract()
+    public async Task BuildSegmentPayload_JsonKeys_MatchHistoryMapLayerContract()
     {
-        // Regression test for a History-page mount crash: the JSON keys
-        // emitted by JsonSerializer.Serialize default-cased to PascalCase
-        // ("Coords", "IsStationary", "Tooltip"), but the eval block in
-        // History.razor::LoadTrack read s.coords / s.isStationary /
-        // s.tooltip (lowercase). Result was L.polyline(undefined, ...)
-        // on every History page mount because s.coords was undefined.
-        // The fix swaps the JS reads to PascalCase to match what the
-        // serialiser emits; this test pins the JSON keys so a future
-        // global JsonSerializerOptions change (e.g. opting into
-        // JsonSerializerDefaults.Web) doesn't silently flip casing
-        // and re-break the History page.
+        // historyMapLayer.js::renderSegments reads s.index / s.coords /
+        // s.style / s.color / s.tooltip / s.depths. The explicit
+        // [JsonPropertyName] attributes keep those names stable whatever
+        // naming policy the serialiser runs with.
         var pts = new[]
         {
             Pt(TimeSpan.FromMinutes(0), 47.4, 8.5),
@@ -257,12 +250,87 @@ public class HistorySegmentRenderTests
 
         var payloads = HistorySegmentRender.BuildSegmentPayload(pts, segs);
         var json = System.Text.Json.JsonSerializer.Serialize(payloads);
+        var web = System.Text.Json.JsonSerializer.Serialize(payloads,
+            new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
 
-        // Pin the exact key names; History.razor's eval block reads
-        // these verbatim. A casing flip surfaces here as a failed
-        // contains assertion before the page crashes at runtime.
-        await Assert.That(json).Contains("\"Coords\"");
-        await Assert.That(json).Contains("\"IsStationary\"");
-        await Assert.That(json).Contains("\"Tooltip\"");
+        foreach (var key in new[] { "index", "coords", "style", "color", "tooltip", "depths" })
+        {
+            await Assert.That(json).Contains($"\"{key}\"");
+            await Assert.That(web).Contains($"\"{key}\"");
+        }
+        await Assert.That(json.Contains("\"IsStationary\"")).IsFalse();
+    }
+
+    [Test]
+    public async Task BuildSegmentPayload_IndexPointsIntoFullSegmentsArray()
+    {
+        // A dropped one-point segment must not shift the index the map
+        // click reports back: OpenTripDetailFromMap(idx) indexes the
+        // full segments array, not the payload list.
+        var pts = new TrackPoint[4];
+        for (int i = 0; i < 4; i++) pts[i] = Pt(TimeSpan.FromMinutes(i), 47.4 + i * 0.001, 8.5);
+        var segs = new[]
+        {
+            Seg(pts[0].Timestamp, pts[0].Timestamp, stationary: true, pts: 1),
+            Seg(pts[1].Timestamp, pts[3].Timestamp, stationary: false, pts: 3),
+        };
+
+        var payloads = HistorySegmentRender.BuildSegmentPayload(pts, segs);
+
+        await Assert.That(payloads.Count).IsEqualTo(1);
+        await Assert.That(payloads[0].Index).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task BuildSegmentPayload_MovingTripsCyclePaletteSkippingStationary()
+    {
+        // Ten moving trips separated by stationary dwells: the first trip
+        // keeps the live-track token, consecutive trips get distinct hues,
+        // the palette wraps after its last entry, and dwells always use
+        // the stationary token.
+        const int trips = 10;
+        var pts = new TrackPoint[trips * 4];
+        for (int i = 0; i < pts.Length; i++) pts[i] = Pt(TimeSpan.FromMinutes(i), 47.4 + i * 0.001, 8.5);
+        var segs = new List<TrackSegment>();
+        for (int t = 0; t < trips; t++)
+        {
+            segs.Add(Seg(pts[t * 4].Timestamp, pts[t * 4 + 1].Timestamp, stationary: true));
+            segs.Add(Seg(pts[t * 4 + 2].Timestamp, pts[t * 4 + 3].Timestamp, stationary: false));
+        }
+
+        var payloads = HistorySegmentRender.BuildSegmentPayload(pts, [.. segs]);
+
+        var moving = payloads.Where(p => p.Style == HistorySegmentRender.StyleMoving).ToList();
+        var stationary = payloads.Where(p => p.Style != HistorySegmentRender.StyleMoving).ToList();
+        await Assert.That(moving.Count).IsEqualTo(trips);
+        await Assert.That(moving[0].Color).IsEqualTo(HistorySegmentRender.MovingBaseColor);
+        await Assert.That(moving[1].Color).IsNotEqualTo(moving[0].Color);
+        var n = HistorySegmentRender.TripPalette.Count;
+        await Assert.That(moving[n].Color).IsEqualTo(moving[0].Color);
+        await Assert.That(stationary.All(p => p.Color == HistorySegmentRender.StationaryColor)).IsTrue();
+    }
+
+    [Test]
+    [Arguments(true, HistorySegmentRender.StyleStationaryDot)]
+    [Arguments(false, HistorySegmentRender.StyleStationaryLine)]
+    public async Task BuildSegmentPayload_StationaryStyleFollowsDotToggle(bool asDot, string expected)
+    {
+        var pts = new[]
+        {
+            Pt(TimeSpan.FromMinutes(0), 47.4, 8.5),
+            Pt(TimeSpan.FromMinutes(1), 47.4, 8.5),
+        };
+        var segs = new[] { Seg(pts[0].Timestamp, pts[1].Timestamp, stationary: true) };
+
+        var payloads = HistorySegmentRender.BuildSegmentPayload(pts, segs, stationaryAsDot: asDot);
+
+        await Assert.That(payloads[0].Style).IsEqualTo(expected);
+    }
+
+    [Test]
+    public async Task TripPalette_EntriesAreDistinct()
+    {
+        await Assert.That(HistorySegmentRender.TripPalette.Distinct().Count())
+            .IsEqualTo(HistorySegmentRender.TripPalette.Count);
     }
 }

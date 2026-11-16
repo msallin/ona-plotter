@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Net;
 using OnaPlotter.Services.Api;
 
@@ -9,7 +10,7 @@ public class RouteApiTests
     public async Task GetAll_EmptyDictReturnsEmptyList()
     {
         var http = ApiTestHelpers.JsonClient(_ => "{}");
-        var api = new RouteApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new RouteApi(http, ApiTestHelpers.FixedBaseUrl(), NullLogger<RouteApi>.Instance);
 
         var routes = await api.GetAllAsync();
         await Assert.That(routes.Count).IsEqualTo(0);
@@ -31,7 +32,7 @@ public class RouteApiTests
         }
         """;
         var http = ApiTestHelpers.JsonClient(_ => body);
-        var api = new RouteApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new RouteApi(http, ApiTestHelpers.FixedBaseUrl(), NullLogger<RouteApi>.Instance);
 
         var routes = await api.GetAllAsync();
         await Assert.That(routes.Count).IsEqualTo(1);
@@ -43,7 +44,7 @@ public class RouteApiTests
     public async Task GetAll_FailureReturnsEmpty()
     {
         var http = ApiTestHelpers.JsonClient(_ => "", HttpStatusCode.ServiceUnavailable);
-        var api = new RouteApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new RouteApi(http, ApiTestHelpers.FixedBaseUrl(), NullLogger<RouteApi>.Instance);
 
         var routes = await api.GetAllAsync();
         await Assert.That(routes.Count).IsEqualTo(0);
@@ -57,7 +58,7 @@ public class RouteApiTests
           "geometry": { "type": "LineString", "coordinates": [[8.5,47.4],[9.0,48.0]] } } }
         """;
         var http = ApiTestHelpers.JsonClient(_ => body);
-        var api = new RouteApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new RouteApi(http, ApiTestHelpers.FixedBaseUrl(), NullLogger<RouteApi>.Instance);
 
         var coords = await api.GetCoordinatesAsync("/resources/routes/abc");
 
@@ -80,7 +81,7 @@ public class RouteApiTests
                     System.Text.Encoding.UTF8, "application/json")
             };
         });
-        var api = new RouteApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new RouteApi(http, ApiTestHelpers.FixedBaseUrl(), NullLogger<RouteApi>.Instance);
 
         await api.GetCoordinatesAsync("abc/xyz");
 
@@ -108,7 +109,7 @@ public class RouteApiTests
                     System.Text.Encoding.UTF8, "application/json"),
             };
         });
-        var api = new RouteApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new RouteApi(http, ApiTestHelpers.FixedBaseUrl(), NullLogger<RouteApi>.Instance);
 
         var r = await api.SaveAsync("My Route", [[47.0, 8.0], [48.0, 9.0]]);
 
@@ -130,7 +131,7 @@ public class RouteApiTests
                 Content = new StringContent("\"legacy-uuid\"",
                     System.Text.Encoding.UTF8, "application/json"),
             });
-        var api = new RouteApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new RouteApi(http, ApiTestHelpers.FixedBaseUrl(), NullLogger<RouteApi>.Instance);
 
         var r = await api.SaveAsync("My Route", [[47.0, 8.0], [48.0, 9.0]]);
 
@@ -146,7 +147,7 @@ public class RouteApiTests
         // to activate, so treat this as a failure.
         var http = ApiTestHelpers.MockClient(_ =>
             new HttpResponseMessage(HttpStatusCode.Created));
-        var api = new RouteApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new RouteApi(http, ApiTestHelpers.FixedBaseUrl(), NullLogger<RouteApi>.Instance);
 
         var r = await api.SaveAsync("My Route", [[47.0, 8.0], [48.0, 9.0]]);
         await Assert.That(r.Success).IsFalse();
@@ -163,7 +164,7 @@ public class RouteApiTests
             body = req.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
             return new HttpResponseMessage(HttpStatusCode.Created);
         });
-        var api = new RouteApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new RouteApi(http, ApiTestHelpers.FixedBaseUrl(), NullLogger<RouteApi>.Instance);
 
         await api.SaveAsync("Test Route", [[47.0, 8.0], [48.0, 9.0], [49.0, 10.0]]);
 

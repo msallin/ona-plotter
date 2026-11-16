@@ -49,16 +49,17 @@ public class MapRouteJsTests
         var sut = new MapRouteJs(fake);
         var coords = new[] { new[] { 54.5, 11.2 } };
 
-        await sut.SetActiveRouteAsync(coords, 2, "rid", "rname");
+        await sut.SetActiveRouteAsync(coords, 2, "rid", "rname", 3.5);
 
         await Assert.That(fake.Calls[0].id).IsEqualTo("setActiveRoute");
-        await Assert.That(fake.Calls[0].args.Length).IsEqualTo(4);
+        await Assert.That(fake.Calls[0].args.Length).IsEqualTo(5);
         // First arg is the coords array passed as a single object so
         // the JS side reads it as one parameter, not flattened.
         await Assert.That(fake.Calls[0].args[0]).IsSameReferenceAs(coords);
         await Assert.That(fake.Calls[0].args[1]).IsEqualTo(2);
         await Assert.That(fake.Calls[0].args[2]).IsEqualTo("rid");
         await Assert.That(fake.Calls[0].args[3]).IsEqualTo("rname");
+        await Assert.That(fake.Calls[0].args[4]).IsEqualTo(3.5);
     }
 
     [Test]
@@ -95,31 +96,6 @@ public class MapRouteJsTests
 
         await Assert.That(fake.Calls[0].id).IsEqualTo("setActiveRouteStopping");
         await Assert.That((bool)fake.Calls[0].args[0]!).IsFalse();
-    }
-
-    [Test]
-    public async Task SetActiveRouteTtgSecondsAsync_PassesNullableDouble()
-    {
-        var fake = new RecordingJsRef();
-        var sut = new MapRouteJs(fake);
-
-        await sut.SetActiveRouteTtgSecondsAsync(123.4);
-
-        await Assert.That(fake.Calls[0].id).IsEqualTo("setActiveRouteTtgSeconds");
-        await Assert.That(fake.Calls[0].args[0]).IsEqualTo(123.4);
-    }
-
-    [Test]
-    public async Task SetActiveRouteTtgSecondsAsync_NullClearsRow()
-    {
-        // Null lat/lon paths in the call site clear the popup ETA row;
-        // the wrapper must forward null through unchanged.
-        var fake = new RecordingJsRef();
-        var sut = new MapRouteJs(fake);
-
-        await sut.SetActiveRouteTtgSecondsAsync(null);
-
-        await Assert.That(fake.Calls[0].args[0]).IsNull();
     }
 
     [Test]

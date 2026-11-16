@@ -4,20 +4,29 @@ namespace OnaPlotter.Services;
 
 /// <summary>
 /// A single alarm-detection rule. The <see cref="AlarmManager"/> owns a
-/// list of these and evaluates them in priority order on every Evaluate
+/// list of these and evaluates every one of them on each Evaluate
 /// tick. Adding a new alarm type is a matter of implementing this
 /// interface and registering it in the DI container.
 /// </summary>
 public interface IAlarmRule
 {
-    /// <summary>Short uppercase title, also the alarm banner's <c>Title</c>
-    /// field. Must be unique per rule.</summary>
+    /// <summary>Stable identity of the rule. Keys persistence of the
+    /// per-rule disable toggle and must be stamped on every
+    /// <see cref="AlarmInfo"/> the rule emits. Unique per rule, except
+    /// that the server-notification bridge emits alarms carrying the id
+    /// of the local rule they correspond to.</summary>
+    AlarmRuleId Id { get; }
+
+    /// <summary>Short uppercase display title, also the alarm banner's
+    /// <c>Title</c> field. Display only; identity is <see cref="Id"/>.</summary>
     string Title { get; }
 
     /// <summary>
-    /// Relative priority; rules with lower numbers fire first and short-
-    /// circuit the remaining rules when they return an alarm. Conventions:
-    /// 100 = shallow / grounding, 200 = collision, 300 = wind shift.
+    /// Relative priority, used only as the last tie-break when ordering
+    /// the active stack (after severity desc and time-to-event asc).
+    /// Every rule is evaluated on every tick regardless of priority.
+    /// Conventions: 100 = shallow / grounding, 200 = collision,
+    /// 300 = wind shift.
     /// </summary>
     int Priority { get; }
 
@@ -54,7 +63,7 @@ public interface IAlarmRule
 
     /// <summary>
     /// Called by <see cref="AlarmManager"/> immediately after the user
-    /// dismisses an alarm whose <c>Title</c> matches this rule's. Default
+    /// dismisses an alarm this rule raised. Default
     /// is a no-op; override when the rule needs to remember the dismissal
     /// to implement a per-rule rearm policy (e.g. SHALLOW requires the
     /// depth to be above threshold for 5 minutes before it re-fires).
@@ -92,8 +101,7 @@ public interface IAlarmRule
     /// (rather than in a switch on the publisher) means a new rule
     /// can declare its own publish path without editing the publisher
     /// - the compiler enforces the contract via the override and a
-    /// rule rename can't silently de-sync the publisher because the
-    /// rule no longer dispatches off the Title string.
+    /// rule rename can't silently de-sync the publisher.
     /// </para>
     /// </summary>
     string? GetPublishPath(AlarmInfo alarm) => null;

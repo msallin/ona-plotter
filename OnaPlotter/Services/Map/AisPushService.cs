@@ -1,3 +1,4 @@
+using System.Globalization;
 using OnaPlotter.Models;
 using OnaPlotter.Services.Js;
 using OnaPlotter.Utilities;
@@ -5,24 +6,32 @@ using OnaPlotter.Utilities;
 namespace OnaPlotter.Services.Map;
 
 /// <summary>
-/// Builds the JS-side AIS-target payload from an <see cref="AisStore"/>
-/// snapshot and pushes it through <see cref="IMapAisJs"/>. Owns the
-/// pre-computation that lifts decision logic out of JS:
+/// Builds the rendered AIS-target state from an <see cref="AisStore"/>
+/// snapshot and pushes what changed through <see cref="IMapAisJs"/>.
+/// Owns every presentation decision so the JS layer is a renderer:
 /// <list type="bullet">
-/// <item><description>CPA + COLREGS classification (one source of
-/// truth in <c>Utilities.Cpa</c> + <c>Utilities.Colregs</c>).</description></item>
-/// <item><description>SART category, glyph category, ship-type colour,
-/// CPA threat band, display name fallback.</description></item>
+/// <item><description>CPA + COLREGS classification (<c>Utilities.Cpa</c>,
+/// <c>Utilities.Colregs</c>), dead-reckoned like the alarm rule.</description></item>
+/// <item><description>Colour roles, staleness opacity, label visibility,
+/// CPA overlay mode, name fallbacks, popup range / bearing
+/// (<see cref="AisVesselPresentation"/>).</description></item>
 /// <item><description>Harbor-mode + position filter via
 /// <c>HarborAisFilter.Apply</c>.</description></item>
 /// </list>
 ///
-/// Lifecycle: instantiated by Map.razor in <c>OnAfterRenderAsync</c>
-/// once the JS module reference is available. The page kicks
-/// <see cref="PushAsync"/> on a 3 s timer; tests drive it directly.
+/// <para>Wire protocol: the first push (and any push after a failure or
+/// a renderer that lost its state) is a full snapshot. After that each
+/// push is a versioned delta with only the vessels whose rendered state
+/// changed, identity fields only when they changed, trail points
+/// appended / trimmed since the last push, and removed contexts. See
+/// <see cref="AisUpdatePayload"/>.</para>
 ///
-/// Threading: Blazor WASM is single-threaded; assumes every call runs
-/// on the renderer's synchronisation context.
+/// Lifecycle: instantiated by Map.razor once the JS module reference is
+/// available. The page kicks <see cref="PushAsync"/> on a 3 s timer;
+/// tests drive it directly.
+///
+/// Threading: Blazor WASM is single-threaded; assumes every call runs on
+/// the renderer's synchronisation context.
 /// </summary>
 public sealed class AisPushService
 {
@@ -31,38 +40,47 @@ public sealed class AisPushService
     private readonly IMooredVesselTracker _mooredTracker;
     private readonly IAppSettings _settings;
     private readonly TimeProvider _time;
-    /// <summary>Per-vessel trail sliding window. Owns what
-    /// <c>aisLayer.aisTrailHistory</c> used to store JS-side. Lives
-    /// across pushes so the buffer state survives the every-Nth-tick
-    /// skip-optimisation; <see cref="FillPayload"/> emits coords on
-    /// the per-vessel <see cref="AisVesselPayload.Trail"/> field only
-    /// when the buffer reports a content change since the last
-    /// emission, gated by <see cref="AisTrailBuffer.ConsumeDirty"/>.</summary>
     private readonly AisTrailBuffer _trailBuffer = new();
 
-    /// <summary>Last AisStore.Version we pushed at. -1 forces an
-    /// initial push so the JS layer is never starved on first tick.</summary>
+    /// <summary>What the renderer holds per context, as of the last
+    /// accepted push. Diffed against each new build.</summary>
+    private Dictionary<string, SentVessel> _sent = new(StringComparer.Ordinal);
+
+    /// <param name="Payload">Last sent dynamic state (Static and trail
+    /// fields cleared so record equality compares only the rest).</param>
+    /// <param name="Static">Last sent identity fields.</param>
+    /// <param name="StaticKey">Inputs <paramref name="Static"/> was built
+    /// from; lets an unchanged vessel skip rebuilding its strings.</param>
+    private sealed record SentVessel(AisVesselPayload Payload, AisVesselStatic Static, StaticKey StaticKey);
+
+    /// <summary>Inputs to <see cref="AisVesselStatic"/>.</summary>
+    private readonly record struct StaticKey(
+        string? Name, string? Mmsi, string? Callsign, string? ShipType,
+        double? LoaM, double? BeamM, bool Buddy, bool Radar, string Context);
+
+    private int _seq;
+    /// <summary>True until the renderer has accepted a full snapshot, and
+    /// again after any failed or refused push.</summary>
+    private bool _needsFull = true;
+    /// <summary>A push is awaiting the renderer. A timer tick that lands
+    /// meanwhile is skipped: a second delta built on the same base would
+    /// be refused and force a full resend.</summary>
+    private bool _inFlight;
+
+    /// <summary>Inputs of the last successful push; when all are unchanged
+    /// and <see cref="MaxSkipInterval"/> hasn't elapsed the tick is a
+    /// no-op without building anything.</summary>
     private int _lastPushedVersion = -1;
-    /// <summary>Last own-ship geometry we pushed at. CPA / COLREGS /
-    /// chip threat band are derived from these on every vessel, so a
-    /// change in own-ship lat / lon / cog / sog must invalidate the
-    /// skip even if the AisStore version is unchanged.</summary>
     private double? _lastOwnLat, _lastOwnLon, _lastOwnCog, _lastOwnSog;
     private bool _lastHarborMode;
     private bool _lastAnchorActive;
     private double? _lastAnchorMaxRadius;
-    /// <summary>UTC instant of the most recent successful push. The
-    /// skip-when-unchanged optimisation force-refreshes once every
-    /// <see cref="MaxSkipInterval"/> regardless of version so time-
-    /// driven state (moored-vessel SOG-dwell expiry, vessel-staleness
-    /// ageSec fade in JS) still surfaces in the helm-visible UI.</summary>
+    private double _lastInactiveMinutes = double.NaN;
     private DateTime _lastPushedAtUtc = DateTime.MinValue;
-    /// <summary>Maximum quiet window before the skip optimisation
-    /// gives up and pushes anyway. 5 s is long enough for the skip to
-    /// elide steady-state ticks (3 s cadence -&gt; one push every other
-    /// tick at worst when nothing changes) but short enough that
-    /// time-based tracker state (moored-vessel dwell, JS opacity
-    /// fade) refreshes promptly.</summary>
+
+    /// <summary>Maximum quiet window before the skip optimisation gives
+    /// up and rebuilds anyway, so time-driven state (moored-vessel dwell
+    /// expiry, staleness fade, dead-reckoned CPA) still surfaces.</summary>
     internal static readonly TimeSpan MaxSkipInterval = TimeSpan.FromSeconds(5);
 
     public AisPushService(
@@ -80,230 +98,209 @@ public sealed class AisPushService
     }
 
     /// <summary>
-    /// Builds + pushes the current AIS-target snapshot. JS-side
-    /// regressions are caught and logged so a hot-path JS bug doesn't
-    /// take down the Blazor render pass (we fire at 3 Hz; a toast per
-    /// tick would be spam).
-    /// <para>Skips the snapshot build + interop call entirely when
-    /// nothing observable has changed since the last push: AisStore's
-    /// monotonic version counter, own-ship lat / lon / cog / sog
-    /// (drives CPA / COLREGS), HarborMode flag, and the anchor-active
-    /// + anchor-max-radius pair (drive the effective CPA radius). 200-
-    /// vessel harbour at 3 s cadence saves ~14 short-lived allocs per
-    /// vessel per tick on idle ticks plus the JSInterop JSON cost.</para>
+    /// Builds and pushes the current AIS state. A JS-side failure is
+    /// caught and logged so a hot-path bug doesn't take down the Blazor
+    /// render pass; the next tick resends a full snapshot.
     /// </summary>
     public async Task PushAsync(NavigationData ownship)
     {
-        if (ownship is null) return;
+        if (ownship is null || _inFlight) return;
         int storeVersion = _aisStore.Version;
         bool harbor = _settings.HarborMode;
+        double inactiveMinutes = _settings.AisInactiveMinutes;
         var nowUtc = _time.GetUtcNow().UtcDateTime;
-        if (storeVersion == _lastPushedVersion
+        if (!_needsFull
+            && storeVersion == _lastPushedVersion
             && ownship.Latitude == _lastOwnLat
             && ownship.Longitude == _lastOwnLon
-            && ownship.CourseOverGround == _lastOwnCog
+            && ownship.CourseOverGroundTrueResolved == _lastOwnCog
             && ownship.SpeedOverGround == _lastOwnSog
             && harbor == _lastHarborMode
             && ownship.AnchorActive == _lastAnchorActive
             && ownship.AnchorMaxRadius == _lastAnchorMaxRadius
+            && inactiveMinutes.Equals(_lastInactiveMinutes)
             && (nowUtc - _lastPushedAtUtc) < MaxSkipInterval)
         {
-            // Nothing observable to push. Both AIS state and own-ship
-            // geometry agree with the last push, and we're still
-            // inside the time cap that catches tracker-state changes
-            // (moored-vessel dwell expiring, ageSec fade) which the
-            // version counter doesn't reflect.
             return;
         }
 
-        // NB: cache commit is deliberately AFTER the work, not before.
-        // If BuildSnapshot or the JS push throws, we need the next tick
-        // to re-attempt with the same observable state - committing the
-        // cache up-front would silently swallow the failed push and keep
-        // the map showing stale data until something else changed
-        // (own-ship moves, etc). The skip optimisation is purely an
-        // idempotent fast-path, not a write-through commit.
+        _inFlight = true;
         try
         {
-            var jsVessels = BuildSnapshot(ownship);
-            await _aisJs.UpdateAisTargetsAsync(jsVessels);
+            bool accepted = await BuildAndSendAsync(ownship, nowUtc, full: _needsFull);
+            if (!accepted && !_needsFull)
+            {
+                // The renderer lost the base this delta applies to (map
+                // re-init); answer with a full snapshot straight away.
+                accepted = await BuildAndSendAsync(ownship, nowUtc, full: true);
+            }
+            _needsFull = !accepted;
+            if (!accepted) return;
+
             _lastPushedVersion = storeVersion;
             _lastOwnLat = ownship.Latitude;
             _lastOwnLon = ownship.Longitude;
-            _lastOwnCog = ownship.CourseOverGround;
+            _lastOwnCog = ownship.CourseOverGroundTrueResolved;
             _lastOwnSog = ownship.SpeedOverGround;
             _lastHarborMode = harbor;
             _lastAnchorActive = ownship.AnchorActive;
             _lastAnchorMaxRadius = ownship.AnchorMaxRadius;
+            _lastInactiveMinutes = inactiveMinutes;
             _lastPushedAtUtc = nowUtc;
         }
         catch (Exception ex)
         {
-            // Broad catch is intentional - this is the topmost handler
-            // for a per-tick fire-and-forget push. Previously the catch
-            // only matched JSException; an InvalidOperationException
-            // bubbling up from a stale Leaflet handle (the radar-HUD
-            // regression) propagated past here, tripped Blazor's
-            // renderer error UI, and emptied the chart for the rest of
-            // the session. Helm-feedback: "I enabled radar HUD ... I
-            // dont see infos on the chart anymore". Catching at the
-            // tick boundary keeps the rest of the page functional and
-            // lets the next tick try again with fresh JS handles.
-            // Console.WriteLine (not Console.Error) so errorRelayBoot.js
-            // doesn't relay this handled-and-recovered case as an
-            // unhandled error.
+            // Topmost handler for a per-tick push: a stale Leaflet handle
+            // or JS regression must not reach Blazor's error UI and empty
+            // the chart. What the renderer holds is now unknown, so the
+            // next tick resends everything. Console.WriteLine (not
+            // Console.Error) so errorRelayBoot.js doesn't relay this
+            // handled-and-recovered case.
+            _needsFull = true;
             Console.WriteLine($"[interop] PushAisTargets: {ex.GetType().Name}: {ex.Message}");
+        }
+        finally
+        {
+            _inFlight = false;
         }
     }
 
-    /// <summary>Pool of AisVesselPayload objects reused across pushes.
-    /// Grows monotonically to the high-water-mark vessel count seen
-    /// in any push. A 200-vessel busy harbour previously allocated
-    /// 200 anonymous-type heap objects (~168 B each = ~33 KB) per
-    /// push at 3 Hz = ~100 KB/sec of pure GC pressure on Pi 4. The
-    /// pool drops that to a single AisVesselPayload[] array alloc
-    /// per push (and zero pool allocs in steady state).
-    ///
-    /// <para>Concurrency: WASM is single-threaded; callers must not
-    /// hold a payload reference past the next BuildSnapshot. The only
-    /// caller, <see cref="PushAsync"/>, awaits UpdateAisTargetsAsync
-    /// (which serialises synchronously inside Blazor's interop layer)
-    /// before returning, so the pool is safe to mutate on the next
-    /// tick.</para></summary>
-    private readonly List<AisVesselPayload> _payloadPool = new();
-
     /// <summary>Per-tick own-ship state shared by every per-vessel
-    /// computation in <see cref="BuildSnapshot"/>. Bundling these
-    /// fields keeps the per-vessel helper signatures sane and pins
-    /// "computed once per tick" in the type system.</summary>
+    /// computation.</summary>
     private readonly record struct OwnContext(
         Cpa.OwnSnapshot Snap,
         double Lat, double Lon, double Cog, double Sog,
         Colregs.VesselType OwnType);
 
-    /// <summary>Per-vessel CPA + COLREGS bundle returned by
-    /// <see cref="ComputeVesselThreat"/>. Default value (all null,
-    /// threat None) is the "no closing encounter" outcome that
-    /// applies whenever own state is incomplete or the vessel
-    /// itself lacks COG/SOG.</summary>
+    /// <summary>Per-vessel CPA + COLREGS bundle. Default (all null, threat
+    /// None) is "no closing encounter".</summary>
+    /// <param name="FromLat">Latitude the CPA was computed from: the
+    /// target dead-reckoned to now (see <see cref="AisDeadReckoning"/>),
+    /// so the CPA-point overlay starts from the same place.</param>
     private readonly record struct VesselThreat(
         double? CpaNm, double? TcpaMin,
         Cpa.Threat Threat,
-        string? ColregsLabel, string? ColregsRole);
+        Colregs.Result? Colregs,
+        double FromLat = 0, double FromLon = 0);
 
-    private AisVesselPayload[] BuildSnapshot(NavigationData ownship)
+    /// <summary>Per-tick inputs that are the same for every vessel.</summary>
+    private readonly record struct TickContext(
+        OwnContext? Own, double? OwnLat, double? OwnLon, DateTime NowUtc,
+        double CpaAlarmEff, double TcpaAlarmEff,
+        double CpaAwarenessEff, double TcpaAwarenessEff,
+        double CogVectorMinutes, double InactiveSeconds);
+
+    /// <summary>Builds this tick's state, diffs it against
+    /// <see cref="_sent"/> (unless <paramref name="full"/>), and sends.
+    /// Returns whether the renderer accepted it; on acceptance
+    /// <see cref="_sent"/> becomes the new state.</summary>
+    private async Task<bool> BuildAndSendAsync(NavigationData ownship, DateTime nowUtc, bool full)
     {
-        var vessels = _aisStore.GetVessels();
-        bool harbor = _settings.HarborMode;
-        var now = _time.GetUtcNow().UtcDateTime;
+        var tick = BuildTickContext(ownship, nowUtc);
+        var visible = HarborAisFilter.Apply(_aisStore.GetVessels(), _mooredTracker, _settings.HarborMode, nowUtc);
 
-        // Harbor-mode + position filter delegated to HarborAisFilter so
-        // the moored-classification + cleanup-on-vanished-context
-        // contract is unit-testable in isolation. The tracker's
-        // nav.state + SOG-dwell rules decide what counts as moored;
-        // this caller just trusts the answer.
-        var visible = HarborAisFilter.Apply(vessels, _mooredTracker, harbor, now);
-
-        // Two-tier CPA thresholds for THIS snapshot. Same anchor-
-        // narrowing helper as the alarm rule so the audible-alarm
-        // path and the on-chart classifier agree by construction.
-        // When anchored, both tiers collapse to the swing radius so
-        // awareness chips don't fire for harmless passers-by.
-        double cpaAlarmEff = Cpa.EffectiveCpaRadiusNm(
-            _settings.CpaAlarmNm,
-            ownship.AnchorActive,
-            ownship.AnchorMaxRadius);
-        double tcpaAlarmEff = _settings.TcpaAlarmMin;
-        double cpaAwarenessEff = Cpa.EffectiveCpaRadiusNm(
-            _settings.CpaAwarenessNm,
-            ownship.AnchorActive,
-            ownship.AnchorMaxRadius);
-        double tcpaAwarenessEff = _settings.TcpaAwarenessMin;
-
-        // Pre-compute own-ship sin/cos of COG ONCE here rather than on
-        // every vessel inside the loop - the own-ship trig is
-        // invariant across the per-target pass. Null when own-ship
-        // inputs are missing/non-finite so the per-vessel helper
-        // returns a default VesselThreat (no closing encounter).
-        OwnContext? ownCtx = TryBuildOwnContext(ownship, _settings.OwnVesselType);
-
-        // AIS COG-vector look-ahead in minutes. Hoist the settings
-        // read out of the per-vessel loop; FillPayload uses it to
-        // precompute VectorEndLat / Lon via GeoMath.VectorEnd so the
-        // JS layer never runs destPoint() trig per vessel per tick.
-        double aisCogVectorMinutes = _settings.AisCogVectorMinutes;
-
-        // Hot path: 200+ vessels at ~3 Hz on a busy harbour push.
-        // visible.Count is the upper bound; per-vessel guards below
-        // (NaN/Infinity / try-catch) may skip entries, so we shrink
-        // the result array at the end if the live count diverges.
-        var result = new AisVesselPayload[visible.Count];
-        int written = 0;
-        for (int i = 0; i < visible.Count; i++)
+        var next = new Dictionary<string, SentVessel>(visible.Count, StringComparer.Ordinal);
+        var changed = new List<AisVesselPayload>(full ? visible.Count : 8);
+        foreach (var v in visible)
         {
-            var v = visible[i];
-
-            // Defensive finite-check on every numeric input we feed into
-            // CPA / haversine / COLREGS. AisStore.Apply already filters
-            // null lat/lon, but a NaN slipping through (manually-crafted
-            // delta, JSON parse glitch, future schema migration) used to
-            // poison the whole snapshot - one NaN in Cpa.Compute returns
-            // null, but the same NaN in the anonymous-payload write
-            // would propagate to JSInterop and throw "Cannot serialize
-            // NaN to JSON". The whole tick bailed and the map froze on
-            // stale data. Skip the offender and keep the rest of the
-            // snapshot.
             if (!TryGuardFiniteInputs(v, out double vLat, out double vLon))
             {
-                LogSkippedFiniteCheck(v, now);
+                LogSkippedFiniteCheck(v, nowUtc);
                 continue;
             }
-
+            // Duplicate contexts can't reach the wire twice.
+            if (next.ContainsKey(v.Context)) continue;
             try
             {
-                var threat = ComputeVesselThreat(
-                    in ownCtx, v, vLat, vLon,
-                    cpaAlarmEff, tcpaAlarmEff,
-                    cpaAwarenessEff, tcpaAwarenessEff);
+                var threat = ComputeVesselThreat(in tick, v);
+                var payload = BuildPayload(v, vLat, vLon, in threat, in tick);
+                _sent.TryGetValue(v.Context, out var prev);
+                var key = StaticKeyFor(v);
+                var stat = prev is not null && prev.StaticKey == key ? prev.Static : BuildStatic(v, key);
 
-                AisVesselPayload p = AcquirePoolSlot(written);
-                FillPayload(p, v, vLat, vLon, in threat, in ownCtx, now, aisCogVectorMinutes, _trailBuffer);
-                result[written++] = p;
+                // Trail bookkeeping runs every tick so expiry is tracked
+                // even for vessels with nothing else to send.
+                _trailBuffer.Push(v.Context, vLat, vLon, nowUtc);
+                next[v.Context] = new SentVessel(payload, stat, key);
+
+                if (full || prev is null)
+                {
+                    var trail = _trailBuffer.GetCoords(v.Context);
+                    _trailBuffer.MarkSynced(v.Context);
+                    changed.Add(payload with { Static = stat, Trail = trail });
+                    continue;
+                }
+                var delta = _trailBuffer.ConsumeDelta(v.Context);
+                bool staticChanged = !ReferenceEquals(stat, prev.Static) && stat != prev.Static;
+                if (staticChanged || payload != prev.Payload || !delta.IsEmpty)
+                {
+                    changed.Add(payload with
+                    {
+                        Static = staticChanged ? stat : null,
+                        TrailAppend = delta.Append,
+                        TrailTrim = delta.Trim,
+                    });
+                }
             }
             catch (Exception ex)
             {
-                // Per-vessel firewall. A bad vessel record (corrupt AIS
-                // static, future enum value, math edge case) shouldn't
-                // poison the whole snapshot - log it once and move on.
-                // The outer try/catch in PushAsync would otherwise
-                // discard every other vessel in the same tick. Includes
-                // context + the inputs that fed the failing branch so
-                // a recurring offender is reconstructable from the SK
-                // server log alone.
+                // Per-vessel firewall: a corrupt record or math edge case
+                // must not poison the rest of the snapshot. Includes the
+                // inputs so a recurring offender is reconstructable.
                 Console.WriteLine(
                     $"[ais] BuildSnapshot skipped {v.Context}: {ex.GetType().Name}: {ex.Message}" +
                     $" (lat={v.Latitude} lon={v.Longitude} cog={v.CourseOverGround} sog={v.SpeedOverGround})");
             }
         }
-        // If any vessel was skipped, shrink to the live count so the
-        // JS side doesn't see trailing default-initialised slots.
-        AisVesselPayload[] snapshot = written != result.Length
-            ? result.AsSpan(0, written).ToArray()
-            : result;
-
-        // FillPayload above stamped each visible context as live.
-        // EndSweep retires the rest - the equivalent of the JS-side
-        // aisMarkers stale-loop that removed orphaned trails.
         _trailBuffer.EndSweep();
-        return snapshot;
+
+        string[] removed = full
+            ? []
+            : _sent.Keys.Where(ctx => !next.ContainsKey(ctx)).ToArray();
+
+        if (!full && changed.Count == 0 && removed.Length == 0)
+        {
+            _sent = next;
+            return true;
+        }
+
+        int seq = _seq + 1;
+        var update = new AisUpdatePayload(
+            Seq: seq,
+            BaseSeq: full ? AisUpdatePayload.FullSnapshot : _seq,
+            NowUtc: nowUtc.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
+            Vessels: changed.ToArray(),
+            Removed: removed);
+        bool accepted = await _aisJs.UpdateAisTargetsAsync(update);
+        if (accepted)
+        {
+            _seq = seq;
+            _sent = next;
+        }
+        return accepted;
     }
 
-    /// <summary>Returns true with the unwrapped finite lat/lon when
-    /// the vessel's position is publishable, false (and the snapshot
-    /// loop skips it) when any of lat / lon / cog / sog is null or
-    /// non-finite. COG / SOG are allowed to be null (radar ARPA
-    /// pre-tracking state); a non-finite value is rejected because it
-    /// would propagate to the payload and trip JSON serialisation.</summary>
+    private TickContext BuildTickContext(NavigationData ownship, DateTime nowUtc)
+    {
+        // Two-tier CPA thresholds, anchor-narrowed with the same helper
+        // as the alarm rule so the audible alarm and the chart agree.
+        return new TickContext(
+            Own: TryBuildOwnContext(ownship, _settings.OwnVesselType),
+            OwnLat: ownship.Latitude is double la && double.IsFinite(la) ? la : null,
+            OwnLon: ownship.Longitude is double lo && double.IsFinite(lo) ? lo : null,
+            NowUtc: nowUtc,
+            CpaAlarmEff: Cpa.EffectiveCpaRadiusNm(_settings.CpaAlarmNm, ownship.AnchorActive, ownship.AnchorMaxRadius),
+            TcpaAlarmEff: _settings.TcpaAlarmMin,
+            CpaAwarenessEff: Cpa.EffectiveCpaRadiusNm(_settings.CpaAwarenessNm, ownship.AnchorActive, ownship.AnchorMaxRadius),
+            TcpaAwarenessEff: _settings.TcpaAwarenessMin,
+            CogVectorMinutes: _settings.AisCogVectorMinutes,
+            InactiveSeconds: _settings.AisInactiveMinutes * 60.0);
+    }
+
+    /// <summary>Returns true with the unwrapped finite lat/lon when the
+    /// vessel's position is publishable. COG / SOG may be null (radar
+    /// ARPA pre-tracking) but not non-finite, which would trip JSON
+    /// serialisation of the whole push.</summary>
     private static bool TryGuardFiniteInputs(AisVessel v, out double lat, out double lon)
     {
         lat = lon = double.NaN;
@@ -316,13 +313,8 @@ public sealed class AisPushService
         return true;
     }
 
-    /// <summary>One-per-minute cap on finite-check skip logs across
-    /// the AisPushService instance. The Map page constructs a single
-    /// instance, so in practice the cap covers every vessel the push
-    /// pipeline touches - a vessel spamming non-finite deltas every
-    /// tick can't flood the log, and a recurring offender still shows
-    /// up once per minute. The field is per-instance, not static, so
-    /// the cap doesn't leak between AisPushService instances in tests.</summary>
+    /// <summary>One-per-minute cap on finite-check skip logs so a vessel
+    /// spamming non-finite deltas can't flood the log.</summary>
     private DateTime _lastSkipFiniteLogUtc = DateTime.MinValue;
     private static readonly TimeSpan SkipLogInterval = TimeSpan.FromMinutes(1);
 
@@ -330,9 +322,6 @@ public sealed class AisPushService
     {
         if ((nowUtc - _lastSkipFiniteLogUtc) < SkipLogInterval) return;
         _lastSkipFiniteLogUtc = nowUtc;
-        // Includes the actual inputs so an operator reading the SK
-        // log can reconstruct what the AIS payload looked like
-        // without needing to reproduce the bug live.
         Console.WriteLine(
             $"[ais] BuildSnapshot finite-check skipped {v.Context}:" +
             $" lat={v.Latitude} lon={v.Longitude} cog={v.CourseOverGround} sog={v.SpeedOverGround}" +
@@ -341,256 +330,164 @@ public sealed class AisPushService
 
     private static OwnContext? TryBuildOwnContext(NavigationData ownship, string ownVesselType)
     {
+        // True-north COG: AIS target COG is true, so the own side of the
+        // CPA / COLREGS geometry must be too, whatever the HUD displays.
+        double? ownCog = ownship.CourseOverGroundTrueResolved;
         var snap = Cpa.PrecomputeOwn(
             ownship.Latitude ?? double.NaN, ownship.Longitude ?? double.NaN,
-            ownship.CourseOverGround, ownship.SpeedOverGround);
+            ownCog, ownship.SpeedOverGround);
         if (snap is null) return null;
-        // PrecomputeOwn already gates non-finite/null on each input;
-        // by the time we get here lat/lon/cog/sog are guaranteed
-        // finite, so the field unwraps below are safe.
         var ownType = ownVesselType == "sail"
             ? Colregs.VesselType.Sail
             : Colregs.VesselType.Power;
         return new OwnContext(
             snap.Value,
             ownship.Latitude!.Value, ownship.Longitude!.Value,
-            ownship.CourseOverGround!.Value, ownship.SpeedOverGround!.Value,
+            ownCog!.Value, ownship.SpeedOverGround!.Value,
             ownType);
     }
 
-    /// <summary>Computes CPA + threat band for a single target.
-    /// COLREGS classification is computed lazily (only when the
-    /// threat band is Warning or Danger) - on a 200-vessel harbour
-    /// at 3 Hz that drops ~600 wasted Colregs.Classify calls/sec,
-    /// matching the eager-vs-lazy fix already in CpaAlarmRule.Check.
-    /// COLREGS for a vessel currently outside the outer ring has no
-    /// helm-actionable meaning anyway - the rules apply to closing
-    /// encounters.</summary>
-    private static VesselThreat ComputeVesselThreat(
-        in OwnContext? ownCtx, AisVessel v, double vLat, double vLon,
-        double cpaAlarmEff, double tcpaAlarmEff,
-        double cpaAwarenessEff, double tcpaAwarenessEff)
+    /// <summary>CPA + threat band for a single target. COLREGS runs only
+    /// for Warning / Danger targets: the rules apply to closing
+    /// encounters, and skipping the rest saves most Classify calls in a
+    /// busy harbour.</summary>
+    private static VesselThreat ComputeVesselThreat(in TickContext tick, AisVessel v)
     {
-        if (ownCtx is null
+        if (tick.Own is not { } own
             || v.CourseOverGround is null || v.SpeedOverGround is null)
-        {
-            return default;  // threat None, all fields null
-        }
-        var ctx = ownCtx.Value;
-        var cpa = Cpa.Compute(
-            ctx.Snap, vLat, vLon, v.CourseOverGround, v.SpeedOverGround);
-        if (cpa is not { } c)
         {
             return default;
         }
+        // Same starting point as CpaAlarmRule: the target dead-reckoned
+        // to now. A fix too old to extrapolate gets no CPA, matching the
+        // alarm rule so chip and klaxon agree.
+        if (AisDeadReckoning.PositionAt(v, tick.NowUtc) is not { } tgt) return default;
+        var cpa = Cpa.Compute(own.Snap, tgt.Latitude, tgt.Longitude, v.CourseOverGround, v.SpeedOverGround);
+        if (cpa is not { } c) return default;
 
         var threat = Cpa.ClassifyThreat(
             c.CpaNm, c.TcpaMin,
-            cpaAlarmEff, tcpaAlarmEff,
-            cpaAwarenessEff, tcpaAwarenessEff,
+            tick.CpaAlarmEff, tick.TcpaAlarmEff,
+            tick.CpaAwarenessEff, tick.TcpaAwarenessEff,
             v.IsBuddy);
 
-        string? colregsLabel = null;
-        string? colregsRole = null;
+        Colregs.Result? colregs = null;
         if (threat != Cpa.Threat.None)
         {
-            // Type-aware classification: own from
-            // IAppSettings.OwnVesselType (helm-picked), target from
-            // design.aisShipType. When propulsion differs the role
-            // is overridden by Rule 18 so the helm sees "sail stands
-            // on / power gives way" on a mixed encounter regardless
-            // of geometry.
-            var tgtType = Colregs.FromAisShipType(v.ShipType);
-            var r = Colregs.Classify(
-                ctx.Lat, ctx.Lon, ctx.Cog, ctx.Sog,
-                vLat, vLon,
+            // Own type from the helm setting, target from
+            // design.aisShipType; mixed propulsion overrides the role by
+            // Rule 18.
+            colregs = Colregs.Classify(
+                own.Lat, own.Lon, own.Cog, own.Sog,
+                tgt.Latitude, tgt.Longitude,
                 v.CourseOverGround.Value, v.SpeedOverGround.Value,
-                ctx.OwnType, tgtType);
-            if (r.Category != Colregs.Category.Indeterminate)
-            {
-                colregsLabel = Colregs.ShortLabel(r.Category);
-                colregsRole = Colregs.RoleLabel(r.Role);
-            }
+                own.OwnType, Colregs.FromAisShipType(v.ShipType));
         }
-        return new VesselThreat(c.CpaNm, c.TcpaMin, threat, colregsLabel, colregsRole);
+        return new VesselThreat(c.CpaNm, c.TcpaMin, threat, colregs, tgt.Latitude, tgt.Longitude);
     }
 
-    /// <summary>Acquires a pooled payload at the given index, growing
-    /// the pool on the high-water-mark frame. Pool slots are reset
-    /// in <see cref="FillPayload"/> field-by-field so V8 / .NET keep
-    /// one hidden class for the type and stale values from a previous
-    /// larger frame can't leak through.</summary>
-    private AisVesselPayload AcquirePoolSlot(int index)
+    private static StaticKey StaticKeyFor(AisVessel v) => new(
+        v.Name, v.Mmsi, v.Callsign, v.ShipType,
+        v.LengthOverallMeters, v.BeamMeters,
+        v.IsBuddy, AisVesselPresentation.IsRadar(v), v.Context);
+
+    private static AisVesselStatic BuildStatic(AisVessel v, StaticKey key) => new()
     {
-        if (index < _payloadPool.Count) return _payloadPool[index];
-        var p = new AisVesselPayload();
-        _payloadPool.Add(p);
-        return p;
-    }
+        Name = v.Name,
+        Mmsi = v.Mmsi,
+        Buddy = key.Buddy,
+        Radar = key.Radar,
+        SartCategory = AisSart.CategoryFromAny(v.Mmsi, v.Context),
+        GlyphCategory = key.Radar ? null : AisPalette.ShipTypeCategory(v.ShipType),
+        ShipColor = AisPalette.ShipTypeColor(v.ShipType),
+        DisplayName = AisVesselPresentation.DisplayName(v.Name, v.Mmsi, key.Buddy),
+        Title = AisVesselPresentation.Title(v.Name, v.Callsign, v.Mmsi, key.Buddy),
+        Subtitle = AisVesselPresentation.Subtitle(v.Mmsi, v.Callsign, v.ShipType,
+            v.LengthOverallMeters, v.BeamMeters),
+    };
 
-    /// <summary>Writes every JS-visible field of <paramref name="p"/>
-    /// from the source vessel + per-tick threat result. Hand-written
-    /// (not reflection / mapper) because the payload pool is in the
-    /// hot path - one assignment per field is the cheapest shape that
-    /// keeps the JIT and V8 happy.</summary>
-    private static void FillPayload(
-        AisVesselPayload p, AisVessel v, double vLat, double vLon,
-        in VesselThreat threat, in OwnContext? ownCtx,
-        DateTime nowUtc, double aisCogVectorMinutes,
-        AisTrailBuffer trailBuffer)
+    /// <summary>Resolves every rendered field of one vessel. Static and
+    /// trail fields are left unset; the diff fills them in.</summary>
+    private static AisVesselPayload BuildPayload(
+        AisVessel v, double vLat, double vLon, in VesselThreat threat, in TickContext tick)
     {
-        // Display name resolution: name -> mmsi -> null, with buddy
-        // star prefix. Lifted out of JS so the chart label and any
-        // future label-rendering surface share the same fallback chain.
-        string? baseName = !string.IsNullOrEmpty(v.Name) ? v.Name
-            : !string.IsNullOrEmpty(v.Mmsi) ? v.Mmsi
-            : null;
-        string? displayName = baseName is null
-            ? null
-            : (v.IsBuddy ? "★ " + baseName : baseName);
+        bool radar = AisVesselPresentation.IsRadar(v);
+        bool sart = AisSart.CategoryFromAny(v.Mmsi, v.Context) is not null;
+        bool alarm = threat.Threat == Cpa.Threat.Alarm;
+        double ageSec = (tick.NowUtc - v.LastAisSeen).TotalSeconds;
+        string? displayName = AisVesselPresentation.DisplayName(v.Name, v.Mmsi, v.IsBuddy);
 
-        p.Context = v.Context;
-        p.Name = v.Name;
-        p.Mmsi = v.Mmsi;
-        p.Callsign = v.Callsign;
-        p.DisplayName = displayName;
-        p.Lat = vLat;
-        p.Lon = vLon;
-        p.HeadingRad = v.Heading;
-        p.CogRad = v.CourseOverGround;
-        p.SogMs = v.SpeedOverGround;
-        p.ShipType = v.ShipType;
-        // AIS-static dimensions (LOA + beam). Often absent - see
-        // AisVessel.LengthOverallMeters comments. JS popup renders
-        // the row only when at least one is non-null.
-        p.LoaM = v.LengthOverallMeters;
-        p.BeamM = v.BeamMeters;
-        p.Buddy = v.IsBuddy;
-        // Tell JS whether to render with an AIS or radar-ARPA icon.
-        // Radar targets lose buddy/danger overlays too; JS looks at
-        // this flag.
-        p.Source = v.Source == TargetSource.Radar ? "radar" : "ais";
-        // Pre-resolved visual fields so the JS layer is a dumb
-        // renderer: one source of truth for the AIS palette + SART
-        // classification in C#, tested in AisPaletteTests /
-        // AisSartAlarmRuleTests.
-        p.SartCategory = AisSart.CategoryFromAny(v.Mmsi, v.Context);
-        p.GlyphCategory = AisPalette.ShipTypeCategory(v.ShipType);
-        p.ShipColor = AisPalette.ShipTypeColor(v.ShipType);
-        p.CpaNm = threat.CpaNm;
-        p.TcpaMin = threat.TcpaMin;
-        p.CpaThreat = ThreatToWireString(threat.Threat);
-        p.ColregsLabel = threat.ColregsLabel;
-        p.ColregsRole = threat.ColregsRole;
-        // Seconds since the last AIS-evidence delta. Keys off LastAisSeen
-        // (position / motion / static / state) instead of LastSeen so
-        // plugin-emitted derived paths (sensors.ais.*, distance-to-self)
-        // don't make ghost vessels look fresh. JS uses it to fade the
-        // marker and suppress the label past the inactive threshold.
-        p.AgeSec = (int)(nowUtc - v.LastAisSeen).TotalSeconds;
-        // ISO 8601 UTC wire format - the JS popup renders this as a
-        // 24h hh:mm plus an "(N min ago)" tail computed live in the
-        // browser so paused-tab clocks don't drift.
-        p.LastAisSeen = v.LastAisSeen.ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture);
+        var vec = GeoMath.VectorEnd(vLat, vLon, v.CourseOverGround, v.SpeedOverGround, tick.CogVectorMinutes);
 
-        // Precompute the COG-vector endpoint here so the JS hot path
-        // doesn't run destPoint() per vessel per tick. GeoMath.VectorEnd
-        // returns null when COG / SOG missing or SOG < 0.1 m/s; the JS
-        // side treats null as "no vector drawn", matching what the
-        // previous JS-side vectorEnd() did on the same inputs.
-        var vec = GeoMath.VectorEnd(
-            vLat, vLon, v.CourseOverGround, v.SpeedOverGround,
-            aisCogVectorMinutes);
-        if (vec is { } v0)
-        {
-            p.VectorEndLat = v0.Lat;
-            p.VectorEndLon = v0.Lon;
-        }
-        else
-        {
-            p.VectorEndLat = null;
-            p.VectorEndLon = null;
-        }
-
-        // CPA endpoint - the target's projected position at TCPA, drawn
-        // by the JS layer as the far end of the crossing-situation
-        // line. Only populated when the JS would actually use it
-        // (threat is Warning or Danger). Otherwise null so JS can skip
-        // the line entirely. The math is `destPoint` over a great
-        // circle just like VectorEnd above, but with `sog * tcpaMin *
-        // 60` as the projected distance instead of `sog * minutes * 60`.
+        // CPA endpoints: the target's projected position at TCPA, and own
+        // ship's at the same instant; the overlay draws the segment
+        // between them as the actual closest approach.
+        double? cpaLat = null, cpaLon = null, ownCpaLat = null, ownCpaLon = null;
         if (threat.Threat != Cpa.Threat.None
             && threat.TcpaMin is double tcpaMin
             && v.CourseOverGround is double cog
             && v.SpeedOverGround is double sog)
         {
-            var cpaPt = GeoMath.DestPoint(vLat, vLon, cog, sog * tcpaMin * 60.0);
-            p.CpaPointLat = cpaPt.Lat;
-            p.CpaPointLon = cpaPt.Lon;
-
-            // Own-ship's projected position at the same TCPA. Used by
-            // the JS overlay to draw the own-side X + the line between
-            // the two CPA points (the actual closest-approach segment).
-            // Null when own snapshot is missing - the JS layer treats
-            // null as "draw target-only overlay" to keep some signal
-            // even without an own-ship fix.
-            if (ownCtx is { } own)
+            (cpaLat, cpaLon) = GeoMath.DestPoint(threat.FromLat, threat.FromLon, cog, sog * tcpaMin * 60.0);
+            if (tick.Own is { } own)
             {
-                var ownCpaPt = GeoMath.DestPoint(
-                    own.Lat, own.Lon, own.Cog, own.Sog * tcpaMin * 60.0);
-                p.OwnCpaPointLat = ownCpaPt.Lat;
-                p.OwnCpaPointLon = ownCpaPt.Lon;
-            }
-            else
-            {
-                p.OwnCpaPointLat = null;
-                p.OwnCpaPointLon = null;
+                (ownCpaLat, ownCpaLon) = GeoMath.DestPoint(own.Lat, own.Lon, own.Cog, own.Sog * tcpaMin * 60.0);
             }
         }
-        else
+        var overlay = AisVesselPresentation.CpaOverlay(threat.Threat, threat.TcpaMin, cpaLat is not null);
+        bool closing = threat.TcpaMin is > 0;
+
+        var colregs = threat.Colregs is { Category: not Colregs.Category.Indeterminate } r ? r : (Colregs.Result?)null;
+
+        double? rangeNm = null, bearingDeg = null;
+        if (tick.OwnLat is double oLat && tick.OwnLon is double oLon)
         {
-            p.CpaPointLat = null;
-            p.CpaPointLon = null;
-            p.OwnCpaPointLat = null;
-            p.OwnCpaPointLon = null;
+            rangeNm = AisVesselPresentation.Round(
+                GeoMath.HaversineMeters(oLat, oLon, vLat, vLon) / Format.MetersPerNm, 2);
+            bearingDeg = AisVesselPresentation.Round(GeoMath.BearingDeg(oLat, oLon, vLat, vLon), 0) % 360.0;
         }
 
-        // Trail update. Push the current fix into the per-vessel
-        // sliding window; emit coords on the payload only when the
-        // buffer signals a content change since the last emission.
-        // - Same-position dedup happens inside the buffer.
-        // - Age-trim runs there too, so a vessel whose trail expired
-        //   between pushes flips dirty on the next push and JS
-        //   receives the shortened (or null) trail.
-        // - Stale vessels (not in `visible`) are forgotten in the
-        //   loop's EndSweep call after BuildSnapshot returns.
-        bool trailChanged = trailBuffer.Push(v.Context ?? string.Empty, vLat, vLon, nowUtc);
-        if (trailChanged && trailBuffer.ConsumeDirty(v.Context ?? string.Empty))
+        return new AisVesselPayload
         {
-            // GetCoords returns null when the trail is too short
-            // (< 2 points) - JS reads null as "remove the existing
-            // polyline if any". Distinct from "not present in the
-            // payload" (which JS reads as "leave the existing trail
-            // alone").
-            p.Trail = trailBuffer.GetCoords(v.Context ?? string.Empty);
-        }
-        else
-        {
-            // The pooled payload may carry a stale Trail reference
-            // from the previous snapshot for the same context. Clear
-            // it so JS doesn't re-apply yesterday's trail to today's
-            // marker; the JS reads `v.trail` as "treat as null when
-            // absent, update only when present".
-            p.Trail = null;
-        }
+            Context = v.Context,
+            Lat = vLat,
+            Lon = vLon,
+            RotationRad = AisVesselPresentation.RotationRad(sart, v.CourseOverGround, v.Heading),
+            MarkerTone = AisVesselPresentation.MarkerTone(radar, v.IsBuddy, alarm),
+            VectorTone = AisVesselPresentation.VectorTone(radar, v.IsBuddy),
+            Pulse = alarm && !sart,
+            // SART beacons and buddies keep full opacity: life-safety
+            // transmitters drop out briefly and still matter, and the
+            // "where's my friend" workflow tolerates lateness.
+            Opacity = sart || v.IsBuddy ? null : StalenessOpacity.Compute(ageSec, tick.InactiveSeconds),
+            LabelVisible = AisVesselPresentation.LabelVisible(
+                displayName, ageSec, tick.InactiveSeconds, sart, v.IsBuddy),
+            VectorEndLat = vec?.Lat,
+            VectorEndLon = vec?.Lon,
+            CpaThreat = ThreatToWireString(threat.Threat),
+            CpaOverlay = overlay,
+            CpaNm = closing ? AisVesselPresentation.Round(threat.CpaNm, 2) : null,
+            TcpaMin = closing ? AisVesselPresentation.Round(threat.TcpaMin, 0) : null,
+            CpaPointLat = overlay == AisCpaOverlay.None ? null : cpaLat,
+            CpaPointLon = overlay == AisCpaOverlay.None ? null : cpaLon,
+            OwnCpaPointLat = overlay == AisCpaOverlay.None ? null : ownCpaLat,
+            OwnCpaPointLon = overlay == AisCpaOverlay.None ? null : ownCpaLon,
+            ColregsLabel = colregs is { } cl ? Colregs.ShortLabel(cl.Category) : null,
+            ColregsRole = colregs is { } cr ? Colregs.RoleLabel(cr.Role) : null,
+            ColregsGiveWay = colregs is { Role: Colregs.Role.GiveWay },
+            Snoozable = !v.IsBuddy && threat.Threat != Cpa.Threat.None,
+            SogKn = AisVesselPresentation.Round(v.SpeedOverGround * Format.MsToKnots, 1),
+            CogDeg = AisVesselPresentation.WholeDegrees(v.CourseOverGround),
+            HeadingDeg = AisVesselPresentation.WholeDegrees(v.Heading),
+            RangeNm = rangeNm,
+            BearingDeg = bearingDeg,
+            LastAisSeen = v.LastAisSeen.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
+        };
     }
 
-    /// <summary>Wire-string contract for the JS-side aisLayer.cpaThreat
-    /// switch. Pinned in <c>AisPushServiceTests</c> so any rename here
-    /// fails fast in C# rather than silently breaking the chart-overlay
-    /// classifier on the JS side. The switch on the JS side reads
-    /// <c>'alarm' | 'awareness' | _ -&gt; none</c>; keep these strings in
-    /// sync with <c>wwwroot/js/aisLayer.js</c>.</summary>
+    /// <summary>Wire string for the threat band. Pinned in
+    /// <c>AisPushServiceTests</c>; <c>aisLayer.js</c> reads
+    /// <c>'alarm'</c> for the popup's danger styling.</summary>
     internal static string ThreatToWireString(Cpa.Threat t) => t switch
     {
         Cpa.Threat.Alarm => "alarm",

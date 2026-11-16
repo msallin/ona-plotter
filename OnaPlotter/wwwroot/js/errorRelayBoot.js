@@ -57,7 +57,7 @@
             // strict-mode passes even though plain ES6 accepts it.
             var baseHref = document.baseURI || (window.location.origin + '/');
             relayUrl = new URL('log', baseHref).toString();
-        } catch (e) {
+        } catch (_e) {
             relayUrl = '/log';
         }
         return relayUrl;

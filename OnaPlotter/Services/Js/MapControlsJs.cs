@@ -1,4 +1,5 @@
 using Microsoft.JSInterop;
+using OnaPlotter.Utilities;
 
 namespace OnaPlotter.Services.Js;
 
@@ -48,8 +49,10 @@ public sealed class MapControlsJs : IMapControlsJs
     public Task SetRadarBearingCorrectionAsync(double degrees)
         => InvokeSafe("setRadarBearingCorrection", degrees);
 
+    // The track palette rides along: night mode recolours the speed
+    // tracks from SpeedColor's night ramp instead of filtering each path.
     public Task SetNightModeAsync(bool enabled)
-        => InvokeSafe("setNightMode", enabled);
+        => InvokeSafe("setNightMode", enabled, SpeedColor.PaletteFor(enabled));
 
     public Task SetCogVectorMinutesAsync(double ownMinutes, double aisMinutes)
         => InvokeSafe("setCogVectorMinutes", ownMinutes, aisMinutes);
@@ -63,8 +66,8 @@ public sealed class MapControlsJs : IMapControlsJs
     public Task FitBoundsAsync(double minLat, double minLon, double maxLat, double maxLon)
         => InvokeSafe("fitBounds", minLat, minLon, maxLat, maxLon);
 
-    public Task EnableKeyboardShortcutsAsync<T>(DotNetObjectReference<T> dotNetRef) where T : class
-        => InvokeSafe("enableKeyboardShortcuts", dotNetRef);
+    public Task EnableKeyboardShortcutsAsync<T>(DotNetObjectReference<T> dotNetRef, string[] keys) where T : class
+        => InvokeSafe("enableKeyboardShortcuts", dotNetRef, keys);
 
     public Task DisableKeyboardShortcutsAsync()
         => InvokeSafe("disableKeyboardShortcuts");

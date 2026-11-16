@@ -73,7 +73,7 @@
                         var dashDepth = Data.DepthBelowKeel ?? Data.Depth;
                     }
                     <p class="card-text metric-xl @Format.DepthClass(dashDepth)">
-                        @Format.Depth(dashDepth)<span class="dash-unit">m</span>
+                        @Format.Depth(dashDepth)<span class="dash-unit">m</span>@if (Format.IsShallow(dashDepth)) { <span class="depth-warn-glyph" role="img" aria-label="Shallow water" title="Shallow water">&#9888;</span> }
                     </p>
                 </div>
             </div>

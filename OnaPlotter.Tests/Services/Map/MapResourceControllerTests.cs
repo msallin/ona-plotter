@@ -190,4 +190,73 @@ public class MapResourceControllerTests
         await Assert.That(js.RegionClears).IsEqualTo(1);
         await Assert.That(ctrl.RegionsVisible).IsFalse();
     }
+
+    // - Per-resource redraw (CRUD + delta path) --------------------
+
+    [Test]
+    public async Task RedrawWaypoint_RemovesThenAdds_ForwardingMobFlags()
+    {
+        // A rename of an active MOB waypoint must keep the pulsing MOB
+        // icon: the redraw forwards isMob / isActive.
+        var js = new FakeResourceJs();
+        var ctrl = new MapResourceController(js);
+        var wp = new SignalkWaypoint
+        {
+            Id = "w1", Name = "MOB 12:00", Latitude = 54.0, Longitude = 10.0,
+            CreatedAt = new DateTime(2026, 5, 1, 12, 0, 0, DateTimeKind.Utc),
+            IsMob = true, IsMobActive = true,
+        };
+
+        await ctrl.RedrawWaypointAsync(wp);
+
+        await Assert.That(js.WaypointRemoves).IsEquivalentTo(new[] { "w1" });
+        await Assert.That(js.Waypoints.Count).IsEqualTo(1);
+        var added = js.Waypoints[0];
+        await Assert.That(added.isMob).IsTrue();
+        await Assert.That(added.isActive).IsTrue();
+        await Assert.That(added.createdAtIso).IsEqualTo("2026-05-01T12:00:00.0000000Z");
+    }
+
+    [Test]
+    public async Task RedrawWaypoint_WithoutPosition_DoesNothing()
+    {
+        var js = new FakeResourceJs();
+        var ctrl = new MapResourceController(js);
+
+        await ctrl.RedrawWaypointAsync(new SignalkWaypoint { Id = "w1" });
+
+        await Assert.That(js.WaypointRemoves.Count).IsEqualTo(0);
+        await Assert.That(js.Waypoints.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task RedrawNote_HiddenLayer_IsSkipped()
+    {
+        // An edit while notes are hidden must not pop the marker back.
+        var js = new FakeResourceJs();
+        var ctrl = new MapResourceController(js);
+        await ctrl.SetNotesVisibleAsync(false, []);
+
+        await ctrl.RedrawNoteAsync(new SignalkNote
+        {
+            Id = "n1", Title = "T", Position = new NotePosition { Latitude = 1, Longitude = 2 },
+        });
+
+        await Assert.That(js.Notes.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Drop_ForwardsToRemove()
+    {
+        var js = new FakeResourceJs();
+        var ctrl = new MapResourceController(js);
+
+        await ctrl.DropWaypointAsync("w1");
+        await ctrl.DropNoteAsync("n1");
+        await ctrl.DropRegionAsync("r1");
+
+        await Assert.That(js.WaypointRemoves).IsEquivalentTo(new[] { "w1" });
+        await Assert.That(js.NoteRemoves).IsEquivalentTo(new[] { "n1" });
+        await Assert.That(js.RegionRemoves).IsEquivalentTo(new[] { "r1" });
+    }
 }

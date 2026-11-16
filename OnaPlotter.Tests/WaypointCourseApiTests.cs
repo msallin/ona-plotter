@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Net;
 using OnaPlotter.Services.Api;
 using OnaPlotter.Services.Settings;
@@ -44,7 +45,7 @@ public class WaypointCourseApiTests
         }
         """;
         var http = ApiTestHelpers.JsonClient(_ => body);
-        var api = new WaypointApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new WaypointApi(http, ApiTestHelpers.FixedBaseUrl(), TimeProvider.System, NullLogger<WaypointApi>.Instance);
 
         var waypoints = await api.GetAllAsync();
 
@@ -72,7 +73,7 @@ public class WaypointCourseApiTests
                 Content = new StringContent("\"wpt-new-42\"")
             };
         });
-        var api = new WaypointApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new WaypointApi(http, ApiTestHelpers.FixedBaseUrl(), TimeProvider.System, NullLogger<WaypointApi>.Instance);
 
         var r = await api.CreateAsync("Marker", 47.4, 8.5);
 
@@ -99,7 +100,7 @@ public class WaypointCourseApiTests
             capturedUrl = req.RequestUri?.AbsoluteUri;
             return new HttpResponseMessage(HttpStatusCode.NoContent);
         });
-        var api = new WaypointApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new WaypointApi(http, ApiTestHelpers.FixedBaseUrl(), TimeProvider.System, NullLogger<WaypointApi>.Instance);
 
         await api.DeleteAsync("id with space");
 
@@ -372,7 +373,7 @@ public class WaypointCourseApiTests
         }
         """;
         var http = ApiTestHelpers.JsonClient(_ => body);
-        var api = new PathApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new PathApi(http, ApiTestHelpers.FixedBaseUrl(), NullLogger<PathApi>.Instance);
 
         var paths = await api.GetAvailablePathsAsync();
 

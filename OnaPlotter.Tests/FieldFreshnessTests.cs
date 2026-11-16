@@ -19,7 +19,7 @@ public class FieldFreshnessTests
     private static (NavigationData nav, FakeClock clock) Make()
     {
         var clock = new FakeClock();
-        return (new NavigationData(clock.Get), clock);
+        return (new NavigationData(new DelegateTimeProvider(clock.Get)), clock);
     }
 
     [Test]

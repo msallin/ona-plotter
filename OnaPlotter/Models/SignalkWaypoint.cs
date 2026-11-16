@@ -66,6 +66,16 @@ public sealed class SignalkWaypoint
     /// the helm dismisses an alarm.</summary>
     [JsonIgnore]
     public string? MobAlarmId { get; set; }
+
+    /// <summary>Copy with a new name and description; every other field
+    /// (position, feature, MOB flags) carries over.</summary>
+    public SignalkWaypoint WithText(string? name, string? description)
+    {
+        var copy = (SignalkWaypoint)MemberwiseClone();
+        copy.Name = name;
+        copy.Description = description;
+        return copy;
+    }
 }
 
 /// <summary>Helpers for the post-deserialise field lift from

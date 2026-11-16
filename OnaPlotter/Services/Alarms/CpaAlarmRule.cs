@@ -5,14 +5,25 @@ namespace OnaPlotter.Services.Alarms;
 
 /// <summary>CPA: projects every AIS vessel's closest point of approach
 /// and raises an alarm when one would enter the configured CPA radius
-/// within the configured TCPA lookahead. Buddies, moored vessels (SOG
-/// held under <see cref="MooredVesselTracker.MooredSpeedThresholdMs"/>
-/// ~1 kn for <see cref="MooredVesselTracker.MooredHoldSeconds"/>), and
-/// per-vessel snoozed targets are exempt. Auto-clears once no vessel
-/// matches.</summary>
+/// within the configured TCPA lookahead. Buddies and per-vessel snoozed
+/// targets are exempt. Moored / anchored / slow-dwelling targets (see
+/// <see cref="MooredVesselTracker"/>) are exempt only while own ship is
+/// itself below <see cref="OwnShipSlowSogMs"/>; targets not under
+/// command, restricted in ability to manoeuvre, or aground are never
+/// exempt. Emits one alarm per qualifying
+/// target; each auto-clears once its vessel no longer matches.</summary>
 public sealed class CpaAlarmRule : IAlarmRule
 {
+    public AlarmRuleId Id => AlarmRuleId.Cpa;
     public string Title => "CPA";
+
+    /// <summary>Own SOG (m/s, 2 kn) below which moored / anchored
+    /// neighbours stop raising CPA alarms. 2 kn is marina and mooring-
+    /// field manoeuvring speed, where boats on their berths are expected
+    /// within a few metres and an alarm per hull would train the helm to
+    /// mute the klaxon. Above it own ship is making way, and a
+    /// stationary hull on the track is a real collision risk.</summary>
+    public const double OwnShipSlowSogMs = 2.0 * 0.514444;
     public int Priority => 200;    // between grounding and wind shift
     public bool AutoClear => true;
 
@@ -98,7 +109,25 @@ public sealed class CpaAlarmRule : IAlarmRule
     private readonly IMooredVesselTracker _moored;
     public CpaAlarmRule(IMooredVesselTracker moored) => _moored = moored;
 
+    /// <summary>Most imminent qualifying target (lowest TCPA), or null.
+    /// The manager uses <see cref="CheckMany"/>; this single-result view
+    /// exists for the <see cref="IAlarmRule"/> contract.</summary>
     public AlarmInfo? Check(AlarmEvaluationContext ctx)
+    {
+        AlarmInfo? best = null;
+        foreach (var a in CheckMany(ctx))
+        {
+            if (best is null || a.TimeToEventMinutes < best.TimeToEventMinutes)
+                best = a;
+        }
+        return best;
+    }
+
+    /// <summary>One alarm per qualifying target. Each carries its own
+    /// TargetKey and TCPA so the manager's (severity, TTI, priority)
+    /// ordering surfaces the most imminent threat and a dismiss or
+    /// snooze applies to that target alone.</summary>
+    public IEnumerable<AlarmInfo> CheckMany(AlarmEvaluationContext ctx)
     {
         // Harbor mode bundle: while the helm is entering / leaving a
         // busy harbour, every other vessel is a "near miss" so the
@@ -108,13 +137,17 @@ public sealed class CpaAlarmRule : IAlarmRule
         // focus on the chart + immediate obstacles. Reset to false
         // on every page reload so a forgotten Harbor mode never
         // silently rides into open water.
-        if (ctx.Settings.HarborMode) return null;
+        if (ctx.Settings.HarborMode) yield break;
 
         var data = ctx.Data;
+        // True-north COG: AIS target COG is true, so own COG must be too
+        // regardless of the helm's magnetic display preference.
+        double? ownCog = data.CourseOverGroundTrueResolved;
         if (data.Latitude is null || data.Longitude is null
-            || data.CourseOverGround is null || data.SpeedOverGround is null)
-            return null;
+            || ownCog is null || data.SpeedOverGround is null)
+            yield break;
 
+        bool ownSlow = data.SpeedOverGround.Value < OwnShipSlowSogMs;
         double cpaAlarmLimit = EffectiveAlarmCpaNm(ctx);
         double tcpaAlarmLimit = ctx.Settings.TcpaAlarmMin;
         double cpaAwarenessLimit = EffectiveAwarenessCpaNm(ctx);
@@ -126,8 +159,8 @@ public sealed class CpaAlarmRule : IAlarmRule
         // the loop. Null short-circuits the whole pass.
         var ownSnap = Cpa.PrecomputeOwn(
             data.Latitude.Value, data.Longitude.Value,
-            data.CourseOverGround, data.SpeedOverGround);
-        if (ownSnap is null) return null;
+            ownCog, data.SpeedOverGround);
+        if (ownSnap is null) yield break;
 
         // Drop tracker state for vessels that have left AIS range so the
         // dict doesn't grow without bound over long sessions. Vessels-
@@ -142,12 +175,22 @@ public sealed class CpaAlarmRule : IAlarmRule
                 continue;
 
             if (v.IsBuddy) continue;                          // friends, not threats
-            if (_moored.IsMoored(v, ctx.Now)) continue;       // parked / anchored / holding
+            // Always consult the tracker so its dwell clock keeps
+            // running while own ship is fast; the exemption itself
+            // only applies when we are manoeuvring slowly ourselves.
+            bool moored = _moored.IsMoored(v, ctx.Now);
+            if (moored && ownSlow
+                && !MooredVesselTracker.IsRestrictedOrAground(v.NavigationState))
+                continue;
             if (ctx.IsSnoozed(v.Context)) continue;
+
+            // Start from where the target is now, not its last report.
+            // A fix too old to extrapolate is stale: no CPA from it.
+            if (AisDeadReckoning.PositionAt(v, ctx.Now) is not { } tgt) continue;
 
             var cpa = Cpa.Compute(
                 ownSnap.Value,
-                v.Latitude.Value, v.Longitude.Value,
+                tgt.Latitude, tgt.Longitude,
                 v.CourseOverGround, v.SpeedOverGround);
 
             if (cpa is null) continue;
@@ -164,14 +207,10 @@ public sealed class CpaAlarmRule : IAlarmRule
                 v.IsBuddy);
             if (threat != Cpa.Threat.Alarm) continue;
 
-            // CPA threshold tripped. Now (and only now) compute the
-            // COLREGS classification for the alarm banner suffix.
-            // Previously this trig + bearing math ran for EVERY
-            // vessel in the loop and the result was discarded for
-            // every vessel that didn't trip the threshold. On a
-            // 200-vessel harbour at 1 Hz that was 200 wasted
-            // Classify calls/sec; the helm typically has 1-3
-            // simultaneous CPA hits at most.
+            // CPA threshold tripped. Only now compute the COLREGS
+            // classification for the banner suffix: on a 200-vessel
+            // harbour the helm typically has 1-3 simultaneous hits, so
+            // classifying lazily skips ~200 Classify calls per tick.
             string name = v.Name ?? v.Mmsi ?? "vessel";
             // Compact countdown format matching the on-chart CPA
             // chip: "0.42nm T -5′" - prime glyph for minutes,
@@ -200,8 +239,8 @@ public sealed class CpaAlarmRule : IAlarmRule
             var tgtType = Colregs.FromAisShipType(v.ShipType);
             var colregs = Colregs.Classify(
                 data.Latitude.Value, data.Longitude.Value,
-                data.CourseOverGround.Value, data.SpeedOverGround.Value,
-                v.Latitude.Value, v.Longitude.Value,
+                ownCog.Value, data.SpeedOverGround.Value,
+                tgt.Latitude, tgt.Longitude,
                 v.CourseOverGround.Value, v.SpeedOverGround.Value,
                 ownType, tgtType);
             string? colregsShort = Colregs.ShortLabel(colregs.Category);
@@ -210,7 +249,8 @@ public sealed class CpaAlarmRule : IAlarmRule
                 suffix = $" - {colregsShort}, {colregsRole}";
             else if (colregsShort is not null)
                 suffix = $" - {colregsShort}";
-            return new AlarmInfo(
+            yield return new AlarmInfo(
+                RuleId: Id,
                 Title: Title,
                 Message: $"{name}: CPA {cpa.Value.CpaNm:F2}nm T -{cpa.Value.TcpaMin:F0}′{suffix}",
                 Severity: AlarmSeverity.Danger,
@@ -218,6 +258,5 @@ public sealed class CpaAlarmRule : IAlarmRule
                 TargetLabel: name,
                 TimeToEventMinutes: cpa.Value.TcpaMin);
         }
-        return null;
     }
 }

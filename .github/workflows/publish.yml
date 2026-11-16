@@ -98,6 +98,7 @@ jobs:
           stage=staging/signalk-onaplotter
           mkdir -p "$stage"
           sed "s|__VERSION__|$version|" deploy/package.json.template > "$stage/package.json"
+          cp deploy/index.js "$stage/index.js"
           cp -r publish/wwwroot "$stage/public"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "stage=$stage" >> "$GITHUB_OUTPUT"

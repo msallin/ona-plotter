@@ -139,12 +139,27 @@ public class PolarServiceTests
     public async Task InitializeAsync_LoadsFromStorage()
     {
         var store = new InMemoryKeyValueStore();
+        await store.SetAsync(SettingKeys.Polar, SampleCsv);
+
+        var svc = new PolarService(store);
+        await svc.InitializeAsync();
+
+        await Assert.That(svc.HasPolar).IsTrue();
+    }
+
+    [Test]
+    public async Task InitializeAsync_MigratesUnversionedPolarKey()
+    {
+        // A helm who imported a polar before the key gained ".v1" keeps it.
+        var store = new InMemoryKeyValueStore();
         await store.SetAsync("polar", SampleCsv);
 
         var svc = new PolarService(store);
         await svc.InitializeAsync();
 
         await Assert.That(svc.HasPolar).IsTrue();
+        await Assert.That(await store.GetAsync("polar")).IsNull();
+        await Assert.That(await store.GetAsync(SettingKeys.Polar)).IsEqualTo(SampleCsv);
     }
 
     private sealed class InMemoryKeyValueStore : IKeyValueStore

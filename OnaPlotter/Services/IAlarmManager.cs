@@ -68,8 +68,9 @@ public interface IAlarmManager
 
     /// <summary>
     /// Fires when the top-severity alarm transitions (set / cleared /
-    /// replaced / severity change) AND when the top alarm's message
-    /// changes. The payload is the new top alarm captured at event-raise
+    /// replaced / severity change). Message-only updates of the same
+    /// top alarm do NOT fire this; they arrive via
+    /// <see cref="OnAlarmsChanged"/>. The payload is the new top alarm captured at event-raise
     /// time so handlers don't race with a later Evaluate/Dismiss
     /// mutating state during their await. Use this for audio-cadence
     /// decisions.
@@ -89,12 +90,20 @@ public interface IAlarmManager
     /// </summary>
     void Evaluate(NavigationData data, IReadOnlyCollection<AisVessel> vessels, IAppSettings settings);
 
+    /// <summary>
+    /// Same as the snapshot overload, but the AIS snapshot is pulled from
+    /// <paramref name="vessels"/> only when an evaluation is actually due.
+    /// Callers driven by the high-rate delta stream use this so a
+    /// throttled call doesn't pay for building the vessel snapshot.
+    /// </summary>
+    void Evaluate(NavigationData data, Func<IReadOnlyCollection<AisVessel>> vessels, IAppSettings settings);
+
     /// <summary>Clears all active alarms and logs each as
     /// <see cref="DismissReason.UserDismissed"/>. No effect on an empty stack.</summary>
     Task DismissAsync();
 
     /// <summary>Clears one specific alarm from the active stack. Matches
-    /// by (Title, TargetKey). Logs as <see cref="DismissReason.UserDismissed"/>.</summary>
+    /// by (RuleId, TargetKey). Logs as <see cref="DismissReason.UserDismissed"/>.</summary>
     Task DismissAsync(AlarmInfo alarm);
 
     /// <summary>Snoozes the top-severity alarm's target for
@@ -113,13 +122,11 @@ public interface IAlarmManager
     /// <summary>Default snooze duration. Exposed so the UI can show "Snooze 10 m".</summary>
     int SnoozeDurationMinutes { get; }
 
-    /// <summary>Titles of every registered rule, in the manager's
-    /// evaluation order (priority asc). Settings -> Alarms uses this
-    /// to render one toggle per rule without hardcoding the list, so
-    /// a new rule registered in DI shows up in the UI automatically.
-    /// The titles also serve as the membership keys for
-    /// <see cref="IAlarmThresholds.DisabledAlarmRules"/>.</summary>
-    IReadOnlyList<string> RegisteredRuleTitles { get; }
+    /// <summary>Ids of every registered rule, in priority order.
+    /// Settings -> Alarms uses this for the master "all off" switch;
+    /// <see cref="AlarmRuleIds.PersistedKey"/> turns each into the
+    /// membership key for <see cref="IAlarmThresholds.DisabledAlarmRules"/>.</summary>
+    IReadOnlyList<AlarmRuleId> RegisteredRuleIds { get; }
 
     /// <summary>Loads persisted snooze state from
     /// <see cref="IKeyValueStore"/>. Called once at app startup; safe

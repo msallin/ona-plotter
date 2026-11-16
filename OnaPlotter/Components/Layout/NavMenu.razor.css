@@ -82,13 +82,13 @@
    side of the chrome.
    Flex column so the collapse button at the bottom can be pushed
    to the rail's foot via margin-top:auto without forcing a fixed
-   height on the nav above it. dvh tracks the live visible area
-   (matches our html content box, which has env(safe-area-inset-*)
-   padding) - 100vh would overflow on iPad PWA standalone. */
+   height on the nav above it. --app-height is the html content box
+   (dynamic viewport minus the safe-area padding, app.css :root) -
+   100vh / 100dvh would overflow on iPad PWA standalone. */
 .nav-scrollable {
     display: flex;
     flex-direction: column;
-    height: 100dvh;
+    height: var(--app-height);
     overflow-y: auto;
     scrollbar-width: none;                  /* Firefox */
     /* iOS Safari rubber-bands an overflow:auto container even when the

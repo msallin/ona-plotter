@@ -123,7 +123,8 @@ public sealed class MapFrameBuilder
                            data.HeadingTrueResolved)
             : null;
 
-        // Track segment: [lat, lon, sog, prevLat, prevLon]. Emitted
+        // Track segment: [lat, lon, speedBucket, prevLat, prevLon]. The
+        // bucket indexes SpeedColor.BucketPalette on the JS side. Emitted
         // only when BOTH endpoints are known AND the configured
         // cadence has elapsed since the last emit. Without the
         // cadence gate the JS-side trackLayer (1000-segment cap)
@@ -145,7 +146,7 @@ public sealed class MapFrameBuilder
             track = new[]
             {
                 bLat.Value, bLon.Value,
-                data.SpeedOverGround ?? 0,
+                SpeedBuckets.Bucket(data.SpeedOverGround),
                 PrevLat.Value, PrevLon.Value
             };
             PrevLat = bLat;

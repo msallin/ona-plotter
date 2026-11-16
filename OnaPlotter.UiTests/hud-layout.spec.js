@@ -98,7 +98,7 @@ test.describe('HUD layout', () => {
             await page.addInitScript(() => {
                 localStorage.setItem('ona.hints.welcome.v1.dismissed', '1');
                 localStorage.setItem('ona.hints.mapLongPress.dismissed', '1');
-                localStorage.setItem('ona.depthAlarmThreshold', '3.0');
+                localStorage.setItem('ona.depthAlarmThreshold.v1', '3.0');
                 localStorage.setItem('ona.sidebarCollapsed.v1', 'true');
             });
 

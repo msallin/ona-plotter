@@ -26,11 +26,13 @@ public sealed class NotificationsApi : INotificationsApi
 
     private readonly HttpClient _http;
     private readonly ISignalKBaseUrl _baseUrl;
+    private readonly ILogger<NotificationsApi> _logger;
 
-    public NotificationsApi(HttpClient http, ISignalKBaseUrl baseUrl)
+    public NotificationsApi(HttpClient http, ISignalKBaseUrl baseUrl, ILogger<NotificationsApi> logger)
     {
         _http = http;
         _baseUrl = baseUrl;
+        _logger = logger;
     }
 
     /// <inheritdoc/>
@@ -159,12 +161,14 @@ public sealed class NotificationsApi : INotificationsApi
         cts.CancelAfter(CallTimeout);
         try
         {
-            return await ResourceHttp.GetDictAsync<ServerNotificationEnvelope>(_http,
-                _baseUrl.Combine(SignalKUrls.NotificationsPath),
-                cts.Token).ConfigureAwait(false);
+            return await ResourceHttp.GetDictAsync<ServerNotificationEnvelope>(
+                _http, _baseUrl.Combine(SignalKUrls.NotificationsPath),
+                _logger, cts.Token).ConfigureAwait(false);
         }
-        catch (System.Net.Http.HttpRequestException) { return null; }
-        catch (System.Text.Json.JsonException) { return null; }
+        // The per-call timeout is a "caller" cancel from ResourceHttp's
+        // point of view, so it propagates out of GetDictAsync; this
+        // boot-path read reports it (and a real caller cancel) as
+        // "no list".
         catch (OperationCanceledException) { return null; }
     }
 }

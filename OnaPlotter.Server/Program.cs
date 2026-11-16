@@ -56,6 +56,12 @@ if (!app.Environment.IsDevelopment())
     // Nothing additional needed here.
 }
 
+// UseStaticFiles rather than MapStaticAssets: MapStaticAssets serves
+// from the build-time endpoint manifest (ETag, Content-Length and the
+// .br/.gz variants of each file), but ApplyRuntimeConfig rewrites
+// index.html and appsettings.json on startup. MapStaticAssets would
+// keep handing out the publish-time base href and SignalK URL in the
+// compressed variants and mismatched headers for the identity bytes.
 app.UseBlazorFrameworkFiles();
 app.UseStaticFiles();
 

@@ -25,12 +25,14 @@ public sealed class SignalkUpdate
     public List<SignalkValue>? Values { get; set; }
 }
 
-/// <summary>A single SignalK path/value pair (e.g. "navigation.speedOverGround" = 3.5).</summary>
+/// <summary>A single SignalK path/value pair (e.g. "navigation.speedOverGround" = 3.5).
+/// <see cref="Value"/> is <see cref="DeltaValue.Null"/> both for an explicit
+/// JSON null and for a missing property; SignalK treats the two alike.</summary>
 public sealed class SignalkValue
 {
     [JsonPropertyName("path")]
     public string? Path { get; set; }
 
     [JsonPropertyName("value")]
-    public object? Value { get; set; }
+    public DeltaValue Value { get; set; }
 }

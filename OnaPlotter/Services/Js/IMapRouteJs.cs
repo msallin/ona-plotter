@@ -35,8 +35,9 @@ public interface IMapRouteJs
     /// <summary>Render the active course overlay - the leg polyline +
     /// pulsing next-WP marker. <paramref name="wpIndex"/> is the
     /// 0-based index of the leg currently being navigated; the JS side
-    /// dims earlier legs as "passed".</summary>
-    Task SetActiveRouteAsync(double[][] coords, int wpIndex, string routeId, string routeName);
+    /// dims earlier legs as "passed". <paramref name="totalNm"/> is the
+    /// route length shown in the tap-the-line popup.</summary>
+    Task SetActiveRouteAsync(double[][] coords, int wpIndex, string routeId, string routeName, double totalNm);
 
     /// <summary>Clear the active course overlay (used on
     /// deactivation, edit-end, page dispose).</summary>
@@ -51,11 +52,6 @@ public interface IMapRouteJs
     /// request is in flight; restored by passing <c>false</c> when the
     /// SK delta confirms (or the watchdog times out).</summary>
     Task SetActiveRouteStoppingAsync(bool stopping);
-
-    /// <summary>Push the live route ETA in seconds so the active-route
-    /// popup shows a fresh "ETA HH:MM (in Xh Ym)". Null clears the
-    /// row.</summary>
-    Task SetActiveRouteTtgSecondsAsync(double? seconds);
 
     /// <summary>Clear the next-leg course-line overlay (the bearing /
     /// XTE tick to the next waypoint). Drawn by <c>applyFrame</c>;

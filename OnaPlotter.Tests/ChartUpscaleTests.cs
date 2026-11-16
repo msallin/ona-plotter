@@ -144,4 +144,14 @@ public class ChartUpscaleTests
                 .IsEqualTo(ChartUpscale.ClampLevels(v));
         }
     }
+
+    [Test]
+    public async Task MapMaxZoom_ReachesTopOfUpscaleBand()
+    {
+        // The Leaflet viewport cap must cover the native pyramid plus the
+        // largest level the clamp lets through, or the helm is stopped
+        // before the overzoom band.
+        int topOfBand = ChartUpscale.NativeMaxZoom + ChartUpscale.Effective(true, int.MaxValue);
+        await Assert.That(topOfBand).IsEqualTo(ChartUpscale.MapMaxZoom);
+    }
 }

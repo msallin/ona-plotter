@@ -19,7 +19,7 @@ public class AlarmRulePublishPathTests
     public async Task ShallowAlarmRule_PublishesUnderEnvironmentDepthBelowSurface()
     {
         var rule = new ShallowAlarmRule();
-        var info = new AlarmInfo("SHALLOW", "Depth 1.8m", AlarmSeverity.Danger);
+        var info = new AlarmInfo(AlarmRuleId.Shallow, "SHALLOW", "Depth 1.8m", AlarmSeverity.Danger);
         await Assert.That(rule.GetPublishPath(info))
             .IsEqualTo("notifications.environment.depth.belowSurface");
     }
@@ -31,7 +31,7 @@ public class AlarmRulePublishPathTests
         // ':' separators must NOT survive in the path - replace with
         // '_' so the resulting suffix tokenises cleanly on the server.
         var rule = new CpaAlarmRule(new MooredVesselTracker());
-        var info = new AlarmInfo("CPA", "MV Aurora: CPA 0.20nm in 4min",
+        var info = new AlarmInfo(AlarmRuleId.Cpa, "CPA", "MV Aurora: CPA 0.20nm in 4min",
             AlarmSeverity.Danger,
             TargetKey: "vessels.urn:mrn:imo:mmsi:261006533");
         await Assert.That(rule.GetPublishPath(info))
@@ -47,7 +47,7 @@ public class AlarmRulePublishPathTests
         // the path past `notifications.security.collision.`. The
         // replacement keeps '_' and '-' as legal SK path tokens.
         var rule = new CpaAlarmRule(new MooredVesselTracker());
-        var info = new AlarmInfo("CPA", "Spoof attempt",
+        var info = new AlarmInfo(AlarmRuleId.Cpa, "CPA", "Spoof attempt",
             AlarmSeverity.Danger,
             TargetKey: "vessels.urn:mrn:imo:mmsi:9999.environment.depth.belowSurface");
         var path = rule.GetPublishPath(info);
@@ -69,7 +69,7 @@ public class AlarmRulePublishPathTests
         // publisher must NOT synthesize a bogus shared path that
         // would collide with another vessel's notification.
         var rule = new CpaAlarmRule(new MooredVesselTracker());
-        var info = new AlarmInfo("CPA", "no target", AlarmSeverity.Danger,
+        var info = new AlarmInfo(AlarmRuleId.Cpa, "CPA", "no target", AlarmSeverity.Danger,
             TargetKey: null);
         await Assert.That(rule.GetPublishPath(info)).IsNull();
     }
@@ -78,7 +78,7 @@ public class AlarmRulePublishPathTests
     public async Task WindShiftAlarmRule_PublishesUnderEnvironmentWindShift()
     {
         var rule = new WindShiftAlarmRule();
-        var info = new AlarmInfo("WIND SHIFT", "TWD shifted 30 deg",
+        var info = new AlarmInfo(AlarmRuleId.WindShift, "WIND SHIFT", "TWD shifted 30 deg",
             AlarmSeverity.Warn);
         await Assert.That(rule.GetPublishPath(info))
             .IsEqualTo("notifications.environment.wind.shift");
@@ -88,7 +88,7 @@ public class AlarmRulePublishPathTests
     public async Task AnchorDragAlarmRule_PublishesUnderNavigationAnchorDragging()
     {
         var rule = new AnchorDragAlarmRule();
-        var info = new AlarmInfo("ANCHOR DRAG", "Dragging: 50m / 30m radius",
+        var info = new AlarmInfo(AlarmRuleId.AnchorDrag, "ANCHOR DRAG", "Dragging: 50m / 30m radius",
             AlarmSeverity.Danger);
         await Assert.That(rule.GetPublishPath(info))
             .IsEqualTo("notifications.navigation.anchor.dragging");
@@ -98,7 +98,7 @@ public class AlarmRulePublishPathTests
     public async Task AnchorTideAlarmRule_PublishesUnderNavigationAnchorTide()
     {
         var rule = new AnchorTideAlarmRule();
-        var info = new AlarmInfo("ANCHOR TIDE", "Keel touches bottom at LW in 2h",
+        var info = new AlarmInfo(AlarmRuleId.AnchorTide, "ANCHOR TIDE", "Keel touches bottom at LW in 2h",
             AlarmSeverity.Warn);
         await Assert.That(rule.GetPublishPath(info))
             .IsEqualTo("notifications.navigation.anchor.tide");
@@ -107,8 +107,8 @@ public class AlarmRulePublishPathTests
     [Test]
     public async Task DeadmanAlarmRule_PublishesUnderHelmDeadman()
     {
-        var rule = new DeadmanAlarmRule(new DeadmanTracker());
-        var info = new AlarmInfo("DEADMAN", "No interaction for 12 min",
+        var rule = new DeadmanAlarmRule(new DeadmanTracker(TimeProvider.System));
+        var info = new AlarmInfo(AlarmRuleId.Deadman, "DEADMAN", "No interaction for 12 min",
             AlarmSeverity.Danger);
         await Assert.That(rule.GetPublishPath(info))
             .IsEqualTo("notifications.helm.deadman");
@@ -123,7 +123,7 @@ public class AlarmRulePublishPathTests
         // does not override. Cast through IAlarmRule because
         // GetPublishPath is a default interface method.
         IAlarmRule rule = new AisSartAlarmRule();
-        var info = new AlarmInfo("SART", "Beacon", AlarmSeverity.Danger);
+        var info = new AlarmInfo(AlarmRuleId.Sart, "SART", "Beacon", AlarmSeverity.Danger);
         await Assert.That(rule.GetPublishPath(info)).IsNull();
     }
 
@@ -135,7 +135,7 @@ public class AlarmRulePublishPathTests
         // boat approaches a waypoint. Republishing would race the
         // server's own emission.
         IAlarmRule rule = new WaypointApproachAlarmRule();
-        var info = new AlarmInfo("APPROACH", "100m to WP", AlarmSeverity.Warn);
+        var info = new AlarmInfo(AlarmRuleId.Approach, "APPROACH", "100m to WP", AlarmSeverity.Warn);
         await Assert.That(rule.GetPublishPath(info)).IsNull();
     }
 
@@ -150,7 +150,7 @@ public class AlarmRulePublishPathTests
         // alarm reach the publisher's pass-1 loop.
         IAlarmRule rule = new ServerNotificationsAlarmRule(
             new OnaPlotter.Services.ServerNotifications.ServerNotificationStore());
-        var info = new AlarmInfo("ANCHOR", "dragging",
+        var info = new AlarmInfo(AlarmRuleId.ServerNotification, "ANCHOR", "dragging",
             AlarmSeverity.Danger,
             TargetKey: "notifications.navigation.anchor");
         await Assert.That(rule.GetPublishPath(info)).IsNull();

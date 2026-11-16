@@ -28,8 +28,13 @@ classification, colour, CPA, ETA, etc. and pushes shaped payloads.
 JS-side decisions (e.g. "is this ship a SART?") are a code smell.
 ```
 
-**SignalkClient** owns the WebSocket and routes deltas to the four stores
-above. New paths wire into one of those stores; don't subscribe elsewhere.
+**SignalkClient** owns the WebSocket (connect, subscribe, reconnect,
+staleness) and hands each frame to `Services/Signalk/SignalkDeltaDispatcher`,
+which routes it through per-store handlers (`SelfDeltaHandler`,
+`AisDeltaHandler`, `AtonDeltaHandler`, `ServerNotificationDeltaHandler`)
+into the stores above. New self paths that aren't plain numbers / bools /
+strings get an entry in `SelfDeltaHandler.ExactPaths`; don't subscribe
+elsewhere. Services that only observe the connection take `ISignalkClient`.
 
 **Subscription tiers.** Single `SubscriptionTier` table near the top of
 `SignalkClient.cs`: `SelfFast`, `SelfFastNotifications`, `SelfSlow`, `Ais`,
@@ -39,7 +44,7 @@ new tier entry. Don't sprinkle ad-hoc `subscribe` calls; reconnect replays
 from the table.
 
 **Services/Map/*** controllers wrap JS interop and own diff-and-push state
-(`ServerAnchorSync`, `ServerTrackController`, ...). Pages call into them;
+(`ServerAnchorController`, `ServerTrackController`, ...). Pages call into them;
 controllers decide when JS actually needs an update. Stops pages from
 spamming interop on every render.
 

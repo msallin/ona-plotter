@@ -1,4 +1,5 @@
 using System.Text.Json;
+using OnaPlotter.Utilities;
 
 namespace OnaPlotter.Models;
 
@@ -56,7 +57,7 @@ public sealed class Aton
     /// explicitly lands here keyed by the SignalK path. Lets a popover
     /// show "raw paths" for diagnostics without needing a code change
     /// every time a plugin adds a field.</summary>
-    public Dictionary<string, object?> Properties { get; } = new(StringComparer.Ordinal);
+    public Dictionary<string, DeltaValue> Properties { get; } = new(StringComparer.Ordinal);
 
     public DateTime LastSeen { get; set; }
 
@@ -71,7 +72,7 @@ public sealed class Aton
     /// when the entry actually changed (caller propagates an update
     /// event). Returns false on no-op deltas (idempotent re-application
     /// of the same value) so the UI doesn't redraw on every tick.</summary>
-    public bool Apply(string path, object? rawValue)
+    public bool Apply(string path, DeltaValue rawValue)
     {
         LastSeen = DateTime.UtcNow;
 
@@ -86,7 +87,7 @@ public sealed class Aton
         // under Properties[""] which would be diagnostic noise.
         if (path.Length == 0)
         {
-            if (rawValue is JsonElement bundle
+            if (rawValue.TryGetElement(out var bundle)
                 && bundle.ValueKind == JsonValueKind.Object)
             {
                 return ApplyIdentityBundle(bundle);
@@ -156,36 +157,27 @@ public sealed class Aton
         return changed;
     }
 
-    private bool ApplyPosition(object? rawValue)
+    private bool ApplyPosition(DeltaValue rawValue)
     {
-        if (rawValue is not JsonElement el || el.ValueKind != JsonValueKind.Object)
+        if (!rawValue.TryGetLatLon(out var lat, out var lon))
             return false;
-        if (!el.TryGetProperty("latitude", out var latEl)
-            || !el.TryGetProperty("longitude", out var lonEl))
-            return false;
-        if (latEl.ValueKind is not (JsonValueKind.Number)
-            || lonEl.ValueKind is not (JsonValueKind.Number))
-            return false;
-        var lat = latEl.GetDouble();
-        var lon = lonEl.GetDouble();
         bool changed = false;
         if (Latitude != lat) { Latitude = lat; changed = true; }
         if (Longitude != lon) { Longitude = lon; changed = true; }
         return changed;
     }
 
-    private bool ApplyAtonType(object? rawValue)
+    private bool ApplyAtonType(DeltaValue rawValue)
     {
-        if (rawValue is not JsonElement el) return false;
         // Object form: { id: 14, name: "Lateral Starboard" }
-        if (el.ValueKind == JsonValueKind.Object)
+        if (rawValue.TryGetElement(out var el) && el.ValueKind == JsonValueKind.Object)
         {
             bool changed = false;
             if (el.TryGetProperty("id", out var idEl)
-                && idEl.ValueKind == JsonValueKind.Number)
+                && idEl.ValueKind == JsonValueKind.Number
+                && idEl.TryGetInt32(out var v0))
             {
-                var v = idEl.GetInt32();
-                if (TypeId != v) { TypeId = v; changed = true; }
+                if (TypeId != v0) { TypeId = v0; changed = true; }
             }
             if (el.TryGetProperty("name", out var nameEl)
                 && nameEl.ValueKind == JsonValueKind.String)
@@ -195,10 +187,12 @@ public sealed class Aton
             }
             return changed;
         }
-        // Bare-number form: just the id.
-        if (el.ValueKind == JsonValueKind.Number)
+        // Bare-number form: just the id. A non-integral or out-of-range
+        // number is malformed and ignored.
+        if (rawValue.TryGetNumber(out var d)
+            && d == Math.Floor(d) && d >= int.MinValue && d <= int.MaxValue)
         {
-            var v = el.GetInt32();
+            var v = (int)d;
             if (TypeId == v) return false;
             TypeId = v;
             return true;
@@ -206,18 +200,15 @@ public sealed class Aton
         return false;
     }
 
-    private bool ApplyVirtual(object? rawValue)
+    private bool ApplyVirtual(DeltaValue rawValue)
     {
-        if (rawValue is not JsonElement el) return false;
-        // True / false set the flag; explicit JSON null clears it.
-        // Anything else (numbers, strings, undefined value) is a no-op
-        // - we don't want to flap the dashed outline based on a
-        // malformed delta.
-        bool? newVal = el.ValueKind switch
+        // True / false set the flag; JSON null clears it. Anything else
+        // (numbers, strings, objects) is a no-op - we don't want to flap
+        // the dashed outline based on a malformed delta.
+        bool? newVal = rawValue.Kind switch
         {
-            JsonValueKind.True => true,
-            JsonValueKind.False => false,
-            JsonValueKind.Null => null,
+            DeltaValueKind.Bool => rawValue.TryGetBool(out var b) && b,
+            DeltaValueKind.Null => null,
             _ => Virtual,    // unchanged sentinel
         };
         if (Virtual == newVal) return false;
@@ -225,13 +216,8 @@ public sealed class Aton
         return true;
     }
 
-    private static string? AsString(object? rawValue)
-    {
-        if (rawValue is null) return null;
-        if (rawValue is JsonElement el && el.ValueKind == JsonValueKind.String)
-            return el.GetString();
-        return rawValue.ToString();
-    }
+    private static string? AsString(DeltaValue rawValue) =>
+        rawValue.IsNull ? null : rawValue.ToString();
 
     /// <summary>Extracts the 9-digit MMSI from a SignalK AtoN context
     /// of the form <c>atons.urn:mrn:imo:mmsi:NNNNNNNNN</c>. Returns null

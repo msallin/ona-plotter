@@ -45,6 +45,7 @@ public class ResourceLifecycleTests
         var client = new SignalkClient(
             baseUrl: new FakeBaseUrl(),
             logger: NullLogger<SignalkClient>.Instance,
+            data: new OnaPlotter.Models.NavigationData(),
             track: new TrackBuffer(),
             ais: new AisStore(),
             http: new HttpClient(),
@@ -541,6 +542,7 @@ public class ResourceLifecycleTests
         var client = new SignalkClient(
             baseUrl: new FakeBaseUrl(),
             logger: NullLogger<SignalkClient>.Instance,
+            data: new OnaPlotter.Models.NavigationData(),
             track: new TrackBuffer(),
             ais: new AisStore(),
             http: new HttpClient(),

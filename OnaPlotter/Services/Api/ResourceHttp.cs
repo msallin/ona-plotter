@@ -11,9 +11,11 @@ namespace OnaPlotter.Services.Api;
 /// thin layer over its domain-specific concerns (payload shape,
 /// geometry parsing) instead of re-implementing transport semantics.
 ///
-/// Error handling matches every existing API: a non-success status
-/// returns the empty-result sentinel (null dict / false for delete) so
-/// callers can pass that through the SafeLoad wrapper unchanged.
+/// Every request goes through one failure policy: a non-success
+/// status, transport failure or HttpClient timeout becomes a failed
+/// <see cref="ApiResult"/> / <see cref="ApiResult{T}"/> (or the null
+/// sentinel of <see cref="GetDictAsync{T}"/>), never an exception into
+/// Blazor's renderer. Only a caller-initiated cancellation propagates.
 /// </summary>
 internal static class ResourceHttp
 {
@@ -38,24 +40,103 @@ internal static class ResourceHttp
     /// <summary>
     /// GETs a SignalK resource collection and deserialises the
     /// returned map to <c>Dictionary&lt;string, T&gt;</c>. Null on any
-    /// non-2xx or malformed body so callers can early-return with an
-    /// empty list.
+    /// failure (non-2xx, transport error, timeout, malformed body) so
+    /// callers can early-return with an empty list. Failure policy is
+    /// <see cref="GetJsonAsync{T}(HttpClient, string, ILogger, CancellationToken, JsonSerializerOptions?)"/>'s.
     /// </summary>
     public static async Task<Dictionary<string, T>?> GetDictAsync<T>(
-        HttpClient http, string url, CancellationToken ct = default)
+        HttpClient http, string url, ILogger logger, CancellationToken ct = default)
+    {
+        var result = await GetJsonAsync<Dictionary<string, T>>(http, url, logger, ct);
+        return result.Success ? result.Value : null;
+    }
+
+    /// <summary>
+    /// GETs <paramref name="url"/> and deserialises the body to
+    /// <typeparamref name="T"/>. The shared read policy for every
+    /// SignalK client:
+    /// <list type="bullet">
+    ///   <item>2xx: <c>Ok(value)</c> (value may be null for a JSON
+    ///   <c>null</c> body).</item>
+    ///   <item>non-2xx: <c>Fail</c> carrying the server's error text
+    ///   and <see cref="ApiResult{T}.StatusCode"/>; not logged, since
+    ///   404 is how optional plugins say "not installed".</item>
+    ///   <item>transport failure, HttpClient timeout, malformed JSON:
+    ///   <c>Fail</c> without status code, logged as a warning.</item>
+    ///   <item>caller-initiated cancellation: rethrown, so a deliberate
+    ///   cancel surfaces as a cancel.</item>
+    /// </list>
+    /// Defaults to case-insensitive property matching; pass
+    /// <paramref name="options"/> to override (e.g.
+    /// <see cref="JsonSerializerOptions.Web"/> for DTOs that rely on the
+    /// <c>System.Net.Http.Json</c> defaults).
+    /// </summary>
+    public static Task<ApiResult<T>> GetJsonAsync<T>(
+        HttpClient http, string url, ILogger logger, CancellationToken ct = default,
+        JsonSerializerOptions? options = null)
+    {
+        return GetCoreAsync(http, url, logger,
+            static async (content, opts, token) =>
+                await content.ReadFromJsonAsync<T>(opts, token),
+            options ?? s_jsonOptions, ct);
+    }
+
+    /// <summary>
+    /// Same policy as <see cref="GetJsonAsync{T}(HttpClient, string, ILogger, CancellationToken, JsonSerializerOptions?)"/>
+    /// for bodies whose shape needs hand parsing (multi-shape payloads,
+    /// positional history rows). <paramref name="parse"/> runs against
+    /// the root element of a document that is disposed afterwards, so
+    /// it must not let the element escape. A <see cref="JsonException"/>
+    /// thrown by <paramref name="parse"/> is treated as a malformed body.
+    /// </summary>
+    public static Task<ApiResult<T>> GetJsonAsync<T>(
+        HttpClient http, string url, ILogger logger, Func<JsonElement, T> parse,
+        CancellationToken ct = default)
+    {
+        return GetCoreAsync(http, url, logger,
+            static async (content, parser, token) =>
+            {
+                await using var stream = await content.ReadAsStreamAsync(token);
+                using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: token);
+                return parser(doc.RootElement);
+            },
+            parse, ct);
+    }
+
+    private static async Task<ApiResult<T>> GetCoreAsync<T, TState>(
+        HttpClient http, string url, ILogger logger,
+        Func<HttpContent, TState, CancellationToken, Task<T?>> read, TState state,
+        CancellationToken ct)
     {
         try
         {
             using var response = await http.GetAsync(url, ct);
-            if (!response.IsSuccessStatusCode) return null;
-            return await response.Content.ReadFromJsonAsync<Dictionary<string, T>>(s_jsonOptions, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                int status = (int)response.StatusCode;
+                return ApiResult<T>.Fail(
+                    await ReadErrorAsync(response, ct) ?? $"HTTP {status}", status);
+            }
+            var value = await read(response.Content, state, ct);
+            return new ApiResult<T>(true, value);
         }
-        catch (HttpRequestException) { return null; }
-        // Caller-initiated cancel still rethrows; the HttpClient timeout
-        // (no caller CT) returns the empty-result sentinel so the
-        // calling SafeLoad path doesn't have to know about transport
-        // failure modes.
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { return null; }
+        catch (HttpRequestException ex)
+        {
+            logger.LogWarning("GET {Url} failed: {Message}", url, ex.Message);
+            return ApiResult<T>.Fail(ex.Message);
+        }
+        catch (JsonException ex)
+        {
+            logger.LogWarning("GET {Url} returned a malformed body: {Message}", url, ex.Message);
+            return ApiResult<T>.Fail("malformed response");
+        }
+        // HttpClient's own timeout (no caller cancel) is a failure the
+        // UI can render; a caller cancel propagates.
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            logger.LogWarning("GET {Url} timed out", url);
+            return ApiResult<T>.Fail("request timed out");
+        }
     }
 
     /// <summary>
@@ -114,15 +195,19 @@ internal static class ResourceHttp
     /// <summary>
     /// PUTs a JSON body. Used for in-place update flows
     /// (RouteApi.UpdateAsync, WaypointApi.UpdateAsync, radar control
-    /// writes go through their own helper for the structured error
-    /// envelope they emit).
+    /// writes). <paramref name="options"/> overrides the
+    /// <c>System.Net.Http.Json</c> web defaults for bodies that need
+    /// e.g. null-omission.
     /// </summary>
     public static async Task<ApiResult> PutAsync(
-        HttpClient http, string url, object body, CancellationToken ct = default)
+        HttpClient http, string url, object body, CancellationToken ct = default,
+        JsonSerializerOptions? options = null)
     {
         try
         {
-            using var response = await http.PutAsJsonAsync(url, body, ct);
+            using var response = options is null
+                ? await http.PutAsJsonAsync(url, body, ct)
+                : await http.PutAsync(url, JsonContent.Create(body, body.GetType(), options: options), ct);
             if (response.IsSuccessStatusCode) return ApiResult.Ok;
             return ApiResult.Fail(
                 await ReadErrorAsync(response, ct) ?? $"HTTP {(int)response.StatusCode}",
@@ -208,19 +293,13 @@ internal static class ResourceHttp
                 return body.Length > 200 ? body[..200] : body;
             }
         }
-        // Narrow to the genuine network / IO failure modes. A bare
-        // catch silenced future bugs (typo on the json path, a
-        // ReadAsStringAsync regression) and obscured ops debugging
-        // when "HTTP 502" toasts hid an unrelated failure.
-        catch (System.Net.Http.HttpRequestException ex)
-        {
-            Console.WriteLine($"[resourceHttp] body read failed (network): {ex.Message}");
-        }
-        catch (System.IO.IOException ex)
-        {
-            Console.WriteLine($"[resourceHttp] body read failed (io): {ex.Message}");
-        }
-        catch (OperationCanceledException) { /* request cancelled */ }
+        // Narrow to the genuine network / IO failure modes so an
+        // unrelated bug still surfaces. The caller already has the
+        // status code, which becomes the error text when the body
+        // can't be read.
+        catch (HttpRequestException) { }
+        catch (System.IO.IOException) { }
+        catch (OperationCanceledException) { }
         return null;
     }
 

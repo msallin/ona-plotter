@@ -2,7 +2,9 @@ using OnaPlotter.Models;
 
 namespace OnaPlotter.Services.Alarms;
 
-/// <summary>SHALLOW: depth below the user's configured alarm threshold.
+/// <summary>SHALLOW: depth below the user's configured alarm threshold,
+/// read from <see cref="NavigationData.FreshGroundingDepth"/> (keel, then
+/// transducer, then surface depth; dead feeds ignored).
 ///
 /// Auto-clears when depth rises back above threshold for a brief moment,
 /// BUT once the user has dismissed the alarm we require a sustained
@@ -19,6 +21,8 @@ public sealed class ShallowAlarmRule : IAlarmRule
     /// user dismissal before the rule is allowed to re-fire. See class
     /// remarks for why.</summary>
     public static readonly TimeSpan RearmClearDuration = TimeSpan.FromMinutes(5);
+
+    public AlarmRuleId Id => AlarmRuleId.Shallow;
 
     public string Title => "SHALLOW";
     public int Priority => 100;    // highest priority - grounding risk
@@ -41,7 +45,13 @@ public sealed class ShallowAlarmRule : IAlarmRule
 
     public AlarmInfo? Check(AlarmEvaluationContext ctx)
     {
-        var d = ctx.Data.Depth;
+        // Keel depth first (what actually touches bottom, and what the
+        // HUD shows), then transducer, then surface. Dead (> 30 s old)
+        // sources are skipped: a frozen sounder neither raises nor holds
+        // a SHALLOW banner, the same policy AnchorDragAlarmRule applies
+        // to a frozen radius. Depth loss itself is surfaced by the HUD
+        // staleness badge rather than a separate alarm.
+        var d = ctx.Data.FreshGroundingDepth;
         var threshold = ctx.Settings.DepthAlarmThreshold;
 
         // Walk the post-dismiss state machine FIRST. The idea: after the
@@ -79,6 +89,7 @@ public sealed class ShallowAlarmRule : IAlarmRule
         // SHALLOW is happening now - TTI=0 pins it above any pending
         // danger alarm (a CPA still 5min out).
         return new AlarmInfo(
+            RuleId: Id,
             Title: Title,
             Message: $"Depth {d:F1}m < {threshold:F1}m",
             Severity: AlarmSeverity.Danger,

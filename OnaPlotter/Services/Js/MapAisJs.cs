@@ -29,10 +29,20 @@ public sealed class MapAisJs : IMapAisJs
     /// before it disposes the module reference.</summary>
     public void MarkDisposed() => _disposed = true;
 
-    public Task UpdateAisTargetsAsync(OnaPlotter.Services.Map.AisVesselPayload[] vessels)
-        => InvokeSafe("updateAisTargets", (object)vessels);
+    /// <summary>A disposed or disconnected page reports "not accepted"
+    /// so the next live push, if any, starts from a full snapshot.</summary>
+    public async Task<bool> UpdateAisTargetsAsync(OnaPlotter.Services.Map.AisUpdatePayload update)
+    {
+        if (_disposed) return false;
+        try
+        {
+            return await _module.InvokeAsync<bool>("updateAisTargets", update);
+        }
+        catch (JSDisconnectedException) { return false; }
+        catch (ObjectDisposedException) { return false; }
+    }
 
-    public Task SetAtonsAsync(object[] atons)
+    public Task SetAtonsAsync(OnaPlotter.Services.Map.AtonPayload[] atons)
         => InvokeSafe("setAtons", (object)atons);
 
     public Task SetAtonsVisibleAsync(bool visible)
@@ -40,9 +50,6 @@ public sealed class MapAisJs : IMapAisJs
 
     public Task SetAisLabelsVisibleAsync(bool visible)
         => InvokeSafe("setAisLabelsVisible", visible);
-
-    public Task SetAisInactiveMinutesAsync(double minutes)
-        => InvokeSafe("setAisInactiveMinutes", minutes);
 
     public Task SetOwnMmsiAsync(string mmsi)
         => InvokeSafe("setOwnMmsi", mmsi);

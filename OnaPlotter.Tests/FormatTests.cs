@@ -64,33 +64,6 @@ public class FormatTests
     }
 
     [Test]
-    public async Task MeasureDistance_Short_NmAndMeters()
-    {
-        // 500 m -> 0.27 nm / 500 m
-        await Assert.That(Format.MeasureDistance(500.0)).IsEqualTo("0.27 nm / 500 m");
-    }
-
-    [Test]
-    public async Task MeasureDistance_OneNm_RoundTripsBothUnits()
-    {
-        // 1852m = exactly 1 nm
-        await Assert.That(Format.MeasureDistance(1852.0)).IsEqualTo("1.00 nm / 1852 m");
-    }
-
-    [Test]
-    public async Task MeasureDistance_Long_KeepsTwoDecimalsOnNm()
-    {
-        // 25.00 nm = 46300 m
-        await Assert.That(Format.MeasureDistance(46300.0)).IsEqualTo("25.00 nm / 46300 m");
-    }
-
-    [Test]
-    public async Task MeasureDistance_Zero_FormatsBothAsZero()
-    {
-        await Assert.That(Format.MeasureDistance(0.0)).IsEqualTo("0.00 nm / 0 m");
-    }
-
-    [Test]
     public async Task Depth_OneDecimal()
     {
         await Assert.That(Format.Depth(12.345)).IsEqualTo("12.3");
@@ -166,38 +139,19 @@ public class FormatTests
         await Assert.That(Format.DepthClass(20)).IsEqualTo("depth-ok");
     }
 
-    // - MobElapsed -----------------------------------------------
-
     [Test]
-    public async Task MobElapsed_NegativeClamps_ToZero()
+    [Arguments(null, false)]
+    [Arguments(-0.5, true)]
+    [Arguments(0.0, true)]
+    [Arguments(2.99, true)]
+    [Arguments(7.99, true)]
+    [Arguments(8.0, false)]
+    [Arguments(120.0, false)]
+    public async Task IsShallow_MatchesTheAmberAndRedTints(double? depth, bool expected)
     {
-        // Clock skew or test fixture passing pre-raise instant ->
-        // pin a stable display rather than a negative number.
-        await Assert.That(Format.MobElapsed(-5)).IsEqualTo("T+0s");
-    }
-
-    [Test]
-    public async Task MobElapsed_UnderMinute_Seconds()
-    {
-        await Assert.That(Format.MobElapsed(0)).IsEqualTo("T+0s");
-        await Assert.That(Format.MobElapsed(45)).IsEqualTo("T+45s");
-        await Assert.That(Format.MobElapsed(59)).IsEqualTo("T+59s");
-    }
-
-    [Test]
-    public async Task MobElapsed_AtMinute_RollsToMinutes()
-    {
-        await Assert.That(Format.MobElapsed(60)).IsEqualTo("T+1m");
-        await Assert.That(Format.MobElapsed(125)).IsEqualTo("T+2m");
-        await Assert.That(Format.MobElapsed(3599)).IsEqualTo("T+59m");
-    }
-
-    [Test]
-    public async Task MobElapsed_AtHour_RollsToHoursMinutes()
-    {
-        await Assert.That(Format.MobElapsed(3600)).IsEqualTo("T+1h0m");
-        await Assert.That(Format.MobElapsed(3660)).IsEqualTo("T+1h1m");
-        await Assert.That(Format.MobElapsed(5025)).IsEqualTo("T+1h23m");
+        await Assert.That(Format.IsShallow(depth)).IsEqualTo(expected);
+        await Assert.That(Format.IsShallow(depth))
+            .IsEqualTo(Format.DepthClass(depth) is "depth-warn" or "depth-danger");
     }
 
     // - LatLonDms ------------------------------------------------
@@ -225,47 +179,76 @@ public class FormatTests
             .IsEqualTo("0.00000°N 0.00000°E");
     }
 
-    // - RangeRingLabel -------------------------------------------
+    // - CoordDecimal ---------------------------------------------
 
     [Test]
-    public async Task RangeRingLabel_ZeroOrNegative_Empty()
+    public async Task CoordDecimal_NorthEast()
     {
-        await Assert.That(Format.RangeRingLabel(0)).IsEqualTo(string.Empty);
-        await Assert.That(Format.RangeRingLabel(-1)).IsEqualTo(string.Empty);
+        // Munich, as shown in the route / polygon edit panels.
+        await Assert.That(Format.CoordDecimal([48.21444, 11.57532]))
+            .IsEqualTo("48.2144° N, 11.5753° E");
     }
 
     [Test]
-    public async Task RangeRingLabel_NonFinite_Empty()
+    public async Task CoordDecimal_SouthWest_DropsSign()
     {
-        await Assert.That(Format.RangeRingLabel(double.NaN)).IsEqualTo(string.Empty);
-        await Assert.That(Format.RangeRingLabel(double.PositiveInfinity)).IsEqualTo(string.Empty);
+        await Assert.That(Format.CoordDecimal([-33.85, -151.2]))
+            .IsEqualTo("33.8500° S, 151.2000° W");
     }
 
     [Test]
-    public async Task RangeRingLabel_Under1Nm_StripsTrailingZeros()
+    public async Task CoordDecimal_ZeroIsNorthEast()
     {
-        await Assert.That(Format.RangeRingLabel(0.5)).IsEqualTo("0.5 nm");
-        await Assert.That(Format.RangeRingLabel(0.25)).IsEqualTo("0.25 nm");
-        await Assert.That(Format.RangeRingLabel(0.1)).IsEqualTo("0.1 nm");
+        await Assert.That(Format.CoordDecimal([0, 0]))
+            .IsEqualTo("0.0000° N, 0.0000° E");
     }
 
     [Test]
-    public async Task RangeRingLabel_OneToTen_StripsDotZero()
+    public async Task CoordDecimal_ExtraElementsIgnored()
     {
-        await Assert.That(Format.RangeRingLabel(1.0)).IsEqualTo("1 nm");
-        await Assert.That(Format.RangeRingLabel(2.5)).IsEqualTo("2.5 nm");
-        // 9.99 rounds up at F1 to "10.0" -> stripped to "10".
-        await Assert.That(Format.RangeRingLabel(9.99)).IsEqualTo("10 nm");
+        // GeoJSON-ish triples (lat, lon, altitude) still render.
+        await Assert.That(Format.CoordDecimal([10, 20, 99]))
+            .IsEqualTo("10.0000° N, 20.0000° E");
     }
 
     [Test]
-    public async Task RangeRingLabel_TenAndAbove_RoundsToInt()
+    public async Task CoordDecimal_MissingOrShort_ReturnsEmpty()
     {
-        await Assert.That(Format.RangeRingLabel(10.0)).IsEqualTo("10 nm");
-        await Assert.That(Format.RangeRingLabel(50.5)).IsEqualTo("51 nm");
+        await Assert.That(Format.CoordDecimal(null)).IsEqualTo("");
+        await Assert.That(Format.CoordDecimal([])).IsEqualTo("");
+        await Assert.That(Format.CoordDecimal([47.0])).IsEqualTo("");
     }
 
-    // EtaWithTtg covered by RouteEta + RouteEtaTests; no duplicate
-    // here. The JS mirror in format.js (etaWithTtg) is parity-tested
-    // by RouteEtaJsParityTests against the same RouteEta canonical.
+    // - RadarRange -----------------------------------------------
+
+    [Test]
+    [Arguments(int.MinValue, "-2147483648 m")]
+    [Arguments(-1, "-1 m")]
+    [Arguments(0, "0 m")]
+    [Arguments(1, "1 m")]
+    [Arguments(999, "999 m")]
+    [Arguments(1000, "0.5 nm")]
+    [Arguments(1852, "1.0 nm")]
+    [Arguments(74080, "40.0 nm")]
+    [Arguments(int.MaxValue, "1159548.4 nm")]
+    public async Task RadarRange_MetresBelowOneKmElseNm(int metres, string expected)
+    {
+        await Assert.That(Format.RadarRange(metres)).IsEqualTo(expected);
+    }
+
+    // - DateTimeLocalInput ---------------------------------------
+
+    [Test]
+    public async Task DateTimeLocalInput_UsesInputFormatToTheMinute()
+    {
+        var t = new DateTime(2024, 6, 5, 7, 8, 59, DateTimeKind.Unspecified);
+        await Assert.That(Format.DateTimeLocalInput(t)).IsEqualTo("2024-06-05T07:08");
+    }
+
+    [Test]
+    public async Task DateTimeLocalInput_Boundaries()
+    {
+        await Assert.That(Format.DateTimeLocalInput(DateTime.MinValue)).IsEqualTo("0001-01-01T00:00");
+        await Assert.That(Format.DateTimeLocalInput(DateTime.MaxValue)).IsEqualTo("9999-12-31T23:59");
+    }
 }

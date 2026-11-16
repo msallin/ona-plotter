@@ -268,6 +268,57 @@ public class MapHudTests
         await Assert.That(heading).Contains("M");
     }
 
+    // --- Depth shape cue (colour-blind affordance) ---
+
+    [Test]
+    [Arguments(2.5)]   // danger (< 3 m)
+    [Arguments(6.0)]   // warn (< 8 m)
+    public async Task Depth_Shallow_ShowsWarnGlyph(double depth)
+    {
+        using var ctx = new Bunit.TestContext();
+        var data = new NavigationData();
+        data.Apply("environment.depth.belowTransducer", depth);
+        var cut = Render(ctx, data);
+
+        var glyph = cut.Find(".hud-stack-bl .hud-value .depth-warn-glyph");
+        await Assert.That(glyph.GetAttribute("aria-label")).IsEqualTo("Shallow water");
+    }
+
+    [Test]
+    [Arguments(8.0)]
+    [Arguments(25.0)]
+    public async Task Depth_Deep_NoWarnGlyph(double depth)
+    {
+        using var ctx = new Bunit.TestContext();
+        var data = new NavigationData();
+        data.Apply("environment.depth.belowTransducer", depth);
+        var cut = Render(ctx, data);
+
+        await Assert.That(cut.FindAll(".depth-warn-glyph").Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Depth_Unknown_NoWarnGlyph()
+    {
+        using var ctx = new Bunit.TestContext();
+        var cut = Render(ctx, new NavigationData());
+
+        await Assert.That(cut.FindAll(".depth-warn-glyph").Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Depth_PrefersBelowKeelForTheGlyph()
+    {
+        // 9 m under the transducer but 2 m under the keel: shallow.
+        using var ctx = new Bunit.TestContext();
+        var data = new NavigationData();
+        data.Apply("environment.depth.belowTransducer", 9.0);
+        data.Apply("environment.depth.belowKeel", 2.0);
+        var cut = Render(ctx, data);
+
+        await Assert.That(cut.FindAll(".depth-warn-glyph").Count).IsEqualTo(1);
+    }
+
     // --- Depth staleness ---
 
     [Test]
@@ -280,7 +331,7 @@ public class MapHudTests
         using var ctx = new Bunit.TestContext();
         var now = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
         var clock = new ClockHolder(now);
-        var data = new NavigationData(clock.Get);
+        var data = new NavigationData(new DelegateTimeProvider(clock.Get));
         data.Apply("environment.depth.belowTransducer", 3.2);
         clock.Now = now.AddSeconds(20);
         var cut = Render(ctx, data);
@@ -295,7 +346,7 @@ public class MapHudTests
         using var ctx = new Bunit.TestContext();
         var now = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
         var clock = new ClockHolder(now);
-        var data = new NavigationData(clock.Get);
+        var data = new NavigationData(new DelegateTimeProvider(clock.Get));
         data.Apply("environment.depth.belowTransducer", 3.2);
         clock.Now = now.AddSeconds(60);
         var cut = Render(ctx, data);
@@ -490,5 +541,54 @@ public class MapHudTests
         var cut = Render(ctx, data);
 
         await Assert.That(cut.FindAll(".anchor-bearing").Count).IsEqualTo(0);
+    }
+
+    // - RefreshAsync (page-independent repaint) -----------------------
+
+    private static HudLiveInputs Live(double? heading = null) => new(
+        LastHeadingRad: heading, AnchorDragging: false, DepthTrendMetersPerMinute: null,
+        WaypointArrivalRadiusMeters: 0, CourseStopping: false, ActiveRouteDistanceTotal: null);
+
+    [Test]
+    public async Task Refresh_SnapshotUnchanged_DoesNotRepaint()
+    {
+        // Sensor noise below the HUD's display precision must not cost
+        // a render (0.03 kn of SOG jitter, 0.1 deg of heading wobble).
+        using var ctx = new Bunit.TestContext();
+        var data = new NavigationData();
+        data.Apply("navigation.speedOverGround", 2.50);
+        var cut = Render(ctx, data);
+        await cut.InvokeAsync(() => cut.Instance.RefreshAsync(Live(1.000)));
+        int before = cut.RenderCount;
+
+        data.Apply("navigation.speedOverGround", 2.51);
+        await cut.InvokeAsync(() => cut.Instance.RefreshAsync(Live(1.002)));
+
+        await Assert.That(cut.RenderCount).IsEqualTo(before);
+    }
+
+    [Test]
+    public async Task Refresh_VisibleChange_Repaints()
+    {
+        using var ctx = new Bunit.TestContext();
+        var data = new NavigationData();
+        data.Apply("navigation.speedOverGround", 2.5);
+        var cut = Render(ctx, data);
+        await cut.InvokeAsync(() => cut.Instance.RefreshAsync(Live()));
+        int before = cut.RenderCount;
+
+        data.Apply("navigation.speedOverGround", 3.5);
+        await cut.InvokeAsync(() => cut.Instance.RefreshAsync(Live()));
+
+        await Assert.That(cut.RenderCount).IsEqualTo(before + 1);
+    }
+
+    [Test]
+    public async Task HudSnapshot_QuantisesNullAndNonFiniteToSentinel()
+    {
+        await Assert.That(HudSnapshot.Q(null, 2)).IsEqualTo(long.MinValue);
+        await Assert.That(HudSnapshot.Q(double.NaN, 2)).IsEqualTo(long.MinValue);
+        await Assert.That(HudSnapshot.Q(1.004, 2)).IsEqualTo(HudSnapshot.Q(1.0, 2));
+        await Assert.That(HudSnapshot.Q(1.006, 2)).IsNotEqualTo(HudSnapshot.Q(1.0, 2));
     }
 }

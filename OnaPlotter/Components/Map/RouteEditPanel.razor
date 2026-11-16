@@ -48,7 +48,7 @@
                     var c = Coords[idx];
                     <li class="route-edit-wp-row">
                         <span class="route-edit-wp-badge">@(idx + 1)</span>
-                        <span class="route-edit-wp-coord">@FormatCoord(c)</span>
+                        <span class="route-edit-wp-coord">@Format.CoordDecimal(c)</span>
                         <button class="route-edit-wp-remove"
                                 title="Remove waypoint @(idx + 1)"
                                 aria-label="Remove waypoint @(idx + 1)"
@@ -194,16 +194,5 @@
             catch (Microsoft.JSInterop.JSException) { /* helper not loaded yet; harmless */ }
         }
         _lastSeenCount = count;
-    }
-
-    // "48.2144° N, 11.5753° E" style. Keeps the panel scannable at a
-    // glance without needing the user to interpret signed degrees.
-    private static string FormatCoord(double[] c)
-    {
-        if (c is null || c.Length < 2) return "";
-        double lat = c[0], lon = c[1];
-        string ns = lat >= 0 ? "N" : "S";
-        string ew = lon >= 0 ? "E" : "W";
-        return $"{System.Math.Abs(lat):F4}\u00B0 {ns}, {System.Math.Abs(lon):F4}\u00B0 {ew}";
     }
 }

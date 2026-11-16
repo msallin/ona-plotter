@@ -12,7 +12,7 @@ namespace OnaPlotter.Services;
 /// <para>
 /// Trust order (decisive at the first hit):
 ///   1. <c>navigation.state == "moored" / "anchored" / "aground"</c>
-///      - moored regardless of speed or dwell.
+///      - moored regardless of dwell (while SOG is plausibly stationary).
 ///   2. <c>navigation.state ==</c> any "underway" / "sailing" /
 ///      "motoring" / "fishing" / "drifting" - NOT moored regardless of
 ///      speed (lets a sailboat ghost in light wind without being tagged).
@@ -47,10 +47,27 @@ public sealed class MooredVesselTracker : IMooredVesselTracker
     private static readonly HashSet<string> _mooredStates = new(StringComparer.Ordinal)
     {
         "moored", "anchored", "aground",
-        // Less common but unambiguous: a vessel "not under command"
-        // that is also stationary by any reasonable definition.
-        "not under command",
     };
+
+    // States that mark a vessel unable to keep out of the way (Rule 18
+    // order of precedence) or a fixed hazard. Collision logic must never
+    // treat these as harmless parked traffic, whatever their speed or
+    // dwell; see IsRestrictedOrAground.
+    private static readonly HashSet<string> _restrictedStates = new(StringComparer.Ordinal)
+    {
+        "not under command", "aground",
+        "restricted manoeuverability", "restricted maneuverability",
+        "restricted manoeuvrability",
+    };
+
+    /// <summary>True for navigation states (lower-case, as normalised by
+    /// <see cref="AisVessel.Apply"/>) that describe a vessel not under
+    /// command, restricted in her ability to manoeuvre, or aground.
+    /// These are the targets the helm most needs to keep clear of, so
+    /// the CPA alarm never exempts them even when <see cref="IsMoored"/>
+    /// says they are stationary.</summary>
+    public static bool IsRestrictedOrAground(string? navigationState) =>
+        navigationState is not null && _restrictedStates.Contains(navigationState);
     private static readonly HashSet<string> _underwayStates = new(StringComparer.Ordinal)
     {
         // The whole AIS-message-5 "Navigation Status" set that says

@@ -9,7 +9,14 @@ namespace OnaPlotter.Services;
 /// </summary>
 public sealed class DeadmanTracker
 {
-    private DateTime _lastUtc = DateTime.UtcNow;
+    private readonly TimeProvider _time;
+    private DateTime _lastUtc;
+
+    public DeadmanTracker(TimeProvider time)
+    {
+        _time = time;
+        _lastUtc = time.GetUtcNow().UtcDateTime;
+    }
 
     /// <summary>UTC time of the most recent user interaction on the Map
     /// page (any click, tap, key, or pointer event). Defaults to the
@@ -21,7 +28,7 @@ public sealed class DeadmanTracker
     /// Map.razor calls this on any input event; the throttle is inside
     /// the caller because a sync property set is cheaper than a no-op
     /// call either way.</summary>
-    public void Touch() => _lastUtc = DateTime.UtcNow;
+    public void Touch() => _lastUtc = _time.GetUtcNow().UtcDateTime;
 
     /// <summary>Test / reset seam: force the tracker to a specific
     /// timestamp. Not called in production code.</summary>

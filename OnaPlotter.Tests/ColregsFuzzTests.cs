@@ -144,7 +144,8 @@ public class ColregsFuzzTests
     {
         // For aligned-heading encounters where one boat is faster, the
         // classification from "own's" point of view should mirror the
-        // reverse from "target's". I.e. Classify(own, target) =
+        // reverse from "target's". The any-heading version of this
+        // invariant is Classify_Rule13_ReciprocalForAnyHeadings. I.e. Classify(own, target) =
         // Overtaking implies Classify(target, own) = BeingOvertaken
         // (and vice versa). Walk the same encounter twice with swapped
         // roles to pin this.
@@ -186,6 +187,52 @@ public class ColregsFuzzTests
         }
         await Assert.That(matched).IsGreaterThan(20)
             .Because("the random walk should hit the overtaking branch sometimes");
+    }
+
+    [Test]
+    public async Task Classify_Rule13_ReciprocalForAnyHeadings()
+    {
+        // Rule 13 depends only on where each vessel sits relative to the
+        // other's heading and whether range is closing, not on heading
+        // alignment. Across random geometry: A overtaking B iff B sees
+        // itself being overtaken by A, and the overtaker is always more
+        // than 22.5 deg abaft the overtaken vessel's beam.
+        var rng = new Random(Seed ^ 13);
+        int overtaking = 0;
+        for (int i = 0; i < Iterations; i++)
+        {
+            double cogA = rng.NextDouble() * Math.PI * 2.0;
+            double cogB = rng.NextDouble() * Math.PI * 2.0;
+            double sogA = 1.0 + rng.NextDouble() * 10.0;
+            double sogB = 1.0 + rng.NextDouble() * 10.0;
+            double latA = rng.NextDouble() - 0.5, lonA = rng.NextDouble() - 0.5;
+            double brg = rng.NextDouble() * Math.PI * 2.0;
+            double off = 0.002 + rng.NextDouble() * 0.02;
+            double latB = latA + Math.Cos(brg) * off;
+            double lonB = lonA + Math.Sin(brg) * off / Math.Cos(latA * Math.PI / 180);
+
+            var r1 = Colregs.Classify(latA, lonA, cogA, sogA, latB, lonB, cogB, sogB);
+            var r2 = Colregs.Classify(latB, lonB, cogB, sogB, latA, lonA, cogA, sogA);
+
+            if (r1.Category == Colregs.Category.Overtaking)
+            {
+                overtaking++;
+                await Assert.That(r2.Category).IsEqualTo(Colregs.Category.BeingOvertaken);
+                // Bearing of A from B, relative to B's heading.
+                double relFromB = Norm360Deg((brg + Math.PI - cogB) * 180 / Math.PI);
+                await Assert.That(relFromB).IsGreaterThan(112.0).And.IsLessThan(248.0);
+            }
+            if (r2.Category == Colregs.Category.Overtaking)
+                await Assert.That(r1.Category).IsEqualTo(Colregs.Category.BeingOvertaken);
+        }
+        await Assert.That(overtaking).IsGreaterThan(20)
+            .Because("the random walk should hit Rule 13 sometimes");
+    }
+
+    private static double Norm360Deg(double d)
+    {
+        d %= 360;
+        return d < 0 ? d + 360 : d;
     }
 
     [Test]

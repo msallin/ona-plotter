@@ -128,13 +128,13 @@ public interface IAlarmThresholds
     /// in minutes. Manager clamps to 1+.</summary>
     int SnoozeDurationMinutes { get; }
 
-    /// <summary>Set of alarm-rule titles the helm has switched off.
-    /// AlarmManager skips evaluation entirely for any title in this
+    /// <summary>Set of alarm sources the helm has switched off.
+    /// AlarmManager skips evaluation entirely for any rule in this
     /// set and drops any of its already-active alarms at the next
-    /// tick. Membership is by rule Title (uppercase, e.g. "SHALLOW",
-    /// "CPA"); titles are unique per IAlarmRule contract. Empty
-    /// set = every rule armed (the default). Persisted as a
-    /// newline-separated list under "disabledAlarmRules.v1".</summary>
+    /// tick. Membership is by <see cref="OnaPlotter.Models.AlarmRuleIds.PersistedKey"/>
+    /// (uppercase, e.g. "SHALLOW", "CPA"). Empty set = every rule
+    /// armed (the default). Persisted as a newline-separated list
+    /// under "disabledAlarmRules.v1".</summary>
     IReadOnlySet<string> DisabledAlarmRules { get; }
 
     Task SetDepthAlarmThresholdAsync(double value);

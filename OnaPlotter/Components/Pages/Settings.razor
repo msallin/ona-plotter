@@ -2,6 +2,7 @@
 
 @page "/settings"
 @implements IAsyncDisposable
+@using OnaPlotter.Models
 @using OnaPlotter.Services
 @using OnaPlotter.Services.Api
 @using Microsoft.AspNetCore.Components.Forms
@@ -735,7 +736,7 @@
     <div class="col-sm-6">
         <div class="card">
             <div class="card-body">
-                <AlarmRuleEnableToggle Title="SHALLOW" />
+                <AlarmRuleEnableToggle Rule="AlarmRuleId.Shallow" />
                 <label class="form-label">Depth Alarm</label>
                 <div class="input-group">
                     <input type="number" class="form-control" step="0.5" min="0" max="50"
@@ -753,7 +754,7 @@
     <div class="col-sm-6">
         <div class="card">
             <div class="card-body">
-                <AlarmRuleEnableToggle Title="CPA" />
+                <AlarmRuleEnableToggle Rule="AlarmRuleId.Cpa" />
                 <label class="form-label">CPA &amp; TCPA Alarm</label>
                 <div class="input-group">
                     <span class="input-group-text">CPA</span>
@@ -806,7 +807,7 @@
     <div class="col-sm-6">
         <div class="card">
             <div class="card-body">
-                <AlarmRuleEnableToggle Title="APPROACH" />
+                <AlarmRuleEnableToggle Rule="AlarmRuleId.Approach" />
                 <small class="text-muted d-block mt-1">
                     Fires on waypoint arrival. Radius + auto-advance live in the
                     <strong>Course</strong> section above.
@@ -819,7 +820,7 @@
     <div class="col-sm-6">
         <div class="card">
             <div class="card-body">
-                <AlarmRuleEnableToggle Title="DEADMAN" />
+                <AlarmRuleEnableToggle Rule="AlarmRuleId.Deadman" />
                 <label class="form-label">Day timeout</label>
                 <div class="input-group">
                     <input type="number" class="form-control" step="1" min="0" max="120"
@@ -847,7 +848,7 @@
     <div class="col-sm-6">
         <div class="card">
             <div class="card-body">
-                <AlarmRuleEnableToggle Title="WIND SHIFT" />
+                <AlarmRuleEnableToggle Rule="AlarmRuleId.WindShift" />
                 <label class="form-label">Threshold</label>
                 <div class="input-group">
                     <input type="number" class="form-control" step="5" min="5" max="90"
@@ -885,7 +886,7 @@
     <div class="col-sm-6">
         <div class="card">
             <div class="card-body">
-                <AlarmRuleEnableToggle Title="SART" />
+                <AlarmRuleEnableToggle Rule="AlarmRuleId.Sart" />
                 <small class="text-muted d-block mt-1">
                     Fires when a SART / MOB / EPIRB MMSI appears on AIS. No threshold to tune.
                 </small>
@@ -897,7 +898,7 @@
     <div class="col-sm-6">
         <div class="card">
             <div class="card-body">
-                <AlarmRuleEnableToggle Title="HAZARD" />
+                <AlarmRuleEnableToggle Rule="AlarmRuleId.Hazard" />
                 <small class="text-muted d-block mt-1">
                     Fires when own ship is inside a region marked as a hazard. Manage hazard regions in Resources.
                 </small>
@@ -939,7 +940,7 @@
     <div class="col-sm-6">
         <div class="card">
             <div class="card-body">
-                <AlarmRuleEnableToggle Title="ANCHOR DRAG" />
+                <AlarmRuleEnableToggle Rule="AlarmRuleId.AnchorDrag" />
                 <small class="text-muted d-block mt-1">
                     Fires when the boat drifts past the alarm radius set on the
                     Drop / Set panel. Adjust the radius from the panel; the
@@ -954,7 +955,7 @@
     <div class="col-sm-6">
         <div class="card">
             <div class="card-body">
-                <AlarmRuleEnableToggle Title="ANCHOR TIDE" />
+                <AlarmRuleEnableToggle Rule="AlarmRuleId.AnchorTide" />
                 <label class="form-label">Safety margin</label>
                 <div class="input-group">
                     <input type="number" class="form-control" step="0.1" min="0" max="5"
@@ -1829,16 +1830,12 @@
         }
         else
         {
-            foreach (var t in Alarms.RegisteredRuleTitles)
-                await AppSettings.SetAlarmRuleDisabledAsync(t, disabled: true);
+            foreach (var id in Alarms.RegisteredRuleIds)
+            {
+                if (id.PersistedKey() is { } key)
+                    await AppSettings.SetAlarmRuleDisabledAsync(key, disabled: true);
+            }
         }
-    }
-
-    private async Task OnRuleToggleChanged(string title, ChangeEventArgs e)
-    {
-        // Checkbox semantics: checked = rule is ON (NOT disabled).
-        bool on = e.Value is bool b && b;
-        await AppSettings.SetAlarmRuleDisabledAsync(title, disabled: !on);
     }
 
     private async Task OnDeadmanTimeoutChanged(ChangeEventArgs e)

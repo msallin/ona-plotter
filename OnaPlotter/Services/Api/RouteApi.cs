@@ -1,4 +1,3 @@
-using System.Net.Http.Json;
 using System.Text.Json;
 using OnaPlotter.Models;
 using OnaPlotter.Utilities;
@@ -8,24 +7,27 @@ namespace OnaPlotter.Services.Api;
 /// <summary>HTTP client for SignalK v2 route resources
 /// (<c>/signalk/v2/api/resources/routes</c>). CRUD + list / fetch
 /// for the route catalogue the helm sees on the Resources page and
-/// the Layers panel. PUT-with-client-id semantics (same pattern as
-/// MOB waypoint create) so an offline-then-retry sequence doesn't
-/// mint duplicates if both calls eventually reach the server.</summary>
+/// the Layers panel. Create is a POST that returns the server-minted
+/// id; edits PUT in place at <c>/routes/{id}</c>. Reads go through
+/// <see cref="ResourceHttp"/>'s shared failure policy and return
+/// empty / null on any failure.</summary>
 public sealed class RouteApi : IRouteApi
 {
     private readonly HttpClient _http;
     private readonly ISignalKBaseUrl _baseUrl;
+    private readonly ILogger<RouteApi> _logger;
 
-    public RouteApi(HttpClient http, ISignalKBaseUrl baseUrl)
+    public RouteApi(HttpClient http, ISignalKBaseUrl baseUrl, ILogger<RouteApi> logger)
     {
         _http = http;
         _baseUrl = baseUrl;
+        _logger = logger;
     }
 
     public async Task<List<SignalkRoute>> GetAllAsync(CancellationToken ct = default)
     {
         var dict = await ResourceHttp.GetDictAsync<SignalkRoute>(
-            _http, _baseUrl.Combine(SignalKUrls.RoutesPath), ct);
+            _http, _baseUrl.Combine(SignalKUrls.RoutesPath), _logger, ct);
         if (dict is null) return [];
 
         var routes = new List<SignalkRoute>(dict.Count);
@@ -42,11 +44,11 @@ public sealed class RouteApi : IRouteApi
     {
         var routeId = SignalKUrls.ExtractRouteId(href);
         var url = _baseUrl.Combine(SignalKUrls.Route(routeId));
-        using var response = await _http.GetAsync(url, ct);
-        if (!response.IsSuccessStatusCode) return null;
+        var result = await ResourceHttp.GetJsonAsync<SignalkRoute>(
+            _http, url, _logger, ct, JsonSerializerOptions.Web);
+        if (!result.Success) return null;
 
-        var route = await response.Content.ReadFromJsonAsync<SignalkRoute>(cancellationToken: ct);
-        var coords = route?.Feature?.Geometry?.Coordinates;
+        var coords = result.Value?.Feature?.Geometry?.Coordinates;
         if (coords is null || coords.Value.ValueKind != JsonValueKind.Array) return null;
 
         return coords.Value.ToLeafletLineString();

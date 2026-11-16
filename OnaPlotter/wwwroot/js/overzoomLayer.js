@@ -22,7 +22,8 @@
 /**
  * Wrap a Leaflet TileLayer options bag for chart upscaling.
  * `levels` is the number of zoom steps past native to allow before
- * tiles go blank. 0 means no-op (returns a structural copy).
+ * tiles go blank, already clamped C#-side (ChartUpscale.Effective).
+ * 0 or less means no-op (returns a structural copy).
  *
  * Reads `opts.maxNativeZoom` (already set by the caller from the
  * MBTiles metadata) and bumps `opts.maxZoom` to native + levels so
@@ -36,7 +37,7 @@
  * Returns a new options object; the input is not mutated.
  */
 export function withOverzoom(opts, levels) {
-    const lv = Math.max(0, Math.min(5, levels | 0));
+    const lv = Math.max(0, levels | 0);
     if (lv === 0) {
         // Identity: a structural copy keeps callers safe from later
         // mutation of the returned object without paying the bump-

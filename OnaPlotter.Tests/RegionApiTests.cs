@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Net;
 using System.Text.Json;
 using OnaPlotter.Services.Api;
@@ -24,7 +25,7 @@ public class RegionApiTests
                 Content = new StringContent("\"rgn-new-1\""),
             };
         });
-        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl(), TimeProvider.System, NullLogger<RegionApi>.Instance);
 
         var r = await api.CreateCircleAsync("Anchorage", "Holds well", 47.4, 8.5, 300);
 
@@ -82,7 +83,7 @@ public class RegionApiTests
         }
         """;
         var http = ApiTestHelpers.JsonClient(_ => body);
-        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl(), TimeProvider.System, NullLogger<RegionApi>.Instance);
 
         var regions = await api.GetAllAsync();
 
@@ -121,7 +122,7 @@ public class RegionApiTests
         }
         """;
         var http = ApiTestHelpers.JsonClient(_ => body);
-        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl(), TimeProvider.System, NullLogger<RegionApi>.Instance);
 
         var regions = await api.GetAllAsync();
 
@@ -151,7 +152,7 @@ public class RegionApiTests
         }
         """;
         var http = ApiTestHelpers.JsonClient(_ => body);
-        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl(), TimeProvider.System, NullLogger<RegionApi>.Instance);
 
         var regions = await api.GetAllAsync();
         await Assert.That(regions.Count).IsEqualTo(0);
@@ -172,7 +173,7 @@ public class RegionApiTests
                 Content = new StringContent("\"rgn-poly-1\""),
             };
         });
-        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl(), TimeProvider.System, NullLogger<RegionApi>.Instance);
 
         var vertices = new[]
         {
@@ -204,7 +205,7 @@ public class RegionApiTests
         // that later GetAllAsync would drop anyway; fail fast here.
         var http = ApiTestHelpers.MockClient(_ =>
             new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("\"never\"") });
-        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl(), TimeProvider.System, NullLogger<RegionApi>.Instance);
 
         var two = new[] { new[] { 47.4, 8.5 }, new[] { 47.5, 8.5 } };
         await Assert.That((await api.CreatePolygonAsync("Too short", "", two)).Success).IsFalse();
@@ -223,7 +224,7 @@ public class RegionApiTests
         // can retry without losing their vertices.
         var http = ApiTestHelpers.MockClient(_ =>
             new HttpResponseMessage(HttpStatusCode.InternalServerError));
-        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl(), TimeProvider.System, NullLogger<RegionApi>.Instance);
 
         var vertices = new[]
         {
@@ -242,7 +243,7 @@ public class RegionApiTests
         // mid-request; reject before we send.
         var http = ApiTestHelpers.MockClient(_ =>
             new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("\"never\"") });
-        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl(), TimeProvider.System, NullLogger<RegionApi>.Instance);
 
         var bad = new[]
         {
@@ -270,7 +271,7 @@ public class RegionApiTests
                 Content = new StringContent("\"rgn-hazard\""),
             };
         });
-        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl(), TimeProvider.System, NullLogger<RegionApi>.Instance);
 
         var vertices = new[]
         {
@@ -309,7 +310,7 @@ public class RegionApiTests
                 Content = new StringContent("\"rgn-decor\""),
             };
         });
-        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl(), TimeProvider.System, NullLogger<RegionApi>.Instance);
 
         var vertices = new[]
         {
@@ -335,7 +336,7 @@ public class RegionApiTests
             bodies.Add(req.Content?.ReadAsStringAsync().Result ?? "");
             return new HttpResponseMessage(HttpStatusCode.NoContent);
         });
-        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl(), TimeProvider.System, NullLogger<RegionApi>.Instance);
 
         var vertices = new[]
         {
@@ -386,7 +387,7 @@ public class RegionApiTests
         }
         """;
         var http = ApiTestHelpers.JsonClient(_ => body);
-        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl(), TimeProvider.System, NullLogger<RegionApi>.Instance);
 
         var regions = await api.GetAllAsync();
         await Assert.That(regions.Count).IsEqualTo(2);
@@ -411,7 +412,7 @@ public class RegionApiTests
             capturedUrl = req.RequestUri?.AbsoluteUri;
             return new HttpResponseMessage(HttpStatusCode.NoContent);
         });
-        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl(), TimeProvider.System, NullLogger<RegionApi>.Instance);
 
         var r = await api.DeleteAsync("id with space");
 

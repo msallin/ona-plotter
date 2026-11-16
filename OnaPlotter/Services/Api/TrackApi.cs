@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using OnaPlotter.Models;
+using OnaPlotter.Utilities;
 
 namespace OnaPlotter.Services.Api;
 
@@ -16,6 +17,8 @@ public sealed class TrackApi : ITrackApi
 {
     private readonly HttpClient _http;
     private readonly ISignalKBaseUrl _baseUrl;
+    private readonly TimeProvider _time;
+    private readonly ILogger<TrackApi> _logger;
 
     /// <summary>SignalK paths the rich fetch asks for. Order matters
     /// because the response's <c>data</c> rows align element-per-path,
@@ -68,10 +71,12 @@ public sealed class TrackApi : ITrackApi
         _ => RichPaths,
     };
 
-    public TrackApi(HttpClient http, ISignalKBaseUrl baseUrl)
+    public TrackApi(HttpClient http, ISignalKBaseUrl baseUrl, TimeProvider time, ILogger<TrackApi> logger)
     {
         _http = http;
         _baseUrl = baseUrl;
+        _time = time;
+        _logger = logger;
     }
 
     /// <summary>
@@ -102,57 +107,44 @@ public sealed class TrackApi : ITrackApi
             + $"&duration={Uri.EscapeDataString(isoDuration)}"
             + $"&resolution={Uri.EscapeDataString(resExpr)}";
 
-        HttpResponseMessage response;
-        try { response = await _http.GetAsync(url, ct); }
-        catch (HttpRequestException) { return null; }
-        using (response)
+        var result = await ResourceHttp.GetJsonAsync(_http, url, _logger, ParsePositionResponse, ct);
+        return result.Success ? result.Value : null;
+    }
+
+    /// <summary>Parses the position-only response. Each <c>data</c>
+    /// entry is <c>[timestamp, value]</c>; the value shape differs by
+    /// provider (see <see cref="TryParsePosition"/>). Returns
+    /// Leaflet-ordered <c>[lat, lon]</c> pairs, null when nothing
+    /// usable came back.</summary>
+    internal static double[][]? ParsePositionResponse(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object) return null;
+        if (!root.TryGetProperty("data", out var data)
+            || data.ValueKind != JsonValueKind.Array
+            || data.GetArrayLength() == 0) return null;
+
+        var points = new List<double[]>(data.GetArrayLength());
+        foreach (var entry in data.EnumerateArray())
         {
-            if (!response.IsSuccessStatusCode) return null;
+            if (entry.ValueKind != JsonValueKind.Array
+                || entry.GetArrayLength() < 2) continue;
+            var value = entry[1];
+            if (value.ValueKind == JsonValueKind.Null) continue;
 
-            var json = await response.Content.ReadAsStringAsync(ct);
-            if (string.IsNullOrWhiteSpace(json)) return null;
-            JsonDocument doc;
-            try { doc = JsonDocument.Parse(json); }
-            catch (JsonException) { return null; }
-            using (doc)
-            {
-                if (doc.RootElement.ValueKind != JsonValueKind.Object) return null;
-                if (!doc.RootElement.TryGetProperty("data", out var data)
-                    || data.ValueKind != JsonValueKind.Array
-                    || data.GetArrayLength() == 0) return null;
-
-                // Each entry is [timestamp, value]. For navigation.position
-                // the value shape differs by provider:
-                //   - [lon, lat]            (array; signalk-parquet default)
-                //   - {longitude, latitude} (object; some influx setups)
-                // Handle both because the History page shouldn't care
-                // which history provider the server has configured.
-                var points = new List<double[]>(data.GetArrayLength());
-                foreach (var entry in data.EnumerateArray())
-                {
-                    if (entry.ValueKind != JsonValueKind.Array
-                        || entry.GetArrayLength() < 2) continue;
-                    var value = entry[1];
-                    if (value.ValueKind == JsonValueKind.Null) continue;
-
-                    if (TryParsePosition(value, out double lat, out double lon))
-                        points.Add([lat, lon]);
-                }
-                return points.Count == 0 ? null : [.. points];
-            }
+            if (TryParsePosition(value, out double lat, out double lon))
+                points.Add([lat, lon]);
         }
+        return points.Count == 0 ? null : [.. points];
     }
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Single round-trip per call. Earlier iterations chunked large
-    /// windows client-side to dodge the SignalK history provider's
-    /// 500-row response cap; helm field-tested that the production
-    /// providers (current signalk-parquet, signalk-to-influxdb2)
-    /// return as much data as the requested window+resolution
-    /// implies, so the chunking added latency for no benefit. The
-    /// page-level CancellationToken (helm-tap-Cancel + 30 s timeout)
-    /// guards against a slow / wedged server.
+    /// Single round-trip per call: the production history providers
+    /// (signalk-parquet, signalk-to-influxdb2) return as much data as
+    /// the requested window + resolution implies, so client-side
+    /// chunking would only add latency. The page-level
+    /// CancellationToken (helm-tap-Cancel + 30 s timeout) guards
+    /// against a slow / wedged server.
     /// </remarks>
     public async Task<TrackPoint[]?> GetServerTrackPointsAsync(
         DateTimeOffset? from,
@@ -175,7 +167,7 @@ public sealed class TrackApi : ITrackApi
             // Absolute window. Default the upper bound to "now" if the
             // caller passed only `from` - common for "everything since
             // yesterday at 8am".
-            var toUtc = to ?? DateTimeOffset.UtcNow;
+            var toUtc = to ?? _time.GetUtcNow();
             url += $"&from={Uri.EscapeDataString(fromUtc.UtcDateTime.ToString("o", CultureInfo.InvariantCulture))}"
                 + $"&to={Uri.EscapeDataString(toUtc.UtcDateTime.ToString("o", CultureInfo.InvariantCulture))}";
         }
@@ -203,23 +195,8 @@ public sealed class TrackApi : ITrackApi
                     "{0},{1},{2},{3}", b.South, b.West, b.North, b.East));
         }
 
-        HttpResponseMessage response;
-        try { response = await _http.GetAsync(url, ct); }
-        catch (HttpRequestException) { return null; }
-        catch (TaskCanceledException) { return null; }   // timeout / helm cancel
-        using (response)
-        {
-            if (!response.IsSuccessStatusCode) return null;
-            var json = await response.Content.ReadAsStringAsync(ct);
-            if (string.IsNullOrWhiteSpace(json)) return null;
-            JsonDocument doc;
-            try { doc = JsonDocument.Parse(json); }
-            catch (JsonException) { return null; }
-            using (doc)
-            {
-                return ParseRichResponse(doc);
-            }
-        }
+        var result = await ResourceHttp.GetJsonAsync(_http, url, _logger, ParseRichResponse, ct);
+        return result.Success ? result.Value : null;
     }
 
     /// <summary>Parses the multi-path response. Walks the
@@ -228,9 +205,8 @@ public sealed class TrackApi : ITrackApi
     /// etc.), then iterates <c>data</c> rows positionally. Public-
     /// internal so the unit tests can drive it directly without
     /// standing up a fake HTTP server.</summary>
-    internal static TrackPoint[]? ParseRichResponse(JsonDocument doc)
+    internal static TrackPoint[]? ParseRichResponse(JsonElement root)
     {
-        var root = doc.RootElement;
         if (root.ValueKind != JsonValueKind.Object) return null;
         if (!root.TryGetProperty("values", out var values)
             || values.ValueKind != JsonValueKind.Array) return null;
@@ -312,8 +288,8 @@ public sealed class TrackApi : ITrackApi
 
     /// <summary>Parse a <c>navigation.position</c> value cell. Both
     /// the array form (<c>[lon, lat]</c>, signalk-parquet default) and
-    /// the object form (<c>{longitude, latitude}</c>, some influx
-    /// setups) are tolerated - the History page shouldn't have to know
+    /// the object form (<c>{"latitude": 59.9, "longitude": 10.7}</c>,
+    /// some influx setups) are tolerated - the History page shouldn't have to know
     /// which provider is configured.</summary>
     private static bool TryParsePosition(JsonElement value, out double lat, out double lon)
     {
@@ -327,20 +303,7 @@ public sealed class TrackApi : ITrackApi
             lat = value[1].GetDouble();
             return true;
         }
-        if (value.ValueKind == JsonValueKind.Object)
-        {
-            bool ok = true;
-            if (value.TryGetProperty("latitude", out var la)
-                && la.ValueKind == JsonValueKind.Number)
-                lat = la.GetDouble();
-            else ok = false;
-            if (value.TryGetProperty("longitude", out var lo)
-                && lo.ValueKind == JsonValueKind.Number)
-                lon = lo.GetDouble();
-            else ok = false;
-            return ok;
-        }
-        return false;
+        return value.TryGetLatLon(out lat, out lon);
     }
 
     private static double? TryGetNumber(JsonElement row, int colIdx)

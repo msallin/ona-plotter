@@ -12,11 +12,6 @@ namespace OnaPlotter.Tests;
 /// matching re-export crashes at runtime in the helm's browser
 /// with "X is not a function".
 ///
-/// <para>This regressed once already (PR #140 added
-/// <c>setGuardZoneWarningRingVisible</c> in aisLayer.js without the
-/// leafletInterop.js re-export, then surfaced as a Blazor unhandled
-/// exception when the Map page first pushed the flag). This parity
-/// test fails before that ships.</para>
 /// </summary>
 public class LeafletInteropAisLayerReexportParityTests
 {
@@ -51,25 +46,17 @@ public class LeafletInteropAisLayerReexportParityTests
             .ToList();
 
         // Lifecycle / module-internal exports that don't need a
-        // leafletInterop.js re-export. `init` + `dispose` are called
-        // by leafletInterop.js itself during init / teardown
-        // (aisLayerMod.init(...), aisLayerMod.dispose()). `setBoatPosition`
-        // is invoked from the mux via the imported module reference
-        // when own-vessel position updates. `resolveAisPopupTitle` is a
-        // pure helper exported only so the Node-driven aisLayer.test.js
-        // can pin its precedence chain; the C# side never calls it.
-        // None of these are reachable from C#, so they don't need a
-        // top-level re-export.
+        // leafletInterop.js re-export. `init` + `dispose` are called by
+        // leafletInterop.js itself during init / teardown;
+        // `setBoatPosition` and `setFollow` are invoked from the mux via
+        // the imported module reference. The pure helpers are exported
+        // only so the Node-driven aisLayer.test.js can pin them. None of
+        // these are reachable from C#.
         var skipList = new HashSet<string>(StringComparer.Ordinal)
         {
-            "init", "dispose", "setBoatPosition", "resolveAisPopupTitle",
-            // Called by leafletInterop's own setCogVectorMinutes wrapper;
-            // C# never invokes it directly. Same shape as setBoatPosition.
-            "setAisCogMinutes",
-            // Pure helper exported only so the Node-driven aisLayer.test.js
-            // can pin the flat [lat,lon,...] -> [[lat,lon],...] unpack
-            // contract. Internal to aisLayer.js; the C# side never calls it.
-            "unpackLatLonPairs",
+            "init", "dispose", "setBoatPosition", "setFollow",
+            "unpackLatLonPairs", "applyTrailUpdate", "acceptsUpdate", "toneColor",
+            "tipDotParts", "cpaChipCompact", "buildAisPopupHtml",
         };
 
         await Assert.That(aisLayerExports.Count)

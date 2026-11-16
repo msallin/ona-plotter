@@ -1,14 +1,10 @@
 // Tests for overzoomLayer.js (the chart-upscale decorator).
 // Run with: node --test OnaPlotter/wwwroot/js/overzoomLayer.test.js
 //
-// Existence rationale: the decorator is the only piece of decision
-// logic in the upscale feature that lives in JS rather than C#
-// (clamp `levels|0` to 0..3, branch on lv === 0, fallback chain
-// `maxNativeZoom ?? maxZoom ?? 18`). Without a test, a regression
-// that drops the lower clamp, mutates the input, or changes the
-// default-18 fallback ships green - C# can't see it. The project
-// rule (CLAUDE.md) says decisions in C# with C# tests; until the
-// decorator is lifted, this is the next-best protection.
+// The level range is clamped C#-side (ChartUpscale.Effective, pinned
+// by ChartUpscaleTests). The decorator still owns the Leaflet options
+// arithmetic: the no-op path, the `maxNativeZoom ?? maxZoom ?? 18`
+// fallback chain, and not mutating its input.
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
@@ -62,13 +58,9 @@ describe('withOverzoom: levels > 0 path', () => {
         assert.equal(result.maxZoom, 17);
     });
 
-    it('clamps levels to MaxLevels (upper)', () => {
-        // ChartUpscale.MaxLevels is currently 5 (bumped from 3 for
-        // harbour-detail pilotage). The decorator's clamp must
-        // reflect that. If MaxLevels changes again, this assertion
-        // tracks the C# side via the constant in C# tests.
-        const result = withOverzoom({ maxNativeZoom: 15 }, 99);
-        assert.equal(result.maxZoom, 20);   // 15 + 5, not 15 + 99
+    it('applies the C#-clamped level as given (no second clamp)', () => {
+        const result = withOverzoom({ maxNativeZoom: 15 }, 5);
+        assert.equal(result.maxZoom, 20);
     });
 
     it('clamps fractional levels via |0 truncation toward zero', () => {

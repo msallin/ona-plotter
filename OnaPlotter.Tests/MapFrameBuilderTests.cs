@@ -98,10 +98,11 @@ public class MapFrameBuilderTests
         b.Build(NavAt(47.4, 8.5));
         var frame = b.Build(NavAt(47.5, 8.6, sogMs: 4.0));
         await Assert.That(frame.Track).IsNotNull();
-        // Shape: [lat, lon, sog, prevLat, prevLon]
+        // Shape: [lat, lon, speedBucket, prevLat, prevLon]; 4 m/s is
+        // bucket 3 (3 <= 4 < 5).
         await Assert.That(frame.Track![0]).IsEqualTo(47.5);
         await Assert.That(frame.Track![1]).IsEqualTo(8.6);
-        await Assert.That(frame.Track![2]).IsEqualTo(4.0);
+        await Assert.That(frame.Track![2]).IsEqualTo(3.0);
         await Assert.That(frame.Track![3]).IsEqualTo(47.4);
         await Assert.That(frame.Track![4]).IsEqualTo(8.5);
     }

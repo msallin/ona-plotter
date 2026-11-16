@@ -583,6 +583,43 @@
     // on the callback's own handler to set FabMenuOpen = false on Map.razor.
     private async Task SelectFab(EventCallback cb) => await cb.InvokeAsync();
 
+    /// <summary>Everything the markup reads. The page re-renders for many
+    /// reasons that don't touch the control bar (HUD values, AIS list,
+    /// dialogs); comparing this snapshot skips those renders. Event
+    /// callbacks are left out: they don't change what is drawn, and the
+    /// latest delegate is used at click time regardless.</summary>
+    private readonly record struct RenderState(
+        bool Follow, string OrientationLabel, bool NightMode, bool AnchorActive,
+        bool MobActive, bool RouteNavigating, bool HarborMode, bool MeasureActive,
+        bool RouteEditMode, bool RaceTimerActive, string RaceTimerLabel,
+        bool LayersPanelOpen, bool LegendOpen, bool FabMenuOpen, string SailingMode,
+        bool ShowKeyboardHints, bool MoreMenuOpen,
+        bool StopConfirming, bool MobClearConfirming, bool AnchorClearConfirming);
+
+    private RenderState? _renderedState;
+
+    private RenderState CurrentRenderState() => new(
+        Follow, OrientationLabel, NightMode, AnchorActive,
+        MobActive, RouteNavigating, HarborMode, MeasureActive,
+        RouteEditMode, RaceTimerActive, RaceTimerLabel,
+        LayersPanelOpen, LegendOpen, FabMenuOpen, SailingMode,
+        ShowKeyboardHints, MoreMenuOpen,
+        stopConfirming, mobClearConfirming, anchorClearConfirming);
+
+    protected override bool ShouldRender()
+    {
+        var state = CurrentRenderState();
+        if (_renderedState == state) return false;
+        _renderedState = state;
+        return true;
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        // The first render bypasses ShouldRender; record what it drew.
+        if (firstRender) _renderedState = CurrentRenderState();
+    }
+
     /// <summary>Dispose the three confirm-window timers when the
     /// component unmounts. Without this, a navigation away during
     /// an active 3 s confirm window would leave the timer running

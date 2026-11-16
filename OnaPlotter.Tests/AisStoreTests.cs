@@ -459,39 +459,59 @@ public class AisStoreTests
         // Boats sitting at anchor in port watch the AIS list grow for
         // hours. The store evicts entries whose LastAisSeen is older than
         // the AisRemoveMinutes setting (default 10 min) during a throttled
-        // prune (every 2 min). A vessel that hasn't been seen for 15 min
-        // must drop off the snapshot.
-        //
-        // The parameterless ctor falls back to AisStore.DefaultRemoveMinutes
-        // (10) so this test is independent of the live settings instance.
-        // Pruning keys off LastAisSeen (not LastSeen) so plugin-emitted
-        // derived paths can't keep ghost vessels alive; we backdate that
-        // field directly. The store also keeps a private _lastPruneTime
-        // gating the 2-min throttle; we nudge that via reflection so the
-        // next GetVessels triggers a prune sweep.
-        var store = new AisStore();
+        // prune (every 2 min). A vessel that hasn't been heard for 15 min
+        // must drop off the snapshot while one heard a minute ago stays.
+        var clock = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(
+            new DateTimeOffset(TestClock.FixedUtcNow));
+        var store = new AisStore(clock);
         var pos = System.Text.Json.JsonSerializer.SerializeToElement(new { latitude = 47.0, longitude = 8.0 });
         store.Apply("vessels.urn:mrn:imo:mmsi:stale-1", "navigation.position", pos);
         store.Apply("vessels.urn:mrn:imo:mmsi:stale-2", "navigation.position", pos);
+        await Assert.That(store.GetVessels().Length).IsEqualTo(2);
+
+        clock.Advance(TimeSpan.FromMinutes(14));
         store.Apply("vessels.urn:mrn:imo:mmsi:fresh-1", "navigation.position", pos);
-
-        var staleCutoff = DateTime.UtcNow.AddMinutes(-15);
-        foreach (var v in store.GetVessels())
-        {
-            if (v.Context.Contains("stale"))
-            {
-                v.LastAisSeen = staleCutoff;
-            }
-        }
-
-        // Reset the throttle so the next GetVessels triggers a prune.
-        var pruneField = typeof(AisStore).GetField(
-            "_lastPruneTime", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
-        pruneField.SetValue(store, DateTime.UtcNow.AddMinutes(-3));
+        clock.Advance(TimeSpan.FromMinutes(1));
 
         var snapshot = store.GetVessels();
         await Assert.That(snapshot.Length).IsEqualTo(1);
         await Assert.That(snapshot[0].Context).IsEqualTo("vessels.urn:mrn:imo:mmsi:fresh-1");
+    }
+
+    [Test]
+    public async Task GetVessels_PruneIsThrottled_ToEveryTwoMinutes()
+    {
+        // The sweep runs at most once per 2 min, so a vessel that turns
+        // stale between sweeps survives until the next one.
+        var clock = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(
+            new DateTimeOffset(TestClock.FixedUtcNow));
+        var store = new AisStore(clock);
+        var pos = System.Text.Json.JsonSerializer.SerializeToElement(new { latitude = 47.0, longitude = 8.0 });
+        store.Apply("vessels.urn:mrn:imo:mmsi:111", "navigation.position", pos);
+
+        clock.Advance(TimeSpan.FromMinutes(9));
+        await Assert.That(store.GetVessels().Length).IsEqualTo(1);   // sweep at t+9, still fresh
+
+        clock.Advance(TimeSpan.FromMinutes(1.5));
+        await Assert.That(store.GetVessels().Length).IsEqualTo(1);   // stale, but throttled
+
+        clock.Advance(TimeSpan.FromMinutes(1));
+        await Assert.That(store.GetVessels().Length).IsEqualTo(0);   // next sweep drops it
+    }
+
+    [Test]
+    public async Task Vessels_StampTimes_FromTheStoreClock()
+    {
+        var clock = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(
+            new DateTimeOffset(TestClock.FixedUtcNow));
+        var store = new AisStore(clock);
+        var pos = System.Text.Json.JsonSerializer.SerializeToElement(new { latitude = 47.0, longitude = 8.0 });
+
+        store.Apply("vessels.urn:mrn:imo:mmsi:111", "navigation.position", pos);
+
+        var v = store.GetVessels().Single();
+        await Assert.That(v.LastAisSeen).IsEqualTo(TestClock.FixedUtcNow);
+        await Assert.That(v.PositionUpdatedUtc).IsEqualTo(TestClock.FixedUtcNow);
     }
 
     [Test]

@@ -1,0 +1,5 @@
+{
+  "private": true,
+  "description": "Marks deploy/ as CommonJS so node:test can load the SignalK plugin shim (index.js) the way signalk-server does; the repo root package.json is an ES module scope. Not staged; deploy/package.json.template is the published manifest.",
+  "type": "commonjs"
+}

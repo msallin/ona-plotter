@@ -28,7 +28,6 @@ let buildActiveRoutePopupHtml = null;
 let wireRouteDeactivate = null;
 let wireRouteEdit = null;
 let wireDeleteConfirm = null;
-let routeTotalNauticalMiles = null;
 let clearCourseLineFn = null;
 let setCoursePulseSuppressedFn = null;
 
@@ -54,7 +53,6 @@ export function init(map, deps) {
     wireRouteDeactivate = deps.wireRouteDeactivate;
     wireRouteEdit = deps.wireRouteEdit;
     wireDeleteConfirm = deps.wireDeleteConfirm;
-    routeTotalNauticalMiles = deps.routeTotalNauticalMiles;
     clearCourseLineFn = deps.clearCourseLine;
     setCoursePulseSuppressedFn = deps.setCoursePulseSuppressed;
 }
@@ -85,8 +83,11 @@ export function getActiveRouteCoords() { return activeRouteCoords; }
 // (Deactivate / Edit / Delete) so the helm doesn't have to read a
 // uuid prefix on a moving boat. Pass an empty string for unnamed
 // routes - the popup falls back to "Route <first 6 chars of id>".
-export function setActiveRoute(coords, wpIdx, routeId, routeName) {
-    lastSetArgs = { coords, wpIdx, routeId, routeName };
+//
+// totalNm is the leg-by-leg route length computed C#-side
+// (RouteProgress.TotalDistanceMeters) and shown in the popup meta row.
+export function setActiveRoute(coords, wpIdx, routeId, routeName, totalNm) {
+    lastSetArgs = { coords, wpIdx, routeId, routeName, totalNm };
     clearActiveRoute();
     // Suppress redraw while the helm is editing the active route -
     // any in-flight SyncActiveRouteAsync that races the edit (e.g.
@@ -158,13 +159,8 @@ export function setActiveRoute(coords, wpIdx, routeId, routeName) {
         const hitLine = L.polyline(coords, {
             color: colors.bearing, weight: 36, opacity: 0, interactive: true,
         }).addTo(activeRouteLayer);
-        const nmTotal = routeTotalNauticalMiles(coords);
         const popupOptions = { className: 'route-popup', maxWidth: 320, autoClose: true };
-        // Function-form bindPopup: Leaflet calls this each time the
-        // popup opens, so the ETA picks up the latest TTG cached from
-        // the C# data-tick. Static HTML would have frozen the ETA at
-        // route-activation time.
-        hitLine.bindPopup(() => buildActiveRoutePopupHtml(routeId, routeName, coords.length, nmTotal), popupOptions);
+        hitLine.bindPopup(() => buildActiveRoutePopupHtml(routeId, routeName, coords.length, totalNm), popupOptions);
         hitLine.on('popupopen', (ev) => {
             wireRouteDeactivate(ev.popup);
             wireRouteEdit(ev.popup, routeId);
@@ -265,8 +261,8 @@ export function clearActiveRoute() {
 // (Navigate Here without a route resource, or no course at all).
 export function refreshActiveRoute() {
     if (!lastSetArgs || activeOverlayHidden) return;
-    const { coords, wpIdx, routeId, routeName } = lastSetArgs;
-    setActiveRoute(coords, wpIdx, routeId, routeName);
+    const { coords, wpIdx, routeId, routeName, totalNm } = lastSetArgs;
+    setActiveRoute(coords, wpIdx, routeId, routeName, totalNm);
 }
 
 // Toggle the "edit-active-route in progress" suppression flag. While
@@ -330,6 +326,5 @@ export function dispose() {
     wireRouteDeactivate = null;
     wireRouteEdit = null;
     wireDeleteConfirm = null;
-    routeTotalNauticalMiles = null;
     clearCourseLineFn = null;
 }

@@ -186,7 +186,7 @@ public sealed class ServerNotificationStore
     }
 
     private static bool IsEmergencyState(string? state) =>
-        string.Equals(state, "emergency", StringComparison.Ordinal);
+        string.Equals(state, "emergency", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Remove a path explicitly. Used when a delta arrives with
     /// a JSON null value (server cleared the notification). Returns
@@ -205,19 +205,28 @@ public sealed class ServerNotificationStore
     public void Reset() => _byPath.Clear();
 
     /// <summary>Maps the SignalK state string to the coarse
-    /// <see cref="AlarmSeverity"/> bucket. Returns null for
-    /// "normal"/"cleared"/null so callers can use it as a clear-signal.
-    /// Unknown states fail safe to Danger - a genuine alarm with a
-    /// typo'd state still surfaces rather than being silently dropped.</summary>
+    /// <see cref="AlarmSeverity"/> bucket. SignalK's vocabulary, in
+    /// rising order: nominal, normal, alert, warn, alarm, emergency.
+    /// <list type="bullet">
+    /// <item>nominal / normal / cleared / null / empty -> null (no alarm;
+    /// callers use it as the clear signal).</item>
+    /// <item>alert / warn -> <see cref="AlarmSeverity.Warn"/>.</item>
+    /// <item>alarm / emergency -> <see cref="AlarmSeverity.Danger"/>.</item>
+    /// <item>anything else -> <see cref="AlarmSeverity.Danger"/>,
+    /// deliberately: an out-of-spec state from a plugin ("critical", a
+    /// typo) is far more likely a real alarm than a healthy reading, and
+    /// a false klaxon is recoverable where a silently dropped one is
+    /// not.</item>
+    /// </list>
+    /// Matching ignores case; plugins disagree on capitalisation.</summary>
     public static AlarmSeverity? MapSeverity(string? state)
     {
         if (string.IsNullOrEmpty(state)) return null;
-        return state switch
-        {
-            "normal" or "cleared" => null,
-            "emergency" or "alarm" => AlarmSeverity.Danger,
-            "warn" or "alert" => AlarmSeverity.Warn,
-            _ => AlarmSeverity.Danger,
-        };
+        const StringComparison Cmp = StringComparison.OrdinalIgnoreCase;
+        if (state.Equals("nominal", Cmp) || state.Equals("normal", Cmp) || state.Equals("cleared", Cmp))
+            return null;
+        if (state.Equals("alert", Cmp) || state.Equals("warn", Cmp))
+            return AlarmSeverity.Warn;
+        return AlarmSeverity.Danger;   // alarm, emergency, and unknown (see above)
     }
 }

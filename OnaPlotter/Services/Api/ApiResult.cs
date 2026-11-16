@@ -44,10 +44,13 @@ public sealed record ApiResult(bool Success, string? Error = null, int? StatusCo
 /// <typeparam name="T">Payload type. For resource creates this is
 /// usually <c>string</c> (the new id); for reads that want error
 /// detail it might be a DTO.</typeparam>
-public sealed record ApiResult<T>(bool Success, T? Value = default, string? Error = null)
+/// <param name="StatusCode">HTTP status when a non-2xx response
+/// arrived; null on success and on failures without a response. Same
+/// meaning as <see cref="ApiResult.StatusCode"/>.</param>
+public sealed record ApiResult<T>(bool Success, T? Value = default, string? Error = null, int? StatusCode = null)
 {
     public static ApiResult<T> Ok(T value) => new(true, value);
 
-    public static ApiResult<T> Fail(string? error = null) =>
-        new(false, default, string.IsNullOrWhiteSpace(error) ? null : error);
+    public static ApiResult<T> Fail(string? error = null, int? statusCode = null) =>
+        new(false, default, string.IsNullOrWhiteSpace(error) ? null : error, statusCode);
 }

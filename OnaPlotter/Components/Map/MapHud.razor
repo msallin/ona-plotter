@@ -245,7 +245,7 @@
         @{
             var displayDepth = Data.DepthBelowKeel ?? Data.Depth;
         }
-        <div class="hud-value @Format.DepthClass(displayDepth) @(depthFreshness == FieldFreshness.Dead ? "hud-value-dead" : "")">@Format.Depth(displayDepth)<span class="hud-unit">m</span>@if (IsExpanded(CornerBottomLeft) && FormatDepthTrend() is string trendLabel)
+        <div class="hud-value @Format.DepthClass(displayDepth) @(depthFreshness == FieldFreshness.Dead ? "hud-value-dead" : "")">@Format.Depth(displayDepth)<span class="hud-unit">m</span>@if (Format.IsShallow(displayDepth)) { <span class="depth-warn-glyph" role="img" aria-label="Shallow water" title="Shallow water">&#9888;</span> }@if (IsExpanded(CornerBottomLeft) && FormatDepthTrend() is string trendLabel)
             {
                 @* Trend arrow is only meaningful when the user has room
                    to parse it - compact card stays to just "depth &
@@ -704,6 +704,29 @@
         {
             Toasts.LogException(ex, "Autopilot nudge");
         }
+    }
+
+    /// <summary>Snapshot of what the HUD last drew; see
+    /// <see cref="HudSnapshot"/>.</summary>
+    private HudSnapshot? _drawnSnapshot;
+
+    /// <summary>
+    /// Called by the Map page on every data tick instead of re-rendering
+    /// the whole page: takes the page-computed inputs and repaints only
+    /// when the visible HUD changed.
+    /// </summary>
+    public Task RefreshAsync(HudLiveInputs live)
+    {
+        LastHeadingRad = live.LastHeadingRad;
+        AnchorDragging = live.AnchorDragging;
+        DepthTrendMetersPerMinute = live.DepthTrendMetersPerMinute;
+        WaypointArrivalRadiusMeters = live.WaypointArrivalRadiusMeters;
+        CourseStopping = live.CourseStopping;
+        ActiveRouteDistanceTotal = live.ActiveRouteDistanceTotal;
+        var snap = HudSnapshot.From(Data, live);
+        if (snap == _drawnSnapshot) return Task.CompletedTask;
+        _drawnSnapshot = snap;
+        return InvokeAsync(StateHasChanged);
     }
 
     /// <summary>Current heading in radians; used to draw the compass needle.</summary>

@@ -15,17 +15,21 @@ public sealed class RegionApi : IRegionApi
 {
     private readonly HttpClient _http;
     private readonly ISignalKBaseUrl _baseUrl;
+    private readonly TimeProvider _time;
+    private readonly ILogger<RegionApi> _logger;
 
-    public RegionApi(HttpClient http, ISignalKBaseUrl baseUrl)
+    public RegionApi(HttpClient http, ISignalKBaseUrl baseUrl, TimeProvider time, ILogger<RegionApi> logger)
     {
         _http = http;
         _baseUrl = baseUrl;
+        _time = time;
+        _logger = logger;
     }
 
     public async Task<List<SignalkRegion>> GetAllAsync(CancellationToken ct = default)
     {
         var dict = await ResourceHttp.GetDictAsync<SignalkRegion>(
-            _http, _baseUrl.Combine(SignalKUrls.RegionsPath), ct);
+            _http, _baseUrl.Combine(SignalKUrls.RegionsPath), _logger, ct);
         if (dict is null) return [];
 
         var regions = new List<SignalkRegion>(dict.Count);
@@ -57,7 +61,7 @@ public sealed class RegionApi : IRegionApi
         // the hint across re-fetches.
         var body = GeoJsonBuilder.RegionFeatureBody(
             name, GeoJsonBuilder.Polygon(ring), description, isHazard,
-            createdAt: DateTime.UtcNow,
+            createdAt: _time.GetUtcNow().UtcDateTime,
             centerLat: lat, centerLon: lon, radiusMeters: radiusMeters);
         return ResourceHttp.PostCreateAsync(
             _http, _baseUrl.Combine(SignalKUrls.RegionsPath), body, ct);
@@ -76,7 +80,7 @@ public sealed class RegionApi : IRegionApi
         if (ring is null) return Task.FromResult(ApiResult<string>.Fail(err!));
         var body = GeoJsonBuilder.RegionFeatureBody(
             name, GeoJsonBuilder.Polygon(ring), description, isHazard,
-            createdAt: DateTime.UtcNow);
+            createdAt: _time.GetUtcNow().UtcDateTime);
         return ResourceHttp.PostCreateAsync(
             _http, _baseUrl.Combine(SignalKUrls.RegionsPath), body, ct);
     }

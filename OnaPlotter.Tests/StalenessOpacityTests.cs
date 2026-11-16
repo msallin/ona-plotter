@@ -2,10 +2,9 @@ using OnaPlotter.Utilities;
 
 namespace OnaPlotter.Tests;
 
-/// <summary>Pin the AIS marker fade ramp at every boundary age.
-/// JS layer mirrors this in <c>wwwroot/js/format.js</c>; both must
-/// produce identical opacity strings or the renderer paints fresh
-/// vs stale targets inconsistently.</summary>
+/// <summary>Pin the AIS marker fade ramp at every boundary age, for
+/// both the default and a helm-configured faded threshold. The JS
+/// renderer applies the string verbatim.</summary>
 public class StalenessOpacityTests
 {
     [Test]
@@ -59,5 +58,54 @@ public class StalenessOpacityTests
         await Assert.That(StalenessOpacity.Compute(300)).IsEqualTo("0.25");
         await Assert.That(StalenessOpacity.Compute(600)).IsEqualTo("0.25");
         await Assert.That(StalenessOpacity.Compute(86400)).IsEqualTo("0.25");
+    }
+
+    [Test]
+    public async Task Compute_CustomThreshold_PinsFloorAtThreshold()
+    {
+        // Harbour helm set "AIS inactive" to 2 min: the floor arrives
+        // at 120 s instead of 300 s.
+        await Assert.That(StalenessOpacity.Compute(119, fadedSeconds: 120)).IsNotEqualTo("0.25");
+        await Assert.That(StalenessOpacity.Compute(120, fadedSeconds: 120)).IsEqualTo("0.25");
+        await Assert.That(StalenessOpacity.Compute(200, fadedSeconds: 120)).IsEqualTo("0.25");
+    }
+
+    [Test]
+    public async Task Compute_CustomThreshold_RampSpansFreshToThreshold()
+    {
+        // 75 s is halfway through a 30..120 window: 1 - 0.65 * 0.5.
+        var op = double.Parse(StalenessOpacity.Compute(75, fadedSeconds: 120)!,
+            System.Globalization.CultureInfo.InvariantCulture);
+        await Assert.That(op).IsEqualTo(0.675).Within(0.006);
+    }
+
+    [Test]
+    public async Task Compute_LongThreshold_StaysAboveFloorPastDefault()
+    {
+        // 15 min threshold: a 300 s target is still on the ramp.
+        var op = double.Parse(StalenessOpacity.Compute(300, fadedSeconds: 900)!,
+            System.Globalization.CultureInfo.InvariantCulture);
+        await Assert.That(op).IsGreaterThan(0.25);
+        await Assert.That(op).IsLessThan(1.0);
+    }
+
+    [Test]
+    [Arguments(0.0)]
+    [Arguments(30.0)]
+    [Arguments(-5.0)]
+    [Arguments(double.NaN)]
+    public async Task Compute_DegenerateThreshold_PinsAtFloorPastFresh(double faded)
+    {
+        // A threshold at or below the fresh edge has no ramp: fresh
+        // targets stay fresh, anything older pins at the floor.
+        await Assert.That(StalenessOpacity.Compute(10, faded)).IsNull();
+        await Assert.That(StalenessOpacity.Compute(31, faded)).IsEqualTo("0.25");
+    }
+
+    [Test]
+    public async Task Compute_JustPastFresh_WithDegenerateThreshold_StillOnRamp()
+    {
+        // Fallback window is 30..31 s, so exactly 30 s is the ramp top.
+        await Assert.That(StalenessOpacity.Compute(30, 0)).IsEqualTo("1.00");
     }
 }

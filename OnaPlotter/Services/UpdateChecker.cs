@@ -56,9 +56,12 @@ public sealed class UpdateChecker : IDisposable
     /// re-render the chip.</summary>
     public event Action? OnChanged;
 
-    public UpdateChecker(HttpClient http)
+    private readonly TimeProvider _time;
+
+    public UpdateChecker(HttpClient http, TimeProvider time)
     {
         _http = http;
+        _time = time;
         _timer = new System.Threading.Timer(
             _ => _ = CheckAsync(),
             state: null,
@@ -80,7 +83,7 @@ public sealed class UpdateChecker : IDisposable
             // unless told otherwise, and a stale cache would defeat
             // the whole check. ?_=ticks is opaque to the server but
             // fingerprints the URL so the browser refetches.
-            var url = $"js/version.g.js?_={DateTime.UtcNow.Ticks}";
+            var url = $"js/version.g.js?_={_time.GetUtcNow().UtcTicks}";
             var content = await _http.GetStringAsync(url);
             var serverHash = TryParseHash(content);
             if (serverHash is null) return; // malformed payload; try again next tick

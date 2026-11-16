@@ -132,7 +132,7 @@
     /// <summary>Label for one range option. Prefers the radar's own
     /// per-value description ("1/4 nm", "1.5 nm", "24 nm") so the
     /// dropdown matches what the helm sees on a brand-native MFD;
-    /// falls back to <see cref="FormatRange"/> when the description
+    /// falls back to <see cref="Format.RadarRange"/> when the description
     /// for that exact metres value is absent.</summary>
     private string FormatRangeFor(RadarInfo r, int meters)
     {
@@ -146,7 +146,7 @@
         {
             return label;
         }
-        return FormatRange(meters);
+        return Format.RadarRange(meters);
     }
 
     private bool expanded = false;
@@ -191,10 +191,4 @@
             "preparing" => "preparing",
             _ => "unknown",
         };
-
-    // Range comes in metres per spec. Small ranges read better in
-    // metres (200m vs 0.1nm); switch over 1000 m to nm for typical
-    // open-water scales.
-    private static string FormatRange(int m) =>
-        m < 1000 ? $"{m} m" : $"{(m / 1852.0):F1} nm";
 }

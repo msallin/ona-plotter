@@ -4,17 +4,24 @@ using System.Text;
 using System.Text.Json;
 using OnaPlotter.Models;
 using OnaPlotter.Services.Api;
+using OnaPlotter.Services.Auth;
 using OnaPlotter.Services.Json;
+using OnaPlotter.Services.ServerNotifications;
+using OnaPlotter.Services.Signalk;
 
 namespace OnaPlotter.Services;
 
 /// <summary>
-/// Maintains a persistent WebSocket connection to a SignalK server, receives
-/// delta messages, and distributes parsed navigation/AIS data to the shared
-/// <see cref="NavigationData"/>, <see cref="TrackBuffer"/>, and <see cref="AisStore"/>.
-/// Automatically reconnects with exponential backoff on connection loss.
+/// The SignalK WebSocket transport: connects (token + base URL resolved
+/// per attempt), subscribes per the <see cref="Tiers"/> table, assembles
+/// frames, tracks liveness and reconnects with exponential backoff.
+/// Each frame goes to <see cref="SignalkDeltaDispatcher"/>, which routes
+/// it into <see cref="NavigationData"/>, <see cref="AisStore"/>,
+/// <see cref="AtonStore"/>, <see cref="TrackBuffer"/> and
+/// <see cref="ServerNotificationStore"/>; REST seeding on connect is
+/// <see cref="SignalkConnectSeeding"/>.
 /// </summary>
-public sealed class SignalkClient : IAsyncDisposable
+public sealed class SignalkClient : ISignalkClient, IAsyncDisposable
 {
     private const int InitialBackoffMs = 1_000;
     private const int MaxBackoffMs = 30_000;
@@ -26,18 +33,6 @@ public sealed class SignalkClient : IAsyncDisposable
     /// SignalK delta - even a 200-vessel bulk AIS push is single-digit KB.</summary>
     private const int MaxMessageBufferBytes = 4 * 1024 * 1024;
     private const int StaleDataThresholdSec = 5;
-
-    /// <summary>
-    /// How often to re-poll <c>/signalk/v1/api/vessels</c> for AIS identity
-    /// data (name, callsign, ship type, dimensions) while at least one
-    /// tracked vessel is unnamed. AIS Type 5 static is broadcast every 6
-    /// minutes for class A, every 6 min for class B at rest; a 2 min
-    /// cadence pulls the name in within one static cycle once SK has it
-    /// while staying cheap on the network. Loop self-throttles via
-    /// <see cref="AisStore.HasUnnamedAisVessels"/> so a fully-named chart
-    /// never hits the endpoint at all.
-    /// </summary>
-    private const int VesselNamesReseedIntervalMs = 120_000;
 
     /// <summary>
     /// Default SignalK subscription period for our standard paths:
@@ -68,31 +63,6 @@ public sealed class SignalkClient : IAsyncDisposable
     /// feeling real-time without drowning the viewer.
     /// </summary>
     public const int RawStreamSubscriptionPeriodMs = 200;
-
-    private readonly NavigationData _data;
-    private readonly TrackBuffer _track;
-    private readonly AisStore _ais;
-    private readonly AtonStore _atons;
-    private readonly OnaPlotter.Services.ServerNotifications.ServerNotificationStore _serverNotifs;
-    private readonly HttpClient _http;
-    private readonly IAppSettings _settings;
-    private readonly ISignalKBaseUrl _baseUrl;
-    private readonly OnaPlotter.Services.Auth.ITokenStore? _tokens;
-    private string _selfContext;
-    private readonly ILogger<SignalkClient> _logger;
-    private readonly TimeProvider _time;
-    private CancellationTokenSource? _cts;
-    private Task? _receiveLoop;
-    private ClientWebSocket? _ws;
-    private readonly SemaphoreSlim _sendLock = new(1, 1);
-
-    // Fired when the user pokes "Reconnect now" via <see cref="ReconnectNow"/>.
-    // The reconnect loop breaks its backoff Task.Delay on this token and
-    // resets backoffMs so the next connect attempt is immediate.
-    private CancellationTokenSource? _backoffCts;
-
-    // Extra paths subscribed to by the RawStream page (re-applied on reconnect).
-    private readonly HashSet<string> _extraPaths = [];
 
     /// <summary>
     /// One subscription bucket: a (context, period, policy) tuple plus
@@ -134,6 +104,11 @@ public sealed class SignalkClient : IAsyncDisposable
         // tide alarm prefer it; we keep belowTransducer subscribed too
         // so installs that only publish that path keep working.
         "environment.depth.belowKeel",
+        // Depth from the waterline. Some installs publish only this
+        // (transducer offset configured as surface offset); the HUD
+        // falls back to it when neither keel nor transducer depth is
+        // fresh.
+        "environment.depth.belowSurface",
         Utilities.SkPaths.Environment.Wind.AngleApparent,
         Utilities.SkPaths.Environment.Wind.SpeedApparent,
         Utilities.SkPaths.Environment.Wind.AngleTrueWater,
@@ -208,10 +183,9 @@ public sealed class SignalkClient : IAsyncDisposable
     /// course-provider plugin emits leg-advance flags as NOTIFICATIONS
     /// (prepended "notifications." in src/lib/alarms.ts). Value is
     /// {state, method, message} when armed and null when cleared;
-    /// ProcessSelfDelta normalises both shapes into NavigationData's
-    /// PerpendicularPassed / ArrivalCircleEntered booleans so
-    /// MaybeAutoAdvanceWaypoint's edge trigger fires on the enter
-    /// transition.
+    /// both shapes are normalised into NavigationData's
+    /// PerpendicularPassed / ArrivalCircleEntered booleans, whose
+    /// enter transition drives AutoAdvanceService.
     ///
     /// policy=instant matters: these are edge-triggered state
     /// transitions (normal -> alert -> null) that the default "ideal"
@@ -266,6 +240,13 @@ public sealed class SignalkClient : IAsyncDisposable
         // Settings draft auto-fill.
         "design.draft.current",
         "design.draft.maximum",
+        // Local magnetic variation. Changes by fractions of a degree
+        // per day of sailing, so the slow tier is plenty. Converts a
+        // magnetic-only COG to true for CPA / COLREGS geometry
+        // (NavigationData.CourseOverGroundTrueResolved); without it a
+        // boat whose GPS publishes only magnetic COG runs collision
+        // math off by the local variation.
+        "navigation.magneticVariation",
         // (Route-total progress: the v2 equivalents live at
         //  navigation.course.calcValues.route.* on the fast tier; the
         //  legacy v1 aggregates (courseGreatCircle.activeRoute.*) were
@@ -352,7 +333,7 @@ public sealed class SignalkClient : IAsyncDisposable
     /// <c>resources.*</c> wildcard) so a future <c>resources.charts.*</c>
     /// or other resource type isn't accidentally pulled into the helm-
     /// route + waypoint + note + region working set, where it'd add
-    /// dead code paths in <see cref="DispatchResourceUpdates"/>.</para></summary>
+    /// dead code paths in the resource dispatch.</para></summary>
     private static readonly string[] ResourcesTierPaths =
     [
         "resources.routes.*",
@@ -435,8 +416,10 @@ public sealed class SignalkClient : IAsyncDisposable
              .ToArray();
 
     /// <summary>
-    /// Raised when navigation data changes. Subscribers must handle thread-safety themselves
-    /// (e.g. InvokeAsync(StateHasChanged) in Blazor components).
+    /// Raised when own-boat navigation data changes (live delta, REST
+    /// seed, or a heading-preference flip). Subscribers must handle
+    /// thread-safety themselves (e.g. InvokeAsync(StateHasChanged) in
+    /// Blazor components).
     /// </summary>
     public event Action? OnDataChanged;
 
@@ -450,22 +433,12 @@ public sealed class SignalkClient : IAsyncDisposable
     /// </summary>
     public event Action? OnConnectionChanged;
 
-    /// <summary>
-    /// Raised when a SignalK <c>resources.&lt;type&gt;.&lt;id&gt;</c> delta
-    /// arrives from the server. Args are (type, id, value):
-    /// <list type="bullet">
-    ///   <item><description><c>type</c>: "routes" / "waypoints" /
-    ///     "notes" / "regions"</description></item>
-    ///   <item><description><c>id</c>: the resource id (UUID urn or
-    ///     bare key as the server emits it)</description></item>
-    ///   <item><description><c>value</c>: full resource document on
-    ///     create / update; <c>JsonElement</c> with
-    ///     <c>ValueKind == Null</c> on delete</description></item>
-    /// </list>
-    /// Routed to <c>ResourceStore</c> which owns parsing into typed
-    /// records + the in-memory cache + typed change events.
-    /// </summary>
-    public event Action<string, string, System.Text.Json.JsonElement>? OnResourceDelta;
+    /// <inheritdoc cref="SignalkDeltaDispatcher.OnResourceDelta"/>
+    public event Action<string, string, JsonElement>? OnResourceDelta
+    {
+        add => _dispatcher.OnResourceDelta += value;
+        remove => _dispatcher.OnResourceDelta -= value;
+    }
 
     public NavigationData Data => _data;
     public bool IsConnected { get; private set; }
@@ -483,55 +456,51 @@ public sealed class SignalkClient : IAsyncDisposable
     public bool IsDataStale => IsConnected
         && (_time.GetUtcNow().UtcTicks - Interlocked.Read(ref _lastMessageTicks)) > StaleDataThresholdSec * TimeSpan.TicksPerSecond;
 
-    // --- Own-track sampling ------------------------------------------
-    // TrackBuffer capacity is 1000. Adding a point every delta (typical
-    // 1 Hz with the course-provider feeding 1-2 paths per tick, but
-    // bursty up to 3-5 Hz under heavy wind/depth traffic) burned the
-    // buffer in ~15-30 minutes of sailing - the on-map trail kept
-    // losing the first half-hour of the leg. 0.2 Hz sampling (one
-    // point every 5 s) stretches the same buffer to ~83 min of
-    // history, which is enough to visually follow a typical day-sail.
-    // The live position indicator still updates on every delta;
-    // only the persisted trail is throttled.
-    private const int TrackSampleIntervalMs = 5_000;
-    private long _lastTrackSampleTicks;
+    /// <inheritdoc cref="SignalkDeltaDispatcher.OwnMmsi"/>
+    public string? OwnMmsi => _dispatcher.OwnMmsi;
 
-    private bool ShouldSampleTrackPoint()
-    {
-        long nowTicks = _time.GetUtcNow().UtcTicks;
-        long lastTicks = Interlocked.Read(ref _lastTrackSampleTicks);
-        if (nowTicks - lastTicks < TrackSampleIntervalMs * TimeSpan.TicksPerMillisecond)
-            return false;
-        Interlocked.Exchange(ref _lastTrackSampleTicks, nowTicks);
-        return true;
-    }
+    /// <inheritdoc cref="SelfDeltaHandler.OwnCallsign"/>
+    public string? OwnCallsign => _dispatcher.OwnCallsign;
 
-    /// <summary>ARCH-006 extracts the four REST seeders into focused
-    /// classes under <c>OnaPlotter.Services.Signalk</c>. Each owns ONE
-    /// REST round-trip and its parsing rules; SignalkClient still
-    /// fires-and-forgets them on connect. Constructed inline from the
-    /// dependencies SignalkClient already holds so the public ctor
-    /// signature doesn't grow more DI parameters (which would have
-    /// rippled through every test that builds a SignalkClient).</summary>
-    private readonly OnaPlotter.Services.Signalk.SignalkDraftSeeder _draftSeeder;
-    private readonly OnaPlotter.Services.Signalk.SignalkSelfContextSeeder _selfContextSeeder;
-    private readonly OnaPlotter.Services.Signalk.SignalkVesselNamesSeeder _vesselNamesSeeder;
-    private readonly OnaPlotter.Services.Signalk.SignalkCourseSeeder _courseSeeder;
+    private readonly NavigationData _data;
+    private readonly ISignalKBaseUrl _baseUrl;
+    private readonly ITokenStore? _tokens;
+    private readonly ILogger<SignalkClient> _logger;
+    private readonly TimeProvider _time;
+    private readonly SignalkDeltaDispatcher _dispatcher;
+    private readonly SignalkConnectSeeding _seeding;
+    private readonly HeadingPreferenceSync _headingPreference;
+    private CancellationTokenSource? _cts;
+    private Task? _receiveLoop;
+    private ClientWebSocket? _ws;
+    private readonly SemaphoreSlim _sendLock = new(1, 1);
+
+    // Fired when the user pokes "Reconnect now" via <see cref="ReconnectNow"/>.
+    // The reconnect loop breaks its backoff Task.Delay on this token and
+    // resets backoffMs so the next connect attempt is immediate.
+    private CancellationTokenSource? _backoffCts;
+
+    // Extra paths subscribed to by the RawStream page (re-applied on reconnect).
+    private readonly HashSet<string> _extraPaths = [];
 
     public SignalkClient(ISignalKBaseUrl baseUrl, ILogger<SignalkClient> logger,
-        TrackBuffer track, AisStore ais, HttpClient http, IAppSettings settings,
-        OnaPlotter.Services.ServerNotifications.ServerNotificationStore serverNotifs,
+        NavigationData data, TrackBuffer track, AisStore ais, HttpClient http, IAppSettings settings,
+        ServerNotificationStore serverNotifs,
         AtonStore atons,
         TimeProvider time,
-        OnaPlotter.Services.Auth.ITokenStore? tokens = null)
+        ITokenStore? tokens = null)
     {
         _logger = logger;
-        _data = new NavigationData();
-        _track = track;
-        _ais = ais;
-        _atons = atons;
-        _http = http;
+        _data = data;
         _baseUrl = baseUrl;
+        _time = time;
+        _dispatcher = new SignalkDeltaDispatcher(data, track, ais, atons, serverNotifs, time, logger);
+        _seeding = new SignalkConnectSeeding(http, baseUrl, data, ais,
+            setSelfContext: _dispatcher.SetSelfContext,
+            onDataChanged: RaiseDataChanged,
+            logger);
+        _headingPreference = new HeadingPreferenceSync(settings, data, RaiseDataChanged);
+
         // The WS URL is resolved per connect attempt against
         // _baseUrl.StreamUri() so a runtime origin change (helm flips
         // Standalone mode or edits the server URL) lands on the next
@@ -539,116 +508,18 @@ public sealed class SignalkClient : IAsyncDisposable
         // changed event aborts the current socket so the loop turns
         // over immediately.
         _baseUrl.OnBaseUrlChanged += HandleBaseUrlChanged;
-        // Token store is optional (some test fixtures don't wire it).
-        // When wired, a token-changed fan-out (login / logout / 401
-        // clear) drops the WS so the next reconnect carries the new
+        // The embedded-webapp deploy keeps cookie auth and has no token
+        // store. When one is wired, a token change (login / logout /
+        // 401 clear) drops the WS so the next reconnect carries the new
         // ?token=... in the URL (or drops it cleanly on logout).
         _tokens = tokens;
         if (_tokens is not null)
         {
             _tokens.OnTokenChanged += HandleBaseUrlChanged;
         }
-        _selfContext = "";
-        _settings = settings;
-        _serverNotifs = serverNotifs;
-        _time = time;
-
-        // Each seeder takes only the dependencies it actually touches.
-        // We use NullLogger here rather than weaving a per-category
-        // ILogger<T> through DI because all four seeders are
-        // hand-constructed (not registered) and the receive-loop
-        // already logs the surrounding lifecycle. Threading per-
-        // category loggers through is a follow-on once these classes
-        // earn their own DI registration.
-        _draftSeeder = new OnaPlotter.Services.Signalk.SignalkDraftSeeder(
-            http, baseUrl, _data,
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<OnaPlotter.Services.Signalk.SignalkDraftSeeder>.Instance,
-            onDataChanged: () => OnDataChanged?.Invoke());
-        _selfContextSeeder = new OnaPlotter.Services.Signalk.SignalkSelfContextSeeder(
-            http, baseUrl,
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<OnaPlotter.Services.Signalk.SignalkSelfContextSeeder>.Instance,
-            setSelfContext: SetSelfContext);
-        _vesselNamesSeeder = new OnaPlotter.Services.Signalk.SignalkVesselNamesSeeder(
-            http, baseUrl, _ais,
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<OnaPlotter.Services.Signalk.SignalkVesselNamesSeeder>.Instance);
-        _courseSeeder = new OnaPlotter.Services.Signalk.SignalkCourseSeeder(
-            http, baseUrl, _data,
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<OnaPlotter.Services.Signalk.SignalkCourseSeeder>.Instance,
-            onDataChanged: () => OnDataChanged?.Invoke());
-
-        // Heading / COG preference: settings drive which SignalK path
-        // wins when both true + magnetic are published. Sync now and on
-        // every change so toggling the preference re-evaluates without
-        // waiting for the next delta (the getter reads the cached
-        // raw values, so the next render picks up immediately).
-        ApplyHeadingPreferenceFromSettings();
-        // Seed the diff-cache to the current values so the first
-        // OnSettingsChanged tick after wiring doesn't false-trigger
-        // an OnDataChanged on an unrelated setting flip.
-        _cachedPreferMagneticHeading = settings.PreferMagneticHeading;
-        _cachedPreferMagneticCourse = settings.PreferMagneticCourse;
-        settings.OnSettingsChanged += OnSettingsChangedSync;
     }
 
-    // Cached snapshot of the heading-preference settings this client
-    // actually consumes. OnSettingsChanged fires for ANY setting (font
-    // size, harbor mode, night mode...); the previous handler unconditionally
-    // re-broadcast OnDataChanged to every subscriber, triggering a full
-    // alarm-eval + HUD re-render cascade for tweaks that didn't touch
-    // any path this client cares about. Snapshot+compare here gates the
-    // rebroadcast on a real change to one of these two flags.
-    private bool _cachedPreferMagneticHeading;
-    private bool _cachedPreferMagneticCourse;
-    /// <summary>Re-entrancy guard for the
-    /// OnSettingsChanged -> OnDataChanged -> (downstream listener) ->
-    /// _settings.SetXxxAsync -> OnSettingsChanged path. The diff cache
-    /// converges in one re-entrant hop (the pref values agree on the
-    /// second pass), so without the guard a legitimate flip
-    /// rebroadcasts OnDataChanged twice instead of once. Subtle - not
-    /// a stack overflow, but an unnecessary double cascade through
-    /// every HUD + alarm rule.</summary>
-    private bool _inOnSettingsChanged;
-
-    private void OnSettingsChangedSync()
-    {
-        if (_inOnSettingsChanged)
-        {
-            // Re-entered. Refresh the cache so the outer pass's diff
-            // comparison reflects the current settings, then bail.
-            _cachedPreferMagneticHeading = _settings.PreferMagneticHeading;
-            _cachedPreferMagneticCourse = _settings.PreferMagneticCourse;
-            return;
-        }
-        _inOnSettingsChanged = true;
-        try
-        {
-            bool magHeading = _settings.PreferMagneticHeading;
-            bool magCourse = _settings.PreferMagneticCourse;
-            if (magHeading == _cachedPreferMagneticHeading
-                && magCourse == _cachedPreferMagneticCourse)
-            {
-                // No relevant change - skip the OnDataChanged cascade.
-                return;
-            }
-            _cachedPreferMagneticHeading = magHeading;
-            _cachedPreferMagneticCourse = magCourse;
-            ApplyHeadingPreferenceFromSettings();
-            // HUDs re-derive Heading / CourseOverGround on next render; a
-            // nudge wakes any component that isn't also listening to
-            // OnSettingsChanged directly.
-            OnDataChanged?.Invoke();
-        }
-        finally
-        {
-            _inOnSettingsChanged = false;
-        }
-    }
-
-    private void ApplyHeadingPreferenceFromSettings()
-    {
-        _data.PreferMagneticHeading = _settings.PreferMagneticHeading;
-        _data.PreferMagneticCourse = _settings.PreferMagneticCourse;
-    }
+    private void RaiseDataChanged() => OnDataChanged?.Invoke();
 
     /// <summary>
     /// Starts the websocket receive loop. Called from Program.cs after host build.
@@ -688,18 +559,12 @@ public sealed class SignalkClient : IAsyncDisposable
                 OnConnectionChanged?.Invoke();
                 backoffMs = InitialBackoffMs;
 
-                // Iterate the Tiers registry: one Signal K
-                // <c>subscribe</c> message per tier with the matching
-                // (context, period, policy). Adding a new context type
-                // (atons.*, notifications.*, aircraft.*) is a new tier
-                // entry above; this loop doesn't change. Tier order
-                // is preserved on the wire so the /raw debug viewer
-                // sees a stable shape across reconnects.
-                //
-                // Extra paths added by the RawStream page use the
-                // instant-with-minPeriod profile for live debugging;
-                // they stay outside the Tiers registry because they're
-                // runtime-discovered, not a shipped-with-app set.
+                // One Signal K subscribe message per tier with the
+                // matching (context, period, policy). Tier order is
+                // preserved on the wire so the /raw debug viewer sees a
+                // stable shape across reconnects. RawStream's extra
+                // paths are runtime-discovered, not a shipped set, so
+                // they stay outside the Tiers registry.
                 foreach (var tier in Tiers)
                 {
                     if (tier.Paths.Count == 0) continue;
@@ -710,60 +575,15 @@ public sealed class SignalkClient : IAsyncDisposable
                     await SendSubscriptionAsync("vessels.self", _extraPaths,
                         periodMs: RawStreamSubscriptionPeriodMs, policy: "instant");
 
-                // SignalK "ideal" subscriptions only send deltas as values
-                // change; static AIS data (names, MMSI) received BEFORE we
-                // connected is never replayed over the stream. Seed those
-                // from the REST snapshot so vessels show their name instead
-                // of a bare MMSI on first paint. Best-effort - any failure
-                // just leaves names to trickle in via live deltas.
-                // Fire-and-forget the seed calls: WASM is single-threaded
-                // so Task.Run is pointless (just hides continuations from
-                // the debugger and swallows exceptions into a faulted
-                // wrapper). Bare `_ = FooAsync(ct)` surfaces unhandled
-                // exceptions on TaskScheduler.UnobservedTaskException
-                // instead.
-                _ = _vesselNamesSeeder.SeedAsync(ct);
-
-                // Some SK servers / plugins update a vessel's name in their
-                // tree without re-emitting a name delta on the subscription
-                // stream (observed: name lands with a later timestamp than
-                // mmsi but the helm-side delta never carries it). The one-
-                // shot seed above only covers identities present at connect
-                // time; this loop re-runs the seed while ANY tracked vessel
-                // is still unnamed so a name that arrives at SK 30 s, 5 min
-                // or an hour after our connect still reaches the chart.
-                // Self-throttles to a no-op when every vessel is named.
-                _ = PeriodicVesselNamesReseedAsync(ct);
-
-                // Identify ourselves via REST so we can filter own-boat out
-                // of the AIS list even on servers that never emit a hello
-                // with "self" or push own-boat only as "vessels.<urn>".
-                _ = _selfContextSeeder.SeedAsync(ct);
-
-                // Subscriptions only fire on change, so a route active
-                // BEFORE our socket opens (another plotter, freeboard-sk
-                // in a second tab, a previous browser session) never
-                // arrives on the delta stream. The v2 Course API lives
-                // on its own REST surface which the delta stream doesn't
-                // cover for the initial state; fetch it once on connect.
-                _ = _courseSeeder.SeedAsync(ct);
-
-                // design.draft: narrow fetch on /vessels/self/design/draft.
-                _ = _draftSeeder.SeedAsync(ct);
+                _seeding.StartOnConnect(ct);
 
                 var buffer = new byte[ReceiveBufferBytes];
-                // Accumulate UTF-8 bytes directly. Earlier shape
-                // decoded each frame to a string + appended to a
-                // StringBuilder; that allocated a UTF-16 string per
-                // frame (2x the byte payload) just to throw it away
-                // after deserialise. The byte buffer feeds
-                // JsonSerializer.Deserialize<T>(ReadOnlySpan<byte>)
-                // directly; the string allocation only happens when
-                // an OnRawMessage subscriber needs the text (mostly
-                // unsubscribed - the RawStream page is rarely open).
-                // ArrayBufferWriter handles the grow-on-demand without
-                // the LOH thrash a single contiguous reallocation
-                // would cause for the pathological 4 MB cap case.
+                // UTF-8 bytes are accumulated as-is and fed to the
+                // span-based deserializer; a UTF-16 string is only built
+                // when an OnRawMessage subscriber needs the text (the
+                // RawStream page is rarely open). ArrayBufferWriter grows
+                // on demand without the LOH thrash a single contiguous
+                // reallocation would cause near the 4 MB cap.
                 var messageBuffer = new ArrayBufferWriter<byte>(ReceiveBufferBytes);
 
                 while (ws.State == WebSocketState.Open && !ct.IsCancellationRequested)
@@ -775,27 +595,11 @@ public sealed class SignalkClient : IAsyncDisposable
 
                     messageBuffer.Write(buffer.AsSpan(0, result.Count));
 
-                    // Cap the per-message buffer at 4 MB. A buggy or
-                    // malicious server emitting a fragmented stream
-                    // without EndOfMessage indefinitely (or a single
-                    // >>RAM message from a misbehaving /raw debug
-                    // endpoint) would otherwise grow the buffer
-                    // until the WASM heap is exhausted and the tab
-                    // dies, with no recovery short of a reload. 4 MB
-                    // is well above any plausible delta payload -
-                    // even a ~200-vessel AIS bulk update is single-
-                    // digit KB. Note: the cap counts bytes here; the
-                    // earlier StringBuilder version counted UTF-16
-                    // chars. For ASCII payloads the byte count and
-                    // the UTF-16 char count are equal (1 char = 1
-                    // byte after transcode), so 4 MB stays roughly
-                    // 4 MB of meaningful content for typical SK
-                    // JSON (which is overwhelmingly ASCII). Non-
-                    // ASCII BMP code points are 1 UTF-16 char but
-                    // 2-3 UTF-8 bytes, so a 4 MB byte cap is
-                    // strictly tighter than the old char cap on
-                    // those payloads - still well above plausible
-                    // SK content.
+                    // A buggy or malicious server emitting a fragmented
+                    // stream without EndOfMessage indefinitely (or a
+                    // single huge message from a misbehaving /raw debug
+                    // endpoint) would otherwise grow the buffer until the
+                    // WASM heap is exhausted and the tab dies.
                     if (messageBuffer.WrittenCount > MaxMessageBufferBytes)
                     {
                         _logger.LogWarning(
@@ -836,17 +640,7 @@ public sealed class SignalkClient : IAsyncDisposable
                 _ws = null;
             }
             IsConnected = false;
-            // Drop any cached server notifications: while we're
-            // offline we can't see if the server has cleared one,
-            // and a stale "ANCHOR DRAGGING" banner from before the
-            // drop would be misleading. The server re-publishes the
-            // active set on reconnect so they reappear naturally.
-            _serverNotifs.Reset();
-            // Same logic for AtoNs: the server re-broadcasts the
-            // active set on reconnect (each AtoN sends Type 21 every
-            // ~3 min anyway) so a stale buoy 100 nm astern is just
-            // noise on the chart while we're disconnected.
-            _atons.Reset();
+            _dispatcher.ResetOnDisconnect();
             OnConnectionChanged?.Invoke();
 
             // Linked delay token: cancels either when the whole client
@@ -929,7 +723,11 @@ public sealed class SignalkClient : IAsyncDisposable
     /// emission so a screen recording / log share doesn't leak the
     /// helm's session JWT. Keeps everything else - subscribe param,
     /// any other future query - so logs still help diagnose connect
-    /// failures.</summary>
+    /// failures.
+    /// <code>
+    /// ws://h:3000/signalk/v1/stream?subscribe=none&amp;token=eyJ...
+    ///   -> ws://h:3000/signalk/v1/stream?subscribe=none&amp;token=***
+    /// </code></summary>
     private static Uri RedactTokenForLog(Uri uri)
     {
         var query = uri.Query;
@@ -948,13 +746,8 @@ public sealed class SignalkClient : IAsyncDisposable
     /// <c>_lastMessageTicks</c> with the current UTC ticks. Without
     /// the seed, the field defaults to 0 (Unix epoch) and
     /// <see cref="IsDataStale"/> reports true the moment IsConnected
-    /// becomes true - before any deltas have arrived. The connection
-    /// chip then renders "Stale" on first paint, and the
-    /// MainLayout-side change tracker (wasStale flips on
-    /// IsDataStale-state transitions) misses the false-to-false
-    /// "data started flowing" event because both before and after
-    /// values look identical from its point of view, leaving the
-    /// chip stuck on "Stale" until the next unrelated render.
+    /// becomes true - before any deltas have arrived - and the
+    /// connection chip sticks on "Stale" until an unrelated render.
     /// Exposed internally so tests can drive the same flow without
     /// opening a real websocket.</summary>
     internal void MarkConnectionOpened()
@@ -965,138 +758,53 @@ public sealed class SignalkClient : IAsyncDisposable
 
     /// <summary>Mirror of <see cref="MarkConnectionOpened"/> for the
     /// disconnect side. Sets <see cref="IsConnected"/> to false
-    /// without touching the WS pump (production code's two
-    /// disconnect paths - WS exception and clean close - handle
-    /// the actual socket teardown). Tests use this paired with
-    /// <see cref="RaiseConnectionChanged"/> to drive
-    /// reconnect-reconcile flows deterministically.</summary>
+    /// without touching the WS pump. Tests pair it with
+    /// <see cref="RaiseConnectionChanged"/> to drive reconnect-reconcile
+    /// flows deterministically.</summary>
     internal void MarkConnectionClosed()
     {
         IsConnected = false;
     }
 
     /// <summary>Fire the public <see cref="OnConnectionChanged"/>
-    /// event from a test. Production code invokes the event right
-    /// after each Mark* call (see the WS-loop sites at the open
-    /// transition + the catch arms); test fixtures replicate the
-    /// pair (Mark* then RaiseConnectionChanged) to exercise
-    /// downstream reconcile / cleanup paths.</summary>
+    /// event from a test, as the WS loop does right after each
+    /// connection edge.</summary>
     internal void RaiseConnectionChanged() => OnConnectionChanged?.Invoke();
 
     /// <summary>
-    /// Test-facing string entry point. The WebSocket receive loop calls
-    /// <see cref="ProcessMessageBytes"/> directly with the raw UTF-8
-    /// bytes; this overload exists so existing test fixtures that
-    /// hand-craft JSON strings (and the SignalkDelta-fixture replay
-    /// path) keep working without each test having to encode to UTF-8.
+    /// Test-facing string entry point for hand-crafted JSON fixtures;
+    /// the receive loop calls <see cref="ProcessMessageBytes"/> with
+    /// the raw UTF-8 bytes.
     /// </summary>
     internal void ProcessMessage(string json)
     {
-        // Encode once and reuse: avoids two passes (one for the byte
-        // path, one for the OnRawMessage subscriber path) and keeps
-        // the test surface a one-liner.
         ProcessMessageBytes(Encoding.UTF8.GetBytes(json));
     }
 
-    /// <summary>"self" key as UTF-8 literal. The receive loop scans the
-    /// raw byte buffer for this only once per session (until
-    /// <see cref="_selfContext"/> resolves), so the cost is negligible;
-    /// pre-computing as a static UTF-8 byte array avoids re-encoding
-    /// on every guarded check.</summary>
-    private static readonly byte[] SelfKeyUtf8 = "\"self\""u8.ToArray();
-
     /// <summary>
-    /// Hot path: invoked once per fully-assembled WebSocket frame on a
-    /// live SignalK feed. Takes the raw UTF-8 bytes directly; the older
-    /// shape decoded each frame to a UTF-16 string only to feed the
-    /// reflection-based JSON deserializer. By keeping the bytes as a
-    /// span and calling <c>JsonSerializer.Deserialize&lt;T&gt;(ReadOnlySpan&lt;byte&gt;)</c>,
-    /// we skip the per-frame string allocation entirely on the
-    /// (overwhelmingly common) case where no <see cref="OnRawMessage"/>
-    /// subscriber is listening.
+    /// Hot path: invoked once per fully-assembled WebSocket frame.
+    /// Stamps liveness, feeds the RawStream subscriber, hands the
+    /// frame to the dispatcher and raises <see cref="OnDataChanged"/>
+    /// when own-boat state moved.
     /// </summary>
     internal void ProcessMessageBytes(ReadOnlySpan<byte> utf8Bytes)
     {
         Interlocked.Exchange(ref _lastMessageTicks, _time.GetUtcNow().UtcTicks);
 
-        // OnRawMessage is the RawStream debug page subscription. It's
-        // unsubscribed by default; only allocate the UTF-16 string when
-        // someone is actually listening. Cache the materialised string
-        // so we don't transcode twice if the hello-detection path also
-        // needs it (rare; only fires until _selfContext resolves).
-        // The capture-then-test shape (rather than null-conditional
-        // ?.Invoke) lets us skip the GetString allocation when nothing
-        // is listening; the captured local also pins the snapshot of
-        // the multicast-delegate so a concurrent unsubscribe between
-        // the test and the invoke can't NRE us. WASM today is single-
-        // threaded so this is belt-and-braces; harmless either way.
+        // OnRawMessage is the RawStream debug page subscription; only
+        // allocate the UTF-16 string when someone is actually listening.
+        // The captured local also pins the delegate snapshot so a
+        // concurrent unsubscribe can't NRE us.
         var rawHandler = OnRawMessage;
-        string? raw = null;
         if (rawHandler is not null)
         {
-            raw = Encoding.UTF8.GetString(utf8Bytes);
-            rawHandler.Invoke(raw);
+            rawHandler.Invoke(Encoding.UTF8.GetString(utf8Bytes));
         }
 
         try
         {
-            // Single parse: deserialize to SignalkDelta, then check for hello message.
-            // Source-gen path: OnaJsonContext.Default.SignalkDelta is a
-            // compile-time-generated converter; calling through it skips
-            // the reflection serializer's per-type metadata cache and
-            // (when TrimMode flips to full) lets the linker drop large
-            // chunks of System.Text.Json.Reflection. See OnaJsonContext.
-            var delta = JsonSerializer.Deserialize(utf8Bytes, OnaJsonContext.Default.SignalkDelta);
-
-            // The hello message has no updates but contains "self" in the raw JSON.
-            // SignalkDelta ignores unknown properties, so check if updates are present.
-            if (delta?.Updates is null)
-            {
-                // Could be the hello message with "self" identifier.
-                // Once we already know our self context (the hello message
-                // arrives once per session, not once per non-update tick),
-                // there's no point scanning every empty / unknown delta
-                // for "self". The IndexOf scan walks the whole raw payload
-                // and runs at message cadence; on a steady SK feed that
-                // adds up to nontrivial CPU on the Pi. Comparing UTF-8
-                // bytes against a UTF-8 literal keeps us off the string-
-                // allocation path that the earlier String.Contains needed.
-                if (string.IsNullOrEmpty(_selfContext)
-                    && utf8Bytes.IndexOf(SelfKeyUtf8) >= 0)
-                {
-                    using var doc = JsonDocument.Parse(utf8Bytes.ToArray());
-                    if (doc.RootElement.TryGetProperty("self", out var selfProp))
-                    {
-                        SetSelfContext(selfProp.GetString());
-                    }
-                }
-                return;
-            }
-
-            // Resource deltas (resources.<type>.<id>) come independent of
-            // vessel context - the server emits them with a default
-            // context (typically vessels.self) but the path itself is
-            // self-describing. Dispatch first so the existing self/ais/aton
-            // routing doesn't have to know anything about resource shapes;
-            // the resource-path scan also no-ops harmlessly on every other
-            // delta (it only fires when a value's path starts with
-            // "resources.").
-            DispatchResourceUpdates(delta);
-
-            // Own-boat identification. Own-boat data may arrive BEFORE the
-            // hello message resolves _selfContext, or on servers that only
-            // emit the URN form ("vessels.urn:mrn:imo:mmsi:..."). Match all
-            // three shapes: empty, "vessels.self", and the normalised
-            // _selfContext. SetSelfContext also retro-evicts any vessel
-            // we stored in AIS before we knew who we were.
-            bool isSelf = IsSelfContext(delta.Context);
-
-            if (isSelf)
-                ProcessSelfDelta(delta);
-            else if (IsAtonContext(delta.Context))
-                ProcessAtonDelta(delta);
-            else
-                ProcessAisDelta(delta);
+            if (_dispatcher.Dispatch(utf8Bytes))
+                OnDataChanged?.Invoke();
         }
         catch (JsonException)
         {
@@ -1104,716 +812,21 @@ public sealed class SignalkClient : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            // Don't let a single bad message crash the receive loop.
+            // Don't let a single bad message (or a throwing subscriber)
+            // crash the receive loop.
             _logger.LogWarning(ex, "Error processing SignalK message");
         }
     }
 
-    /// <summary>
-    /// Normalises the self identifier supplied by the server's hello
-    /// message and retro-evicts any vessel we may have stored in
-    /// <see cref="AisStore"/> for that context before we knew about it.
-    /// Servers supply self either as "vessels.urn:mrn:imo:mmsi:..." OR
-    /// just "urn:mrn:imo:mmsi:..."; we store the prefixed form so
-    /// equality checks against delta contexts (always prefixed) match.
-    /// </summary>
-    internal void SetSelfContext(string? raw)
-    {
-        if (string.IsNullOrWhiteSpace(raw))
-        {
-            _selfContext = "";
-            return;
-        }
-        _selfContext = raw.StartsWith("vessels.", StringComparison.Ordinal)
-            ? raw
-            : "vessels." + raw;
-        _logger.LogInformation("Self context: {Self}", _selfContext);
+    /// <inheritdoc cref="SignalkDeltaDispatcher.SetSelfContext"/>
+    internal void SetSelfContext(string? raw) => _dispatcher.SetSelfContext(raw);
 
-        // Retro-evict: if an AIS delta for this context arrived before
-        // the hello (or from a server that never sends "vessels.self"),
-        // we'll have own-boat sitting in the AIS list. Remove it and
-        // blocklist so subsequent deltas can't re-add.
-        _ais.Evict(_selfContext);
-    }
+    /// <inheritdoc cref="SignalkDeltaDispatcher.IsSelfContext"/>
+    internal bool IsSelfContext(string? context) => _dispatcher.IsSelfContext(context);
 
-    /// <summary>
-    /// MMSI extracted from the self-context URN, or null when the
-    /// server's hello hasn't resolved yet or the context doesn't carry
-    /// a mmsi segment. Used by the map to fetch the country flag for
-    /// the own-boat popup (same signalk-flags endpoint as AIS markers).
-    /// </summary>
-    public string? OwnMmsi
-    {
-        get
-        {
-            if (string.IsNullOrEmpty(_selfContext)) return null;
-            return AisVessel.ExtractMmsi(_selfContext);
-        }
-    }
-
-    /// <summary>VHF callsign for the helm vessel, captured from
-    /// the SignalK <c>communication.callsignVhf</c> path on self.
-    /// Null until the SK feed delivers it (some boats publish only
-    /// MMSI; AIS-less inland boats may publish neither). Surfaces
-    /// in the ownship chart popup so the helm reads MMSI +
-    /// callsign onto the VHF mic without leaving the chart.</summary>
-    public string? OwnCallsign { get; private set; }
-
-    internal bool IsSelfContext(string? context)
-    {
-        if (string.IsNullOrEmpty(context)) return true;
-        if (context == "vessels.self") return true;
-        if (string.IsNullOrEmpty(_selfContext)) return false;
-        return context == _selfContext;
-    }
-
-    /// <summary>
-    /// Scan a delta for <c>resources.&lt;type&gt;.&lt;id&gt;</c> path values
-    /// and re-fire each as <see cref="OnResourceDelta"/>. Independent of
-    /// the delta's vessel context: resource changes come with whatever
-    /// default context the server picks (typically vessels.self) but the
-    /// path itself uniquely identifies them, so we filter on path prefix.
-    /// <para>The id segment is everything after the second dot - supports
-    /// urn-form ids (e.g. <c>resources.routes.urn:mrn:signalk:uuid:foo</c>)
-    /// where colons inside the id would otherwise confuse a naive
-    /// <c>Split('.')</c>.</para>
-    /// </summary>
-    /// <summary>Reusable Null-kind JsonElement for the resource-delta
-    /// delete branch. Sourced from a never-disposed JsonDocument; this
-    /// pattern is used inside System.Text.Json itself for sentinel
-    /// elements. Avoids a Parse + Clone per delete on the hot WS-receive
-    /// path.</summary>
-    private static readonly System.Text.Json.JsonElement NullJsonElement
-        = System.Text.Json.JsonDocument.Parse("null").RootElement;
-
-    private void DispatchResourceUpdates(SignalkDelta delta)
-    {
-        var handler = OnResourceDelta;
-        if (handler is null) return;
-        if (delta.Updates is null) return;
-
-        foreach (var update in delta.Updates)
-        {
-            if (update.Values is null) continue;
-            foreach (var val in update.Values)
-            {
-                if (string.IsNullOrEmpty(val.Path)) continue;
-                if (!val.Path.StartsWith("resources.", StringComparison.Ordinal)) continue;
-
-                // Path = "resources.<type>.<id>" - find the second dot.
-                // Slice past "resources." then split on the next '.'.
-                var rest = val.Path.AsSpan("resources.".Length);
-                var dotIdx = rest.IndexOf('.');
-                if (dotIdx <= 0 || dotIdx >= rest.Length - 1) continue;
-
-                var type = rest[..dotIdx].ToString();
-                var id = rest[(dotIdx + 1)..].ToString();
-
-                // The "value" field in SignalkValue is object?, which
-                // System.Text.Json materialises as JsonElement when the
-                // payload is a complex object. Convert to JsonElement so
-                // ResourceStore can deserialise into typed records.
-                System.Text.Json.JsonElement payload;
-                if (val.Value is System.Text.Json.JsonElement el)
-                {
-                    payload = el;
-                }
-                else if (val.Value is null)
-                {
-                    // value: null on delete. Reuse a single static
-                    // JsonValueKind.Null element so the downstream
-                    // handler can branch cleanly on .ValueKind without
-                    // a per-delete JsonDocument.Parse + Clone allocation.
-                    payload = NullJsonElement;
-                }
-                else
-                {
-                    // Shouldn't happen for resource deltas (always
-                    // complex objects or null). Skip rather than guess.
-                    continue;
-                }
-
-                try { handler.Invoke(type, id, payload); }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex,
-                        "Resource delta handler threw on {Type}/{Id}", type, id);
-                }
-            }
-        }
-    }
-
-    private void ProcessSelfDelta(SignalkDelta delta)
-    {
-        bool changed = false;
-
-        foreach (var update in delta.Updates!)
-        {
-            _data.MarkDataReceived();
-
-            if (update.Values is null)
-                continue;
-
-            foreach (var val in update.Values)
-            {
-                if (val.Path is null)
-                    continue;
-
-                // Mayara radar ARPA targets come in under vessels.self on
-                // paths like radars.<rid>.targets.<tid>.position. Route
-                // each target field into AisStore with a synthesised
-                // radar.<rid>.<tid> context so the alarm pipeline treats
-                // them uniformly with AIS vessels.
-                if (val.Path.StartsWith("radars.", StringComparison.Ordinal))
-                {
-                    RouteRadarDelta(val.Path, val.Value);
-                    continue;
-                }
-
-                // VHF callsign for self - captured for the ownship
-                // chart popup. Keeping it on SignalkClient (rather
-                // than NavigationData) because it's identity, not
-                // navigation; the AIS pipeline already stores per-
-                // vessel callsigns in the AisVesselStore so a future
-                // unification could move both to the same surface.
-                if (val.Path == "communication.callsignVhf"
-                    && val.Value is JsonElement callsignEl
-                    && callsignEl.ValueKind == JsonValueKind.String)
-                {
-                    var cs = callsignEl.GetString();
-                    if (!string.Equals(cs, OwnCallsign, StringComparison.Ordinal))
-                    {
-                        OwnCallsign = cs;
-                    }
-                    continue;
-                }
-
-                if (val.Path == Utilities.SkPaths.Navigation.Position && val.Value is JsonElement posEl
-                    && posEl.ValueKind == JsonValueKind.Object)
-                {
-                    if (posEl.TryGetProperty("latitude", out var lat)
-                        && posEl.TryGetProperty("longitude", out var lon)
-                        && lat.ValueKind == JsonValueKind.Number
-                        && lon.ValueKind == JsonValueKind.Number)
-                    {
-                        _data.ApplyPosition(lat.GetDouble(), lon.GetDouble());
-                        changed = true;
-                    }
-                    continue;
-                }
-
-                // Anchor position from signalk-anchoralarm-plugin. Three
-                // delta shapes we observed from the plugin in the field:
-                //   1. { lat, lon } object   -> drop/update anchor
-                //   2. explicit JSON null    -> anchor weighed on another
-                //      plotter ("Weigh Anchor" button in the plugin UI)
-                //   3. value = null (not a JsonElement at all) - same
-                //      as case 2 but surfaced by some SK server versions
-                //      as a property-missing rather than JSON null.
-                // User-reported bug: anchor stayed on ONA after being
-                // cleared in freeboard-sk because only case 1 was
-                // handled. All three now clear our side.
-                if (val.Path == Utilities.SkPaths.Navigation.Anchor.Position)
-                {
-                    if (val.Value is JsonElement anchorEl)
-                    {
-                        if (anchorEl.ValueKind == JsonValueKind.Object
-                            && anchorEl.TryGetProperty("latitude", out var aLat)
-                            && anchorEl.TryGetProperty("longitude", out var aLon)
-                            && aLat.ValueKind == JsonValueKind.Number
-                            && aLon.ValueKind == JsonValueKind.Number)
-                        {
-                            _data.ApplyAnchorPosition(aLat.GetDouble(), aLon.GetDouble());
-                            changed = true;
-                        }
-                        else if (anchorEl.ValueKind == JsonValueKind.Null)
-                        {
-                            _data.ClearAnchor();
-                            changed = true;
-                        }
-                    }
-                    else if (val.Value is null)
-                    {
-                        _data.ClearAnchor();
-                        changed = true;
-                    }
-                    continue;
-                }
-
-                // Plugins also deactivate by nulling maxRadius (the alarm
-                // is only armed when both position + radius are set).
-                // Treat a null maxRadius as "anchor no longer armed" too,
-                // covering servers that don't re-emit a null position on
-                // deactivation.
-                if (val.Path == Utilities.SkPaths.Navigation.Anchor.MaxRadius && IsNullDelta(val.Value))
-                {
-                    _data.ClearAnchor();
-                    changed = true;
-                    continue;
-                }
-
-                // Route activation: signalk-server v2's built-in course
-                // API publishes the activation as a SINGLE delta with
-                // path = "navigation.course.activeRoute" and value =
-                // { href, name, reverse, pointIndex, pointTotal }.
-                // It does NOT emit the individual leaf paths (.href,
-                // .name, .pointIndex, .pointTotal) separately. Before
-                // this branch existed, OnaPlotter silently dropped the
-                // activation delta (ApplyString only handles strings,
-                // Apply only handles doubles, neither accepts objects)
-                // so a route activated externally (freeboard, a second
-                // plotter, a REST call) never showed up on OnA - and
-                // even ONA's own activate-then-draw path broke because
-                // SyncActiveRouteAsync reads Data.ActiveRouteHref,
-                // which stayed null. See the symmetric null-branch
-                // further down for deactivation.
-                if (val.Path == Utilities.SkPaths.Navigation.Course.ActiveRoute
-                    && val.Value is JsonElement arEl
-                    && arEl.ValueKind == JsonValueKind.Object)
-                {
-                    if (arEl.TryGetProperty("href", out var arHref)
-                        && arHref.ValueKind == JsonValueKind.String)
-                    {
-                        _data.ApplyString(Utilities.SkPaths.Navigation.Course.ActiveRouteHref, arHref.GetString());
-                    }
-                    if (arEl.TryGetProperty("name", out var arName)
-                        && arName.ValueKind == JsonValueKind.String)
-                    {
-                        _data.ApplyString(Utilities.SkPaths.Navigation.Course.ActiveRouteName, arName.GetString());
-                    }
-                    if (arEl.TryGetProperty("pointIndex", out var arIdx)
-                        && arIdx.ValueKind == JsonValueKind.Number
-                        && arIdx.TryGetDouble(out var idxD))
-                    {
-                        _data.Apply(Utilities.SkPaths.Navigation.Course.ActiveRoutePointIndex, idxD);
-                    }
-                    if (arEl.TryGetProperty("pointTotal", out var arTot)
-                        && arTot.ValueKind == JsonValueKind.Number
-                        && arTot.TryGetDouble(out var totD))
-                    {
-                        _data.Apply(Utilities.SkPaths.Navigation.Course.ActiveRoutePointTotal, totD);
-                    }
-                    changed = true;
-                    continue;
-                }
-
-                // Course next-point: server can publish either the
-                // parent object (with nested position) on a state
-                // change OR the bare position leaf on updates. Handle
-                // the parent-object form first so activation deltas
-                // aren't dropped.
-                if (val.Path == "navigation.course.nextPoint"
-                    && val.Value is JsonElement npParentEl
-                    && npParentEl.ValueKind == JsonValueKind.Object
-                    && npParentEl.TryGetProperty("position", out var npParentPos)
-                    && npParentPos.ValueKind == JsonValueKind.Object
-                    && npParentPos.TryGetProperty("latitude", out var npPLat)
-                    && npParentPos.TryGetProperty("longitude", out var npPLon)
-                    && npPLat.ValueKind == JsonValueKind.Number
-                    && npPLon.ValueKind == JsonValueKind.Number)
-                {
-                    _data.ApplyCourseNextPointPosition(npPLat.GetDouble(), npPLon.GetDouble());
-                    changed = true;
-                    continue;
-                }
-
-                // Course next-point position (lat/lon object). SK v2
-                // path; the v1 courseGreatCircle / courseRhumbline
-                // shapes are not subscribed.
-                if (val.Path == Utilities.SkPaths.Navigation.Course.NextPointPosition
-                    && val.Value is JsonElement wpEl
-                    && wpEl.ValueKind == JsonValueKind.Object)
-                {
-                    if (wpEl.TryGetProperty("latitude", out var wpLat)
-                        && wpEl.TryGetProperty("longitude", out var wpLon)
-                        && wpLat.ValueKind == JsonValueKind.Number
-                        && wpLon.ValueKind == JsonValueKind.Number)
-                    {
-                        _data.ApplyCourseNextPointPosition(wpLat.GetDouble(), wpLon.GetDouble());
-                        changed = true;
-                    }
-                    continue;
-                }
-
-                // Course previous-point parent-object form (same
-                // activation-delta shape as nextPoint above).
-                if (val.Path == "navigation.course.previousPoint"
-                    && val.Value is JsonElement ppParentEl
-                    && ppParentEl.ValueKind == JsonValueKind.Object
-                    && ppParentEl.TryGetProperty("position", out var ppParentPos)
-                    && ppParentPos.ValueKind == JsonValueKind.Object
-                    && ppParentPos.TryGetProperty("latitude", out var ppPLat)
-                    && ppParentPos.TryGetProperty("longitude", out var ppPLon)
-                    && ppPLat.ValueKind == JsonValueKind.Number
-                    && ppPLon.ValueKind == JsonValueKind.Number)
-                {
-                    _data.ApplyCoursePreviousPointPosition(ppPLat.GetDouble(), ppPLon.GetDouble());
-                    changed = true;
-                    continue;
-                }
-
-                // Course previous-point position. v2 only, for the
-                // same reason as nextPoint.position above.
-                if (val.Path == Utilities.SkPaths.Navigation.Course.PreviousPointPosition
-                    && val.Value is JsonElement prevWpEl
-                    && prevWpEl.ValueKind == JsonValueKind.Object)
-                {
-                    if (prevWpEl.TryGetProperty("latitude", out var prevWpLat)
-                        && prevWpEl.TryGetProperty("longitude", out var prevWpLon)
-                        && prevWpLat.ValueKind == JsonValueKind.Number
-                        && prevWpLon.ValueKind == JsonValueKind.Number)
-                    {
-                        _data.ApplyCoursePreviousPointPosition(prevWpLat.GetDouble(), prevWpLon.GetDouble());
-                        changed = true;
-                    }
-                    continue;
-                }
-
-                // Notification paths from the course-provider plugin
-                // (notifications.navigation.course.perpendicularPassed /
-                // arrivalCircleEntered). Value is {state, method,
-                // message} when armed, JSON null when the plugin
-                // clears the alarm on exit. MaybeAutoAdvanceWaypoint's
-                // edge trigger fires on the armed->cleared cycle, so
-                // map the "has a notification object" case to true
-                // and everything else (null, cleared) to false.
-                //
-                // Logged at Info so a user who sees auto-advance fail
-                // can grep the browser console for "CourseNotification"
-                // and tell whether the notification is reaching us at
-                // all (plumbing) or whether our edge / cooldown logic
-                // is what skipped it (downstream).
-                if (val.Path == "notifications.navigation.course.perpendicularPassed"
-                    || val.Path == "notifications.navigation.course.arrivalCircleEntered")
-                {
-                    // Fail-safe: treat any non-"normal" state as armed, AND
-                    // treat a notification object with a MISSING state
-                    // property as armed too. Older course-provider builds
-                    // sometimes emit the object without `state` when the
-                    // notification is active; the stricter "state must be
-                    // present and non-normal" interpretation silently
-                    // dropped those. Better to nuisance-fire once than
-                    // miss a genuine arrival signal.
-                    bool armed = false;
-                    if (val.Value is JsonElement ne && ne.ValueKind == JsonValueKind.Object)
-                    {
-                        if (ne.TryGetProperty("state", out var stateEl)
-                            && stateEl.ValueKind == JsonValueKind.String)
-                        {
-                            var s = stateEl.GetString();
-                            // Any state other than the explicit normal/null
-                            // clearance words counts as armed. Unknown
-                            // severities (alert/warn/alarm/emergency/
-                            // whatever the plugin invents) fail safe as
-                            // armed rather than being silently dropped.
-                            armed = !string.Equals(s, "normal", StringComparison.Ordinal)
-                                 && !string.Equals(s, "cleared", StringComparison.Ordinal);
-                        }
-                        else
-                        {
-                            // Object present but no `state` - treat as armed.
-                            armed = true;
-                        }
-                    }
-                    else if (val.Value is JsonElement boolEl2
-                        && boolEl2.ValueKind == JsonValueKind.True)
-                    {
-                        // Bare bool `true` form (some v3 plugin builds).
-                        armed = true;
-                    }
-                    _logger.LogInformation("CourseNotification {Path} armed={Armed}", val.Path, armed);
-                    _data.ApplyBool(val.Path, armed);
-                    changed = true;
-                    continue;
-                }
-
-                // Generic server-side SignalK notifications. Anything
-                // under "notifications.*" that we didn't already
-                // intercept above (the course-specific flags use a
-                // dedicated NavigationData boolean path for
-                // auto-advance) lands in the ServerNotificationStore
-                // so the ServerNotificationsAlarmRule can surface it
-                // in the banner stack on the next Evaluate tick.
-                if (val.Path.StartsWith("notifications.", StringComparison.Ordinal))
-                {
-                    if (RouteServerNotification(val.Path, val.Value))
-                        changed = true;
-                    continue;
-                }
-
-                // Plain boolean delta (legacy / non-standard plugin
-                // builds that publish booleans directly). ApplyBool
-                // returns false for unknown paths so random bool
-                // fields don't bind anywhere unexpected.
-                if (val.Value is JsonElement boolEl
-                    && (boolEl.ValueKind == JsonValueKind.True || boolEl.ValueKind == JsonValueKind.False))
-                {
-                    if (_data.ApplyBool(val.Path, boolEl.GetBoolean()))
-                    {
-                        changed = true;
-                        continue;
-                    }
-                }
-
-                // String-valued paths (route href, route name).
-                if (val.Value is JsonElement strEl && strEl.ValueKind == JsonValueKind.String)
-                {
-                    if (_data.ApplyString(val.Path, strEl.GetString()))
-                    {
-                        changed = true;
-                        continue;
-                    }
-                }
-
-                // Route deactivation: after DELETE /navigation/course
-                // the server publishes one of two delta shapes depending
-                // on version, and the client has to cope with BOTH:
-                //
-                //   (a) navigation.course.activeRoute.href = null
-                //       - older course-provider-plugin; the specific
-                //       leaf path flips to null.
-                //   (b) navigation.course.activeRoute = null
-                //       OR navigation.course.nextPoint = null
-                //       - signalk-server 2.x's built-in course API
-                //       nulls the PARENT object in one delta instead
-                //       of enumerating every leaf. We must treat a null
-                //       parent the same as nulling every child, otherwise
-                //       course state stays stale until a fresh route is
-                //       set.
-                if (val.Path == Utilities.SkPaths.Navigation.Course.ActiveRouteHref
-                    || val.Path == Utilities.SkPaths.Navigation.Course.ActiveRoute
-                    || val.Path == Utilities.SkPaths.Navigation.Course.NextPoint)
-                {
-                    bool isNull = val.Value is null
-                        || (val.Value is JsonElement nel && nel.ValueKind == JsonValueKind.Null);
-                    if (isNull)
-                    {
-                        _data.ClearCourse();
-                        changed = true;
-                        continue;
-                    }
-                }
-
-                if (_data.Apply(val.Path, val.Value))
-                    changed = true;
-            }
-        }
-
-        if (changed)
-        {
-            if (_data.Latitude is not null && _data.Longitude is not null
-                && ShouldSampleTrackPoint())
-            {
-                _track.Add(new TrackPoint(
-                    _time.GetUtcNow().UtcDateTime,
-                    _data.Latitude.Value,
-                    _data.Longitude.Value,
-                    _data.SpeedOverGround,
-                    _data.CourseOverGround,
-                    _data.Heading,
-                    _data.WindAngleApparent,
-                    _data.WindSpeedApparent,
-                    _data.WindAngleTrue,
-                    _data.WindSpeedTrue,
-                    _data.Depth,
-                    _data.WindDirectionTrue));
-            }
-
-            OnDataChanged?.Invoke();
-        }
-    }
-
-    /// <summary>
-    /// Background loop that re-fetches the SK vessels REST snapshot on a
-    /// fixed cadence while at least one tracked vessel still has no name.
-    /// Bridges the gap left by SK servers that update their tree with a
-    /// later-timestamped name but don't emit a corresponding delta on the
-    /// subscription stream. Exits cleanly on cancellation (page navigation,
-    /// reconnect, dispose); a new loop spawns on the next WebSocket connect.
-    /// </summary>
-    private async Task PeriodicVesselNamesReseedAsync(CancellationToken ct)
-    {
-        while (!ct.IsCancellationRequested)
-        {
-            try
-            {
-                await Task.Delay(VesselNamesReseedIntervalMs, ct);
-                if (!_ais.HasUnnamedAisVessels()) continue;
-                await _vesselNamesSeeder.SeedAsync(ct);
-            }
-            catch (OperationCanceledException)
-            {
-                // Normal: token cancelled by reconnect / dispose.
-                // Exit cleanly without further log noise.
-                return;
-            }
-            catch (Exception ex)
-            {
-                // Best-effort loop: a transient failure (network blip,
-                // REST 5xx) must NOT terminate the long-running re-seed
-                // for the rest of the session. Log once per failure and
-                // fall through to the next interval.
-                _logger.LogWarning(ex,
-                    "Periodic AIS-name re-seed failed; will retry on next interval");
-            }
-        }
-    }
-
-    private void ProcessAisDelta(SignalkDelta delta)
-    {
-        foreach (var update in delta.Updates!)
-        {
-            if (update.Values is null)
-                continue;
-
-            // Parse the wire timestamp once per update. SignalK servers emit
-            // RFC 3339 with millisecond precision (e.g. "2024-01-01T12:00:00.000Z").
-            // When absent or malformed, leave null so AisVessel.Apply falls
-            // back to DateTime.UtcNow (delta-arrival time). DateTimeStyles
-            // .AssumeUniversal handles the "Z" suffix without timezone drift.
-            DateTime? skTs = null;
-            if (!string.IsNullOrEmpty(update.Timestamp)
-                && DateTime.TryParse(
-                    update.Timestamp,
-                    System.Globalization.CultureInfo.InvariantCulture,
-                    System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
-                    out var parsedTs))
-            {
-                skTs = parsedTs;
-            }
-
-            foreach (var val in update.Values)
-            {
-                if (val.Path is null)
-                    continue;
-
-                _ais.Apply(delta.Context!, val.Path, val.Value, skTs);
-            }
-        }
-    }
-
-    /// <summary>True when the delta context is an AtoN context. SignalK
-    /// publishes Aids to Navigation under <c>atons.urn:mrn:imo:mmsi:NNN</c>
-    /// (and <c>shore.basestations.*</c> by extension, which a future
-    /// commit may route here too). Same dispatch site as the AIS branch
-    /// in ProcessMessage; an AtoN context never matches IsSelfContext
-    /// because we only ever set <c>_selfContext</c> from a vessels.* URN.</summary>
-    internal static bool IsAtonContext(string? context)
-    {
-        if (string.IsNullOrEmpty(context)) return false;
-        return context.StartsWith("atons.", StringComparison.Ordinal);
-    }
-
-    private void ProcessAtonDelta(SignalkDelta delta)
-    {
-        foreach (var update in delta.Updates!)
-        {
-            if (update.Values is null) continue;
-            foreach (var val in update.Values)
-            {
-                if (val.Path is null) continue;
-                _atons.Apply(delta.Context!, val.Path, val.Value);
-            }
-        }
-    }
-
-    /// <summary>
-    /// Routes a radar-target delta into <see cref="AisStore"/>. Two
-    /// wire shapes seen in the wild, both handled:
-    ///
-    /// <list type="number">
-    ///   <item>Spec (v3.1): <c>radars.&lt;rid&gt;.targets.&lt;tid&gt;</c>
-    ///     with the whole <see cref="Models.RadarArpaTarget"/> as
-    ///     value. <c>value: null</c> signals target deletion.</item>
-    ///   <item>Legacy (early Mayara):
-    ///     <c>radars.&lt;rid&gt;.targets.&lt;tid&gt;.&lt;field&gt;</c>
-    ///     with per-field values (position / course / speed).
-    ///     Handled by dispatching each recognised field.</item>
-    /// </list>
-    ///
-    /// Malformed / unknown shapes drop silently - the receive loop
-    /// must stay alive no matter what the server emits.
-    /// </summary>
-    private void RouteRadarDelta(string path, object? value)
-    {
-        if (TryParseRadarTargetPath(path) is not var (radarId, targetId, field)) return;
-        string ctx = $"{AisStore.RadarContextPrefix}{radarId}.{targetId}";
-
-        // Spec shape: value is the whole target object (or null for
-        // deletion). Field is null because the path stops at target id.
-        if (field is null)
-        {
-            if (value is null
-                || (value is JsonElement nullEl && nullEl.ValueKind == JsonValueKind.Null))
-            {
-                _ais.RemoveContext(ctx);
-                return;
-            }
-            if (value is JsonElement targetEl && targetEl.ValueKind == JsonValueKind.Object)
-            {
-                // Translate into the field-keyed shape AisVessel.Apply
-                // understands. We emit position first so the vessel has
-                // coordinates on the first delta; motion fields follow
-                // and update what's already in the store.
-                if (targetEl.TryGetProperty("position", out var pos)
-                    && pos.ValueKind == JsonValueKind.Object)
-                {
-                    _ais.Apply(ctx, "position", pos);
-                }
-                if (targetEl.TryGetProperty("motion", out var motion)
-                    && motion.ValueKind == JsonValueKind.Object)
-                {
-                    if (motion.TryGetProperty("course", out var cog)
-                        && cog.ValueKind == JsonValueKind.Number)
-                        _ais.Apply(ctx, "course", cog);
-                    if (motion.TryGetProperty("speed", out var sog)
-                        && sog.ValueKind == JsonValueKind.Number)
-                        _ais.Apply(ctx, "speed", sog);
-                }
-            }
-            return;
-        }
-
-        // Legacy shape: value is the per-field primitive; pass through.
-        _ais.Apply(ctx, field, value);
-    }
-
-    /// <summary>
-    /// Parses a radar-target delta path. Accepts both
-    /// <c>radars.&lt;rid&gt;.targets.&lt;tid&gt;</c> (spec; field = null)
-    /// and <c>radars.&lt;rid&gt;.targets.&lt;tid&gt;.&lt;field&gt;</c>
-    /// (legacy). Splits on the literal <c>.targets.</c> separator so
-    /// radar ids containing dots (IPv4-style hardware identifiers)
-    /// still parse. Returns <c>null</c> for anything that doesn't
-    /// match either shape.
-    /// </summary>
-    internal static (string radarId, string targetId, string? field)? TryParseRadarTargetPath(string path)
-    {
-        if (!path.StartsWith("radars.", StringComparison.Ordinal)) return null;
-
-        const string sep = ".targets.";
-        int sepIdx = path.IndexOf(sep, StringComparison.Ordinal);
-        if (sepIdx < 0) return null;
-
-        string radarId = path.Substring("radars.".Length, sepIdx - "radars.".Length);
-        if (radarId.Length == 0) return null;
-
-        string after = path[(sepIdx + sep.Length)..];
-        if (after.Length == 0) return null;
-
-        int dot = after.IndexOf('.');
-        if (dot < 0)
-        {
-            // Spec shape: path stops at the target id; value carries
-            // the whole target object (or null for delete).
-            return (radarId, after, null);
-        }
-        if (dot == 0 || dot == after.Length - 1) return null;
-
-        string targetId = after[..dot];
-        string field = after[(dot + 1)..];
-        return (radarId, targetId, field);
-    }
+    /// <summary>Runs the REST course seed directly; tests drive it with
+    /// a mock HttpClient instead of opening a socket.</summary>
+    internal Task SeedSelfCourseFromRestAsync(CancellationToken ct) => _seeding.SeedCourseAsync(ct);
 
     /// <summary>
     /// Subscribes to additional paths on the active WebSocket (used by RawStream).
@@ -1840,21 +853,11 @@ public sealed class SignalkClient : IAsyncDisposable
     /// <summary>
     /// Every path the client is currently subscribed to: the core self
     /// tier, the AIS tier, plus any <see cref="SubscribeExtraPathAsync"/>
-    /// additions. Used by RawStream to populate its chip list - the
-    /// page previously showed the server's full discoverable paths,
-    /// which was noise when the plotter only ingests a narrow slice.
-    ///
-    /// Returns a fresh snapshot each call; Blazor WASM is single-
-    /// threaded so a mid-enumeration mutation isn't possible, but
-    /// handing out a copy keeps callers from accidentally relying on
-    /// live-update semantics.
-    /// <para><b>Cold-path:</b> the per-call HashSet allocation is fine
-    /// because the only consumer is the RawStream debug page's
-    /// chip-list render, called once per user navigation to /rawstream
-    /// (and then re-evaluated only when the user explicitly refreshes).
-    /// Do NOT wire this into a per-tick / per-delta path - if a future
-    /// caller needs the set on the hot path, cache the result with
-    /// invalidation on <see cref="SubscribeExtraPathAsync"/> mutation.</para>
+    /// additions. Used by RawStream to populate its chip list.
+    /// <para><b>Cold-path:</b> allocates a fresh set per call; the only
+    /// consumer is the RawStream debug page's chip-list render. Do NOT
+    /// wire this into a per-tick / per-delta path - cache with
+    /// invalidation on <see cref="SubscribeExtraPathAsync"/> instead.</para>
     /// </summary>
     public IReadOnlyCollection<string> SubscribedPaths
     {
@@ -1907,175 +910,16 @@ public sealed class SignalkClient : IAsyncDisposable
         }
     }
 
-    // Test-facing shim for SignalkClientCourseTests, which still drives
-    // the seed via this entry point with a mock HttpClient. Delegates
-    // to SignalkCourseSeeder so the production path stays consolidated.
-    internal Task SeedSelfCourseFromRestAsync(CancellationToken ct) =>
-        _courseSeeder.SeedAsync(ct);
-
-    /// <summary>
-    /// Routes a notifications.* delta into the
-    /// <see cref="ServerNotifications.ServerNotificationStore"/>. The
-    /// SignalK shape is one of:
-    /// <list type="bullet">
-    /// <item>Object: <c>{ "state": "alarm"|"warn"|..., "method": [...], "message": "..." }</c> (armed)</item>
-    /// <item>JSON null OR object with state="normal" (cleared)</item>
-    /// </list>
-    /// Unknown shapes (bare booleans, strings) fail safe to a clear -
-    /// no point flapping the alarm stack on a malformed message.
-    /// Returns true when the store changed (caller fires OnDataChanged
-    /// so AlarmManager re-evaluates promptly).
-    /// </summary>
-    private bool RouteServerNotification(string path, object? rawValue)
-    {
-        // JSON null on the value: server cleared the notification.
-        if (IsNullDelta(rawValue))
-        {
-            return _serverNotifs.Clear(path);
-        }
-
-        // Anything that isn't a JsonElement at this point is unexpected
-        // (the parser hands us JsonElement consistently). Treat as a
-        // clear rather than an arm so we don't manufacture an alarm
-        // out of garbage.
-        if (rawValue is not JsonElement el)
-        {
-            return _serverNotifs.Clear(path);
-        }
-
-        // Object form: pull state + message. Missing state on a
-        // present object treats as "alarm" (most plugins emit only
-        // object-when-armed, omit-state-when-they-mean-it; safer to
-        // surface than to drop).
-        //
-        // SignalK v2 (≥ 2.21) enriches every notification value with
-        // `id` (stable UUID) and `status` (silenced / acknowledged /
-        // canSilence / canAcknowledge / canClear). Both are optional;
-        // we read them when present and store them on the
-        // ServerNotification so the alarm pipeline can drive
-        // server-side ack and the banner can hide the Acknowledge
-        // button when the server's PGN-derived flags say "no".
-        if (el.ValueKind == JsonValueKind.Object)
-        {
-            string? state = null;
-            string? message = null;
-            string? id = null;
-            OnaPlotter.Services.ServerNotifications.NotificationStatus? status = null;
-            if (el.TryGetProperty("state", out var stateEl)
-                && stateEl.ValueKind == JsonValueKind.String)
-            {
-                state = stateEl.GetString();
-            }
-            if (el.TryGetProperty("message", out var msgEl)
-                && msgEl.ValueKind == JsonValueKind.String)
-            {
-                message = msgEl.GetString();
-            }
-            if (el.TryGetProperty("id", out var idEl)
-                && idEl.ValueKind == JsonValueKind.String)
-            {
-                id = idEl.GetString();
-            }
-            if (el.TryGetProperty("status", out var statusEl)
-                && statusEl.ValueKind == JsonValueKind.Object)
-            {
-                status = ParseNotificationStatus(statusEl);
-            }
-            // Optional position block on safety alarms (MOB / fire /
-            // collision). Server may emit `null` if it had no fix at
-            // trigger time; we treat any non-object shape (including
-            // null) as "no position" so the chart marker layer
-            // simply doesn't draw one.
-            double? lat = null, lon = null;
-            if (el.TryGetProperty("position", out var posEl)
-                && posEl.ValueKind == JsonValueKind.Object)
-            {
-                if (posEl.TryGetProperty("latitude", out var latEl)
-                    && latEl.ValueKind == JsonValueKind.Number)
-                    lat = latEl.GetDouble();
-                if (posEl.TryGetProperty("longitude", out var lonEl)
-                    && lonEl.ValueKind == JsonValueKind.Number)
-                    lon = lonEl.GetDouble();
-            }
-            // Optional createdAt: SignalK v2 stamps the value's
-            // raise time as an ISO-8601 string. Use it instead of
-            // each plotter's local clock at render time so a MOB
-            // shows the same "MOB HH:MM:SS" on every connected
-            // helm. Pre-v2 servers omit the field; receiver falls
-            // back to the local clock at the display layer.
-            DateTime? createdAt = null;
-            if (el.TryGetProperty("createdAt", out var createdEl)
-                && createdEl.ValueKind == JsonValueKind.String
-                && DateTime.TryParse(createdEl.GetString(),
-                    System.Globalization.CultureInfo.InvariantCulture,
-                    System.Globalization.DateTimeStyles.AdjustToUniversal
-                        | System.Globalization.DateTimeStyles.AssumeUniversal,
-                    out var parsed))
-            {
-                createdAt = parsed;
-            }
-            // Missing-state-on-an-object: assume armed at "alarm"
-            // severity. Clears require an explicit normal/cleared
-            // string OR a JSON null payload.
-            state ??= "alarm";
-            return _serverNotifs.Apply(path, state, message, id, status, lat, lon, createdAt);
-        }
-
-        // Bare bool true: rare legacy form ("we have a notification");
-        // treat as armed. Anything else (numbers, strings, arrays):
-        // clear, so a malformed delta doesn't latch.
-        if (el.ValueKind == JsonValueKind.True)
-        {
-            return _serverNotifs.Apply(path, "alarm", null);
-        }
-        return _serverNotifs.Clear(path);
-    }
-
-    /// <summary>Parses a SignalK v2 notification <c>status</c> object.
-    /// Every field defaults to false on a missing / non-bool entry -
-    /// fail-safe semantics ("if I can't tell, assume the action is
-    /// unsupported"). The block is optional in the wire shape; the
-    /// caller only invokes us when an Object kind is actually present.</summary>
-    private static OnaPlotter.Services.ServerNotifications.NotificationStatus ParseNotificationStatus(JsonElement el)
-    {
-        return new OnaPlotter.Services.ServerNotifications.NotificationStatus(
-            Silenced: ReadBool(el, "silenced"),
-            Acknowledged: ReadBool(el, "acknowledged"),
-            CanSilence: ReadBool(el, "canSilence"),
-            CanAcknowledge: ReadBool(el, "canAcknowledge"),
-            CanClear: ReadBool(el, "canClear"));
-
-        static bool ReadBool(JsonElement obj, string name)
-        {
-            if (!obj.TryGetProperty(name, out var v)) return false;
-            return v.ValueKind switch
-            {
-                JsonValueKind.True => true,
-                JsonValueKind.False => false,
-                _ => false,
-            };
-        }
-    }
-
-    // True if the value in a SignalK delta represents "no data here" -
-    // either a literal JSON null, or a C# null deserialized as such.
-    // Used by anchor / course deactivation handlers to treat both wire
-    // shapes uniformly.
-    private static bool IsNullDelta(object? value)
-    {
-        if (value is null) return true;
-        if (value is JsonElement el && el.ValueKind == JsonValueKind.Null) return true;
-        return false;
-    }
-
     public async ValueTask DisposeAsync()
     {
-        // Symmetric unsubscribe to the constructor's `+= OnSettingsChangedSync`.
-        // Singleton+singleton lifetime in production means the GC sees both
-        // go down together so the leak is benign there, but a test that
-        // shares a settings stub across multiple SignalkClient instances
-        // would otherwise see handlers accumulate on the settings object.
-        _settings.OnSettingsChanged -= OnSettingsChangedSync;
+        // Symmetric unsubscribe so a settings stub shared across several
+        // clients in tests doesn't accumulate handlers.
+        _headingPreference.Dispose();
+        _baseUrl.OnBaseUrlChanged -= HandleBaseUrlChanged;
+        if (_tokens is not null)
+        {
+            _tokens.OnTokenChanged -= HandleBaseUrlChanged;
+        }
 
         if (_cts is not null)
         {

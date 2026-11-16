@@ -293,4 +293,81 @@ public class RollingDirectionSeriesTests
         // 20° over 4 minutes = +5°/min (positive = veering).
         await Assert.That(Math.Abs(rate!.Value - 5.0)).IsLessThan(0.5);
     }
+
+    // - ChartIn ------------------------------------------------
+
+    [Test]
+    public async Task ChartIn_SkipsZeroWeightAndProjects()
+    {
+        var s = new RollingDirectionSeries(TimeSpan.FromMinutes(1), NewClock());
+        s.Add(0.0);
+        s.Add(Math.PI / 2, weight: 0);    // dead-calm reading: not charted
+        s.Add(Math.PI);
+
+        var c = s.ChartIn(TimeSpan.FromSeconds(30), 600, r => r * 180.0 / Math.PI);
+
+        await Assert.That(c.Count).IsEqualTo(2);
+        await Assert.That(c.Vertices.Select(v => v.Value)).IsEquivalentTo(new[] { 0.0, 180.0 });
+        await Assert.That(c.Min).IsEqualTo(0.0);
+        await Assert.That(c.Max).IsEqualTo(180.0);
+        await Assert.That(c.Mean).IsEqualTo(90.0);
+    }
+
+    [Test]
+    public async Task ChartIn_MatchesSnapshotInContent()
+    {
+        var clock = NewClock();
+        var s = new RollingDirectionSeries(TimeSpan.FromMinutes(5), clock);
+        for (int i = 0; i < 40; i++)
+        {
+            s.Add(i * 0.05, weight: i % 7 == 0 ? 0 : 1);
+            clock.Advance(TimeSpan.FromSeconds(1));
+        }
+
+        var snap = s.SnapshotIn(TimeSpan.FromSeconds(30));
+        var c = s.ChartIn(TimeSpan.FromSeconds(30), 600);
+
+        await Assert.That(c.Vertices).IsEquivalentTo(snap);
+    }
+
+    [Test]
+    public async Task ChartIn_OverLimit_Decimates()
+    {
+        var clock = NewClock();
+        var s = new RollingDirectionSeries(TimeSpan.FromHours(3), clock);
+        for (int i = 0; i < 5000; i++) { s.Add(1.0); clock.Advance(TimeSpan.FromSeconds(1)); }
+
+        var c = s.ChartIn(TimeSpan.FromHours(2), 600);
+
+        await Assert.That(c.Count).IsEqualTo(5000);
+        await Assert.That(c.Vertices.Count).IsLessThanOrEqualTo(601);
+    }
+
+    [Test]
+    public async Task ChartIn_AllZeroWeight_ReturnsEmpty()
+    {
+        var s = new RollingDirectionSeries(TimeSpan.FromMinutes(1), NewClock());
+        s.Add(1.0, weight: 0);
+
+        await Assert.That(s.ChartIn(TimeSpan.FromSeconds(30), 600).Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Version_ChangesOnAddAndEviction()
+    {
+        var clock = NewClock();
+        var s = new RollingDirectionSeries(TimeSpan.FromMinutes(1), clock);
+        long v0 = s.Version;
+        s.Add(1.0);
+        long v1 = s.Version;
+        _ = s.ChartIn(TimeSpan.FromSeconds(30), 600);
+        long v2 = s.Version;
+        clock.Advance(TimeSpan.FromMinutes(2));
+        _ = s.Count;
+        long v3 = s.Version;
+
+        await Assert.That(v1).IsGreaterThan(v0);
+        await Assert.That(v2).IsEqualTo(v1);
+        await Assert.That(v3).IsGreaterThan(v2);
+    }
 }

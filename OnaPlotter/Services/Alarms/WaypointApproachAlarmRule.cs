@@ -17,6 +17,7 @@ namespace OnaPlotter.Services.Alarms;
 /// </remarks>
 public sealed class WaypointApproachAlarmRule : IAlarmRule
 {
+    public AlarmRuleId Id => AlarmRuleId.Approach;
     public string Title => "APPROACH";
     public int Priority => 250;  // below SHALLOW (100) and CPA (200)
     public bool AutoClear => false;
@@ -92,6 +93,7 @@ public sealed class WaypointApproachAlarmRule : IAlarmRule
         // alarm silently overwrites the previous message.
         string targetKey = $"{wpLat.Value:F5}|{wpLon.Value:F5}";
         return new AlarmInfo(
+            RuleId: Id,
             Title: Title,
             Message: $"{dist:F0} m to {ctx.Data.ActiveRouteName ?? "waypoint"}",
             Severity: AlarmSeverity.Warn,

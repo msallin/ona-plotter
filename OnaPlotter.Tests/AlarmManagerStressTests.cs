@@ -117,7 +117,7 @@ public class AlarmManagerStressTests
     ];
 
     private static AlarmManager NewManager(IAlarmRule[] rules, MutableClock clock) =>
-        new(rules, () => clock.Now);
+        new(rules, new DelegateTimeProvider(() => clock.Now));
 
     private static NavigationData OwnNav(double lat, double lon, double cogRad, double sogMs)
     {

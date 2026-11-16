@@ -60,7 +60,7 @@ jobs:
       # pick up automatically.
       - name: Test (JS unit)
         shell: bash
-        run: node --test OnaPlotter/wwwroot/js/*.test.js
+        run: node --test OnaPlotter/wwwroot/js/*.test.js deploy/*.test.js
 
   # End-to-end job: runs OnaPlotter + the dev SignalK stack from
   # docker/docker-compose.dev.yml and drives the Map page via Playwright.
@@ -229,6 +229,7 @@ jobs:
       # Stage the SignalK-webapp layout:
       #   signalk-onaplotter/
       #     package.json   (from deploy/package.json.template)
+      #     index.js       (plugin shim: SPA fallback, error relay, br/gzip)
       #     public/        (Blazor wwwroot)
       # Version = 0.0.0-ci.<run> so artifacts from different CI runs
       # don't collide. Real publish rewrites with the tag version.
@@ -239,6 +240,7 @@ jobs:
           mkdir -p "$stage"
           version="0.0.0-ci.${{ github.run_number }}"
           sed "s|__VERSION__|$version|" deploy/package.json.template > "$stage/package.json"
+          cp deploy/index.js "$stage/index.js"
           cp -r publish/wwwroot "$stage/public"
           echo "--- package.json ---"
           cat "$stage/package.json"

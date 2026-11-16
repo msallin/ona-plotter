@@ -91,11 +91,9 @@ public sealed class MobService : IMobService, IDisposable
     /// notification id stored in <c>mobAlarmId</c>. <see cref="ClearAsync"/>
     /// flips the waypoint to <c>isActive: false</c> instead of
     /// deleting it - the waypoint stays as a persistent MOB
-    /// history. Null in test ctors that don't exercise the
-    /// waypoint path (legacy 5-arg ctor); production DI always
-    /// wires it.</summary>
-    private readonly OnaPlotter.Services.Api.IWaypointApi? _waypoints;
-    /// <summary>Optional waypoint-cache reader, paired with
+    /// history.</summary>
+    private readonly OnaPlotter.Services.Api.IWaypointApi _waypoints;
+    /// <summary>Waypoint-cache reader, paired with
     /// <see cref="_waypoints"/>. Used by <see cref="ClearAsync"/>
     /// to look up the existing MOB waypoint by id (so the PUT
     /// preserves coords / createdAt / name) when the pending-raise
@@ -104,18 +102,18 @@ public sealed class MobService : IMobService, IDisposable
     /// resource cache survived). Narrowed to <see cref="OnaPlotter.Services.Resources.IWaypointReader"/>
     /// rather than the concrete <c>ResourceStore</c> so unit tests
     /// can supply a list-backed fake without standing up the full
-    /// HTTP + WS + dedup pipeline. Null when <see cref="_waypoints"/>
-    /// is null.</summary>
-    private readonly OnaPlotter.Services.Resources.IWaypointReader? _resources;
+    /// HTTP + WS + dedup pipeline.</summary>
+    private readonly OnaPlotter.Services.Resources.IWaypointReader _resources;
 
     /// <summary>Helm-facing failure surface for the waypoint side of
     /// the MOB pipeline. Invoked when a paired-waypoint create / PUT
     /// fails so the helm sees a toast like "MOB chart pin failed to
     /// save - alarm still active" rather than the failure dissolving
-    /// into the WASM console. Optional: tests pass null and just
-    /// inspect the logger output. The notification side is unaffected;
-    /// this only narrates the waypoint-half of the safety contract.</summary>
-    private readonly Action<string>? _toastWarning;
+    /// into the WASM console. The audible alarm is the helm's only
+    /// other cue, so without this the helm would assume the pin saved.
+    /// The notification side is unaffected; this only narrates the
+    /// waypoint-half of the safety contract.</summary>
+    private readonly IToastService _toasts;
 
     /// <summary>Live pending raises keyed by localId. One entry per
     /// in-flight MOB; bundles the persistable state, the cancel
@@ -142,14 +140,12 @@ public sealed class MobService : IMobService, IDisposable
 
     private bool _disposed;
 
-    /// <summary>Optional WS client. When wired, the service subscribes
-    /// to <see cref="SignalkClient.OnConnectionChanged"/> so a reconnect
+    /// <summary>WS connection. The service subscribes to
+    /// <see cref="ISignalkClient.OnConnectionChanged"/> so a reconnect
     /// edge triggers <see cref="ReconcileFromServerAsync"/> automatically
     /// (cross-plotter MOB raised during a disconnect window lands on
-    /// this plotter's banner without the helm having to navigate to the
-    /// Map page). Null in legacy test ctors that don't exercise the
-    /// connection-edge path; production DI always wires it.</summary>
-    private readonly SignalkClient? _signalk;
+    /// this plotter's banner whichever page the helm is on).</summary>
+    private readonly ISignalkClient _signalk;
     private bool _wasConnected;
 
     /// <summary>Last reconcile-on-reconnect Task (or null if none has
@@ -176,27 +172,21 @@ public sealed class MobService : IMobService, IDisposable
         IKeyValueStore kv,
         ResolvedPositionStore resolvedPositions,
         TimeProvider time,
-        ILogger<MobService>? logger = null,
-        OnaPlotter.Services.Api.IWaypointApi? waypoints = null,
-        OnaPlotter.Services.Resources.IWaypointReader? resources = null,
-        Action<string>? toastWarning = null,
-        SignalkClient? signalk = null)
+        ILogger<MobService> logger,
+        OnaPlotter.Services.Api.IWaypointApi waypoints,
+        OnaPlotter.Services.Resources.IWaypointReader resources,
+        IToastService toasts,
+        ISignalkClient signalk)
     {
-        _api = api ?? throw new ArgumentNullException(nameof(api));
-        _store = store ?? throw new ArgumentNullException(nameof(store));
-        _kv = kv ?? throw new ArgumentNullException(nameof(kv));
-        _resolvedPositions = resolvedPositions ?? throw new ArgumentNullException(nameof(resolvedPositions));
-        _time = time ?? TimeProvider.System;
-        // Logger is optional so the existing test ctor (no DI host)
-        // still works - the retry-loop crash logs route through this
-        // logger in production but a NullLogger keeps unit tests green.
-        _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<MobService>.Instance;
-        // Waypoints + ResourceStore are optional: legacy test ctors
-        // exercise notification-only flows. Production DI always
-        // wires both (see Program.cs).
+        _api = api;
+        _store = store;
+        _kv = kv;
+        _resolvedPositions = resolvedPositions;
+        _time = time;
+        _logger = logger;
         _waypoints = waypoints;
         _resources = resources;
-        _toastWarning = toastWarning;
+        _toasts = toasts;
         _signalk = signalk;
 
         // Reconciliation: when any notifications.mob.* path mutates in
@@ -210,29 +200,23 @@ public sealed class MobService : IMobService, IDisposable
         // dedicated callback.
         _store.OnPathChanged += ReconcileMobPath;
 
-        // Wire WS connection-edge reconcile when the SignalkClient is
-        // available. Previous wiring routed this through Map.razor's
-        // HandleConnectionChanged, which meant MOB cross-reload recovery
-        // only ran when the helm landed on the chart page. Owning it
-        // here decouples MOB safety from page lifecycle - a reload on
-        // Wind / Settings / History still recovers an in-flight MOB.
-        if (_signalk is not null)
-        {
-            _wasConnected = _signalk.IsConnected;
-            _signalk.OnConnectionChanged += HandleConnectionChanged;
-        }
+        // Connection-edge reconcile lives here rather than on a page so
+        // MOB safety doesn't depend on page lifecycle: a reload on Wind /
+        // Settings / History still recovers an in-flight MOB.
+        _wasConnected = _signalk.IsConnected;
+        _signalk.OnConnectionChanged += HandleConnectionChanged;
     }
 
     /// <summary>WS reconnect-edge handler. Tracks the
     /// disconnected→connected transition because <see
-    /// cref="SignalkClient.OnConnectionChanged"/> fires on both edges
+    /// cref="ISignalkClient.OnConnectionChanged"/> fires on both edges
     /// and only the connect-up edge needs to re-pull the server's
     /// active notification list. Fires the reconcile in the background
     /// so the SignalkClient's connect-up dispatch isn't stalled on a
     /// slow REST + localStorage round-trip.</summary>
     private void HandleConnectionChanged()
     {
-        if (_signalk is null || _disposed) return;
+        if (_disposed) return;
         bool nowConnected = _signalk.IsConnected;
         bool transitionedToConnected = !_wasConnected && nowConnected;
         _wasConnected = nowConnected;
@@ -295,8 +279,8 @@ public sealed class MobService : IMobService, IDisposable
         // assigned BEFORE Task.Run schedules the loop so the loop's
         // threadpool task can never observe a null CreateTask.
         // Skipped when no position is available (the waypoint needs
-        // lat/lon) or when the test ctor didn't wire WaypointApi.
-        if (_waypoints is not null && latitude is double mobLat && longitude is double mobLon)
+        // lat/lon).
+        if (latitude is double mobLat && longitude is double mobLon)
         {
             // Cancellation token piggy-backs the loop's CTS so a
             // Service.Dispose / ClearAsync teardown unwinds a parked
@@ -334,10 +318,9 @@ public sealed class MobService : IMobService, IDisposable
     /// <see cref="InitializeAsync"/>.</para>
     ///
     /// <para>Returns the in-memory <see cref="SignalkWaypoint"/> once
-    /// the PUT lands; null on cancellation or no-waypoints DI.</para></summary>
+    /// the PUT lands; null on cancellation.</para></summary>
     private async Task<SignalkWaypoint?> CreateMobWaypointAsync(string localId, double lat, double lon, CancellationToken ct = default)
     {
-        if (_waypoints is null) return null;
 
         // Resolve / persist the waypoint id + name up front so a
         // cancel mid-retry leaves a replayable record. On the first
@@ -409,7 +392,7 @@ public sealed class MobService : IMobService, IDisposable
         // WS echo arrives (after the retry loop's PUT lands) the WS path
         // goes through the same cache primitive and content-equality
         // dedups against this entry - one Changed event per genuine diff.
-        _resources?.ApplyLocal(wp);
+        _resources.ApplyLocal(wp);
 
         // Backoff loop. Same schedule as RunRaiseLoopCoreAsync so the
         // helm sees the alarm + chart pin land at consistent moments
@@ -480,7 +463,7 @@ public sealed class MobService : IMobService, IDisposable
                 waypointId, attempt, result.Error ?? "(no body)");
             if (attempt == 0)
             {
-                _toastWarning?.Invoke(
+                _toasts.Warning(
                     $"MOB chart pin queued (offline): {result.Error ?? "server unreachable"} - alarm still active, will retry");
             }
             attempt++;
@@ -500,7 +483,6 @@ public sealed class MobService : IMobService, IDisposable
     /// the wrong mobAlarmId on the wire.</summary>
     private async Task UpdateMobAlarmIdAsync(SignalkWaypoint wp, string newAlarmId)
     {
-        if (_waypoints is null) return;
         try
         {
             // Preserve all current fields; only mobAlarmId changes.
@@ -512,7 +494,7 @@ public sealed class MobService : IMobService, IDisposable
                 _logger.LogWarning(
                     "[mob] waypoint mobAlarmId update failed for {WpId}: {Error}",
                     wp.Id, result.Error ?? "(no body)");
-                _toastWarning?.Invoke($"MOB cross-plotter correlation failed - other plotters may not find this MOB by its server id");
+                _toasts.Warning($"MOB cross-plotter correlation failed - other plotters may not find this MOB by its server id");
                 return;
             }
             // Mirror the new id on the in-memory copy so a subsequent
@@ -527,7 +509,7 @@ public sealed class MobService : IMobService, IDisposable
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "[mob] waypoint mobAlarmId update threw for {WpId}", wp.Id);
-            _toastWarning?.Invoke($"MOB cross-plotter correlation failed: {ex.Message}");
+            _toasts.Warning($"MOB cross-plotter correlation failed: {ex.Message}");
         }
     }
 
@@ -558,7 +540,7 @@ public sealed class MobService : IMobService, IDisposable
             if (live.CreatedWaypoint is { } createdWp) return createdWp;
             // Tier 2: cache lookup via stamped id.
             if (live.Raise.WaypointId is { Length: > 0 } wpId
-                && _resources?.GetWaypoint(wpId) is { } cachedWp)
+                && _resources.GetWaypoint(wpId) is { } cachedWp)
             {
                 return cachedWp;
             }
@@ -567,7 +549,6 @@ public sealed class MobService : IMobService, IDisposable
         // (could be localId or serverId) OR the resolved matchedLocalId
         // (covers the early-clear case where the notification's serverId
         // arrived but the waypoint still carries the localId).
-        if (_resources is null) return null;
         foreach (var w in _resources.Waypoints)
         {
             if (!w.IsMob) continue;
@@ -607,11 +588,9 @@ public sealed class MobService : IMobService, IDisposable
         // tears the LivePending entry down. FindMobWaypoint's tier-1
         // fast path reads live.CreatedWaypoint off the pending entry;
         // dropping the entry first would force every clear into the
-        // tier-3 scan and break the same-session deactivate path when
-        // _resources is null.
-        SignalkWaypoint? mobWp = _waypoints is not null
-            ? FindMobWaypoint(id, matchedLocalId)
-            : null;
+        // tier-3 scan, which misses a waypoint whose create is still in
+        // flight.
+        SignalkWaypoint? mobWp = FindMobWaypoint(id, matchedLocalId);
 
         // PARA-003: race-window zombie. When the helm clears while
         // the notification POST is still in flight, the loop hasn't
@@ -668,9 +647,9 @@ public sealed class MobService : IMobService, IDisposable
         // independent of any server round-trip. Mirror of the local-
         // first seed on the raise side. Eventual server reconciliation
         // happens in the clear-retry loop below. Skipped when there's
-        // no waypoint (legacy 5-arg ctor, or no _resources DI) - the
-        // chart will simply not have a marker to update.
-        if (mobWp is not null && _resources is not null)
+        // no paired waypoint (MOB raised without a fix) - the chart has
+        // no marker to update.
+        if (mobWp is not null)
         {
             _resources.ApplyLocal(CloneWaypointDeactivated(mobWp));
         }
@@ -692,7 +671,6 @@ public sealed class MobService : IMobService, IDisposable
         bool needNotificationDelete = !deferredClear
             && !(matchedLocalId is not null && !hasServerSide);
         bool needWaypointDeactivate = mobWp is not null
-            && _waypoints is not null
             && !string.IsNullOrEmpty(mobWp.Id);
 
         if (needNotificationDelete || needWaypointDeactivate
@@ -868,8 +846,7 @@ public sealed class MobService : IMobService, IDisposable
             // PUT is idempotent on the persisted WaypointId, so a
             // reload-after-network-restored converges to a single
             // server resource without duplicating pins.
-            if (_waypoints is not null
-                && p.WaypointPostPending
+            if (p.WaypointPostPending
                 && p.Latitude is double rLat && p.Longitude is double rLon)
             {
                 live.CreateTask = CreateMobWaypointAsync(p.LocalId, rLat, rLon, live.Cts.Token);
@@ -1359,7 +1336,6 @@ public sealed class MobService : IMobService, IDisposable
             // (PUT on a new id creates the resource) so no special
             // status code handling is needed.
             if (pending.WaypointDeactivatePending
-                && _waypoints is not null
                 && !string.IsNullOrEmpty(pending.WaypointId)
                 && pending.WaypointLat is double lat
                 && pending.WaypointLon is double lon)
@@ -1490,10 +1466,7 @@ public sealed class MobService : IMobService, IDisposable
         if (_disposed) return;
         _disposed = true;
         _store.OnPathChanged -= ReconcileMobPath;
-        if (_signalk is not null)
-        {
-            _signalk.OnConnectionChanged -= HandleConnectionChanged;
-        }
+        _signalk.OnConnectionChanged -= HandleConnectionChanged;
         foreach (var live in _pending.Values)
         {
             try { live.Cts.Cancel(); } catch { /* best-effort */ }
@@ -1576,12 +1549,11 @@ public sealed class MobService : IMobService, IDisposable
         /// <see cref="MobService.CreateMobWaypointAsync"/> task. The
         /// notification retry loop awaits this BEFORE firing
         /// <see cref="MobService.UpdateMobAlarmIdAsync"/> so the cross-
-        /// plotter mobAlarmId update never races the create POST -
-        /// previously the loop's success path could read a null
-        /// <see cref="CreatedWaypoint"/> and silently skip the update
-        /// when the notification POST returned faster than the
-        /// resource POST. Null when no waypoint was paired (offline
-        /// raise, no lat/lon, no <c>IWaypointApi</c> DI).</summary>
+        /// plotter mobAlarmId update never races the create POST:
+        /// otherwise a notification POST that returns faster than the
+        /// resource POST would read a null <see cref="CreatedWaypoint"/>
+        /// and silently skip the update. Null when no waypoint was
+        /// paired (raise without lat/lon).</summary>
         public Task<OnaPlotter.Models.SignalkWaypoint?>? CreateTask { get; set; }
 
         public LivePending(PendingRaise raise, CancellationTokenSource cts)

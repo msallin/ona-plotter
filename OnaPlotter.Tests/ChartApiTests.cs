@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Net;
 using OnaPlotter.Models;
 using OnaPlotter.Services.Api;
@@ -33,7 +34,7 @@ public class ChartApiTests
         // the Layers panel's "basemap on top" convention stays stable
         // and the chart-order persistence treats built-ins as the
         // baseline z-stack.
-        var api = new ChartApi(ApiTestHelpers.JsonClient(_ => "{}"), ApiTestHelpers.FixedBaseUrl());
+        var api = new ChartApi(ApiTestHelpers.JsonClient(_ => "{}"), ApiTestHelpers.FixedBaseUrl(), NullLogger<ChartApi>.Instance);
         var charts = await api.GetAllAsync();
 
         await Assert.That(charts.Count).IsGreaterThanOrEqualTo(2);
@@ -68,7 +69,7 @@ public class ChartApiTests
         }
         """;
         var http = ApiTestHelpers.JsonClient(_ => body);
-        var api = new ChartApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new ChartApi(http, ApiTestHelpers.FixedBaseUrl(), NullLogger<ChartApi>.Instance);
 
         var skCharts = SkOnly(await api.GetAllAsync());
 
@@ -85,7 +86,7 @@ public class ChartApiTests
         // A lot of signalk-charts-provider installs omit the inner
         // "identifier" field. The dict key is the canonical id then.
         var body = """{ "my-chart": { "name": "X", "tilemapUrl": "https://x/{z}/{x}/{y}" } }""";
-        var api = new ChartApi(ApiTestHelpers.JsonClient(_ => body), ApiTestHelpers.FixedBaseUrl());
+        var api = new ChartApi(ApiTestHelpers.JsonClient(_ => body), ApiTestHelpers.FixedBaseUrl(), NullLogger<ChartApi>.Instance);
 
         var skCharts = SkOnly(await api.GetAllAsync());
 
@@ -102,7 +103,7 @@ public class ChartApiTests
         var body = """
         { "noaa": { "name":"NOAA","tilemapUrl":"/signalk/v1/chart-tiles/noaa/{z}/{x}/{y}" } }
         """;
-        var api = new ChartApi(ApiTestHelpers.JsonClient(_ => body), ApiTestHelpers.FixedBaseUrl());
+        var api = new ChartApi(ApiTestHelpers.JsonClient(_ => body), ApiTestHelpers.FixedBaseUrl(), NullLogger<ChartApi>.Instance);
 
         var skCharts = SkOnly(await api.GetAllAsync());
 
@@ -119,7 +120,7 @@ public class ChartApiTests
         var body = """
         { "external-osm": { "tilemapUrl":"https://tile.openstreetmap.org/{z}/{x}/{y}.png" } }
         """;
-        var api = new ChartApi(ApiTestHelpers.JsonClient(_ => body), ApiTestHelpers.FixedBaseUrl());
+        var api = new ChartApi(ApiTestHelpers.JsonClient(_ => body), ApiTestHelpers.FixedBaseUrl(), NullLogger<ChartApi>.Instance);
 
         var skCharts = SkOnly(await api.GetAllAsync());
 
@@ -139,7 +140,7 @@ public class ChartApiTests
             "working":  { "name":"X","tilemapUrl":"https://x/{z}/{x}/{y}" }
         }
         """;
-        var api = new ChartApi(ApiTestHelpers.JsonClient(_ => body), ApiTestHelpers.FixedBaseUrl());
+        var api = new ChartApi(ApiTestHelpers.JsonClient(_ => body), ApiTestHelpers.FixedBaseUrl(), NullLogger<ChartApi>.Instance);
 
         var skCharts = SkOnly(await api.GetAllAsync());
 
@@ -152,7 +153,7 @@ public class ChartApiTests
     {
         // Empty SK chart list (no plugins, fresh install) still gives
         // the helm a usable Layers panel via the built-in basemaps.
-        var api = new ChartApi(ApiTestHelpers.JsonClient(_ => "{}"), ApiTestHelpers.FixedBaseUrl());
+        var api = new ChartApi(ApiTestHelpers.JsonClient(_ => "{}"), ApiTestHelpers.FixedBaseUrl(), NullLogger<ChartApi>.Instance);
 
         var charts = await api.GetAllAsync();
         var skCharts = SkOnly(charts);
@@ -174,7 +175,7 @@ public class ChartApiTests
         // SK-derived" rather than "completely empty Layers panel".
         var http = ApiTestHelpers.MockClient(_ =>
             new HttpResponseMessage(HttpStatusCode.InternalServerError));
-        var api = new ChartApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new ChartApi(http, ApiTestHelpers.FixedBaseUrl(), NullLogger<ChartApi>.Instance);
 
         var charts = await api.GetAllAsync();
 
@@ -192,7 +193,7 @@ public class ChartApiTests
             "url":"https://b/{z}/{x}/{y}"
         } }
         """;
-        var api = new ChartApi(ApiTestHelpers.JsonClient(_ => body), ApiTestHelpers.FixedBaseUrl());
+        var api = new ChartApi(ApiTestHelpers.JsonClient(_ => body), ApiTestHelpers.FixedBaseUrl(), NullLogger<ChartApi>.Instance);
 
         var skCharts = SkOnly(await api.GetAllAsync());
         await Assert.That(skCharts[0].GetTileUrl()).IsEqualTo("https://a/{z}/{x}/{y}");

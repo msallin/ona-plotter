@@ -36,6 +36,85 @@ public class ShallowAlarmRuleTests
         await Assert.That(alarm.Severity).IsEqualTo(AlarmSeverity.Danger);
     }
 
+    private sealed class Clock { public DateTime Now { get; set; } = TestClock.FixedUtcNow; }
+
+    [Test]
+    public async Task Silent_When_Depth_Data_Is_Dead()
+    {
+        // The sounder stopped publishing 31 s ago (FieldFreshness.Dead).
+        // Its last shallow reading must not hold a SHALLOW banner up or
+        // raise a new one: same policy AnchorDragAlarmRule applies to a
+        // frozen currentRadius; the HUD staleness badge flags the loss.
+        var clock = new Clock();
+        var nav = new NavigationData(new DelegateTimeProvider(() => clock.Now));
+        nav.Apply("environment.depth.belowTransducer", 1.5);
+        var rule = new ShallowAlarmRule();
+
+        await Assert.That(rule.Check(Ctx(nav, 3.0, clock.Now))).IsNotNull();
+
+        clock.Now = clock.Now.AddSeconds(31);
+        await Assert.That(rule.Check(Ctx(nav, 3.0, clock.Now))).IsNull();
+    }
+
+    [Test]
+    public async Task Fires_From_Stale_But_Not_Dead_Depth()
+    {
+        // 10-30 s old is Stale, not Dead: a slow sounder still counts.
+        var clock = new Clock();
+        var nav = new NavigationData(new DelegateTimeProvider(() => clock.Now));
+        nav.Apply("environment.depth.belowTransducer", 1.5);
+        clock.Now = clock.Now.AddSeconds(20);
+
+        await Assert.That(new ShallowAlarmRule().Check(Ctx(nav, 3.0, clock.Now))).IsNotNull();
+    }
+
+    [Test]
+    public async Task Fires_On_BelowKeel_Only_Install()
+    {
+        var nav = new NavigationData();
+        nav.Apply("environment.depth.belowKeel", 1.0);
+        await Assert.That(new ShallowAlarmRule().Check(Ctx(nav, 2.0, TestClock.FixedUtcNow))).IsNotNull();
+    }
+
+    [Test]
+    public async Task Fires_On_BelowSurface_Only_Install()
+    {
+        var nav = new NavigationData();
+        nav.Apply("environment.depth.belowSurface", 1.8);
+        await Assert.That(new ShallowAlarmRule().Check(Ctx(nav, 2.0, TestClock.FixedUtcNow))).IsNotNull();
+    }
+
+    [Test]
+    public async Task Prefers_BelowKeel_Over_BelowTransducer()
+    {
+        // The keel is what touches bottom: 1.5 m under the keel with
+        // 2.5 m under the transducer must alarm at a 2 m threshold, the
+        // same reading the HUD shows.
+        var nav = new NavigationData();
+        nav.Apply("environment.depth.belowTransducer", 2.5);
+        nav.Apply("environment.depth.belowKeel", 1.5);
+
+        var alarm = new ShallowAlarmRule().Check(Ctx(nav, 2.0, TestClock.FixedUtcNow));
+
+        await Assert.That(alarm).IsNotNull();
+        await Assert.That(alarm!.Message).Contains("1.5");
+    }
+
+    [Test]
+    public async Task Falls_Back_To_Transducer_When_Keel_Feed_Dies()
+    {
+        var clock = new Clock();
+        var nav = new NavigationData(new DelegateTimeProvider(() => clock.Now));
+        nav.Apply("environment.depth.belowKeel", 5.0);
+        clock.Now = clock.Now.AddSeconds(31);             // keel feed dead
+        nav.Apply("environment.depth.belowTransducer", 1.5);
+
+        var alarm = new ShallowAlarmRule().Check(Ctx(nav, 2.0, clock.Now));
+
+        await Assert.That(alarm).IsNotNull();
+        await Assert.That(alarm!.Message).Contains("1.5");
+    }
+
     [Test]
     public async Task Silent_When_Above_Threshold()
     {

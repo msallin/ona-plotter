@@ -20,6 +20,7 @@ namespace OnaPlotter.Services.Alarms;
 /// </summary>
 public sealed class AisSartAlarmRule : IAlarmRule
 {
+    public AlarmRuleId Id => AlarmRuleId.Sart;
     public string Title => "SART";
     public int Priority => 50;
     public bool AutoClear => true;
@@ -59,6 +60,7 @@ public sealed class AisSartAlarmRule : IAlarmRule
             : "";
 
         return new AlarmInfo(
+            RuleId: Id,
             Title: nearestCategory,
             Message: $"{name}{distStr}",
             Severity: AlarmSeverity.Danger,

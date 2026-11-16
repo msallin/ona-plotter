@@ -4,9 +4,10 @@
 // initialization" TDZ ReferenceError get caught at PR time, not on
 // a freshly loaded helm tablet.
 //
-// Scope: just OnaPlotter/wwwroot/js. The Razor-managed WASM
-// runtime, OnaPlotter.UiTests (Playwright), and node_modules are
-// outside this config - they have their own toolchains.
+// Scope: OnaPlotter/wwwroot/js plus the deploy/ plugin shim. The
+// Razor-managed WASM runtime, OnaPlotter.UiTests (Playwright), and
+// node_modules are outside this config - they have their own
+// toolchains.
 //
 // Rule philosophy: tight runtime-correctness rules, NO stylistic
 // rules. The codebase is hand-formatted and consistent; turning on
@@ -109,6 +110,18 @@ export default [
         // for per-file overrides.
         files: ['OnaPlotter/wwwroot/js/**/*.test.js'],
         languageOptions: {
+            globals: {
+                ...globals.node,
+            },
+        },
+    },
+    {
+        // The SignalK plugin shim runs in Node as CommonJS (loaded by
+        // signalk-server), not in the browser.
+        files: ['deploy/**/*.js'],
+        languageOptions: {
+            ecmaVersion: 2022,
+            sourceType: 'commonjs',
             globals: {
                 ...globals.node,
             },

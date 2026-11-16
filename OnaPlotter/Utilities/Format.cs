@@ -1,5 +1,11 @@
+using System.Globalization;
+
 namespace OnaPlotter.Utilities;
 
+/// <summary>
+/// Display formatting shared by HUD cards, panels and pages, so one
+/// reading renders the same way wherever the helm sees it.
+/// </summary>
 public static class Format
 {
     /// <summary>Conversion factor: meters per second to knots.</summary>
@@ -39,19 +45,6 @@ public static class Format
         return m.Value < 1000 ? $"{m.Value:F0}m" : $"{(m.Value / MetersPerNm):F2}nm";
     }
 
-    /// <summary>Formats a distance in meters as nm and meters side by
-    /// side for the measure-tool tooltip: "0.85 nm / 1574 m". Two
-    /// decimals on nm (matches the existing measure tooltip width);
-    /// rounded integer meters. The JS mirror in <c>format.js</c>
-    /// produces the identical string for the in-browser tooltips.</summary>
-    public static string MeasureDistance(double meters)
-    {
-        var inv = System.Globalization.CultureInfo.InvariantCulture;
-        double nm = meters / MetersPerNm;
-        long mRounded = (long)Math.Round(meters, MidpointRounding.AwayFromZero);
-        return $"{nm.ToString("F2", inv)} nm / {mRounded.ToString(inv)} m";
-    }
-
     /// <summary>Formats a depth in meters, one decimal. Returns "--" for null.</summary>
     public static string Depth(double? m) =>
         m is null ? "--" : m.Value.ToString("F1");
@@ -74,67 +67,17 @@ public static class Format
         return eta.Date == DateTime.Today ? eta.ToString("HH:mm") : eta.ToString("dd.MM HH:mm");
     }
 
-    /// <summary>Formats elapsed-since-MOB-raise as "T+5s" / "T+12m"
-    /// / "T+1h23m". Pure formatter - caller passes the seconds
-    /// since the casualty was raised. JS layer uses this via the
-    /// mirrored helper in <c>format.js</c>; tests live here to pin
-    /// the exact strings.</summary>
-    public static string MobElapsed(int seconds)
-    {
-        if (seconds < 0) seconds = 0;
-        if (seconds < 60) return $"T+{seconds}s";
-        int min = seconds / 60;
-        if (min < 60) return $"T+{min}m";
-        int hr = min / 60;
-        return $"T+{hr}h{min % 60}m";
-    }
-
     /// <summary>Formats a lat/lon pair as DMS with hemisphere
     /// indicators: "47.50000&deg;N 8.50000&deg;W". Five decimals on
-    /// the degrees ~= 1m precision - enough for a chart popup. Used
-    /// by waypoint / note / MOB popups in JS via the mirrored helper.</summary>
+    /// the degrees ~= 1m precision. The JS popups render the same
+    /// string with <c>format.js latLonDms</c>; both are pinned by the
+    /// same vectors (FormatTests / format.test.js).</summary>
     public static string LatLonDms(double lat, double lon)
     {
         char ns = lat >= 0 ? 'N' : 'S';
         char ew = lon >= 0 ? 'E' : 'W';
         return $"{Math.Abs(lat).ToString("F5", System.Globalization.CultureInfo.InvariantCulture)}°{ns} " +
                $"{Math.Abs(lon).ToString("F5", System.Globalization.CultureInfo.InvariantCulture)}°{ew}";
-    }
-
-    /// <summary>Formats a radius in nautical miles for an on-chart
-    /// ring label: "0.5 nm" / "1.5 nm" / "5 nm". Two decimals below
-    /// 1 nm so 0.5 doesn't round to "1"; one decimal at 1-9.99;
-    /// whole number above 10. Trailing zeros are stripped ("0.50"
-    /// -&gt; "0.5", "1.0" -&gt; "1") to keep chart labels compact.
-    /// Returns empty for non-finite or non-positive input.</summary>
-    public static string RangeRingLabel(double nm)
-    {
-        if (!double.IsFinite(nm) || nm <= 0) return string.Empty;
-        var inv = System.Globalization.CultureInfo.InvariantCulture;
-        string digits;
-        if (nm < 1)
-        {
-            // F2 then strip trailing zeros (and the dot if all zeros after).
-            digits = nm.ToString("F2", inv).TrimEnd('0').TrimEnd('.');
-        }
-        else if (nm < 10)
-        {
-            // F1 then strip a trailing ".0" - a non-zero tenths digit
-            // (e.g. "1.5") survives the strip.
-            digits = nm.ToString("F1", inv);
-            if (digits.EndsWith(".0", StringComparison.Ordinal))
-            {
-                digits = digits[..^2];
-            }
-        }
-        else
-        {
-            // AwayFromZero matches JS's Math.round (50.5 -> 51) so the
-            // C# canonical and the format.js mirror produce identical
-            // strings on the .5 boundary.
-            digits = ((long)Math.Round(nm, MidpointRounding.AwayFromZero)).ToString(inv);
-        }
-        return $"{digits} nm";
     }
 
     /// <summary>Formats XTE with port/starboard suffix. SignalK convention: positive = starboard.</summary>
@@ -163,4 +106,41 @@ public static class Format
         < 8 => "depth-warn",
         _ => "depth-ok"
     };
+
+    /// <summary>Whether a depth is tinted amber or red by
+    /// <see cref="DepthClass"/>. Drives the shape cue (warning glyph)
+    /// next to the number, so the shallow-water signal doesn't rely on
+    /// hue alone.</summary>
+    public static bool IsShallow(double? depth) => depth is < 8;
+
+    /// <summary>Decimal-degree position with hemisphere letters, as the
+    /// route and polygon edit panels list vertices. Input is a
+    /// <c>[lat, lon, ...]</c> pair; empty when it has fewer than two
+    /// elements.
+    /// <para>Example: <c>[48.21444, -11.57532]</c> becomes
+    /// <c>"48.2144° N, 11.5753° W"</c>.</para></summary>
+    public static string CoordDecimal(double[]? latLon)
+    {
+        if (latLon is not { Length: >= 2 }) return "";
+        double lat = latLon[0], lon = latLon[1];
+        string ns = lat >= 0 ? "N" : "S";
+        string ew = lon >= 0 ? "E" : "W";
+        return string.Create(CultureInfo.InvariantCulture,
+            $"{Math.Abs(lat):F4}\u00B0 {ns}, {Math.Abs(lon):F4}\u00B0 {ew}");
+    }
+
+    /// <summary>Radar range label from metres. Short ranges read better
+    /// in metres ("250 m" vs "0.1 nm"); from 1000 m up, nautical miles
+    /// with one decimal for open-water scales.</summary>
+    public static string RadarRange(int meters) =>
+        meters < 1000
+            ? string.Create(CultureInfo.InvariantCulture, $"{meters} m")
+            : string.Create(CultureInfo.InvariantCulture, $"{meters / MetersPerNm:F1} nm");
+
+    /// <summary>Value for an HTML <c>datetime-local</c> input:
+    /// <c>yyyy-MM-ddTHH:mm</c>. Any other shape (seconds, offset) renders
+    /// the input blank, and the invariant culture keeps a de-CH locale
+    /// from producing <c>05.06.2024</c>.</summary>
+    public static string DateTimeLocalInput(DateTime t) =>
+        t.ToString("yyyy-MM-ddTHH:mm", CultureInfo.InvariantCulture);
 }

@@ -13,17 +13,21 @@ public sealed class WaypointApi : IWaypointApi
 {
     private readonly HttpClient _http;
     private readonly ISignalKBaseUrl _baseUrl;
+    private readonly TimeProvider _time;
+    private readonly ILogger<WaypointApi> _logger;
 
-    public WaypointApi(HttpClient http, ISignalKBaseUrl baseUrl)
+    public WaypointApi(HttpClient http, ISignalKBaseUrl baseUrl, TimeProvider time, ILogger<WaypointApi> logger)
     {
         _http = http;
         _baseUrl = baseUrl;
+        _time = time;
+        _logger = logger;
     }
 
     public async Task<List<SignalkWaypoint>> GetAllAsync(CancellationToken ct = default)
     {
         var dict = await ResourceHttp.GetDictAsync<SignalkWaypoint>(
-            _http, _baseUrl.Combine(SignalKUrls.WaypointsPath), ct);
+            _http, _baseUrl.Combine(SignalKUrls.WaypointsPath), _logger, ct);
         if (dict is null) return [];
 
         var waypoints = new List<SignalkWaypoint>(dict.Count);
@@ -75,7 +79,7 @@ public sealed class WaypointApi : IWaypointApi
         // tripping arbitrary top-level body fields.
         var body = GeoJsonBuilder.FeatureBody(
             name, GeoJsonBuilder.Point(lat, lon), description,
-            createdAt: DateTime.UtcNow,
+            createdAt: _time.GetUtcNow().UtcDateTime,
             isMob: isMob, isActive: isActive, mobAlarmId: mobAlarmId);
         var url = _baseUrl.Combine(SignalKUrls.WaypointsPath);
         return ResourceHttp.PostCreateAsync(_http, url, body, ct);
@@ -124,7 +128,7 @@ public sealed class WaypointApi : IWaypointApi
         // preserve a timestamp from.
         var body = GeoJsonBuilder.FeatureBody(
             name, GeoJsonBuilder.Point(lat, lon), description,
-            createdAt: DateTime.UtcNow,
+            createdAt: _time.GetUtcNow().UtcDateTime,
             isMob: isMob, isActive: isActive, mobAlarmId: mobAlarmId);
         var url = _baseUrl.Combine(SignalKUrls.Waypoint(id));
         return ResourceHttp.PutAsync(_http, url, body, ct);

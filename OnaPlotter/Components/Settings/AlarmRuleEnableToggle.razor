@@ -8,12 +8,13 @@
    semantic). No prose; the surrounding card carries the
    description so this stays a tight, repeatable affordance.
 
-   id is derived from the title so each switch + label pair is
-   uniquely associated even when many of these render on the same
-   page. The title double-uppercase normalisation matches what the
-   setter does on the way down so a stray-cased Title parameter
-   round-trips cleanly. *@
+   Keyed by AlarmRuleId so the persisted key can't drift from the
+   rule it controls; the label is the persisted key (the short
+   uppercase rule name the helm already knows). id is derived from
+   the key so each switch + label pair is uniquely associated even
+   when many of these render on the same page. *@
 
+@using OnaPlotter.Models
 @inject IAppSettings AppSettings
 
 <div class="form-check form-switch mb-2">
@@ -25,7 +26,7 @@
 </div>
 
 @code {
-    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter, EditorRequired] public AlarmRuleId Rule { get; set; }
 
     private string _label = "";
     private string _id = "";
@@ -35,7 +36,8 @@
     {
         // Compute once per parameter set: cheap, but keeps the
         // template render path branch-free.
-        _label = (Title ?? string.Empty).Trim().ToUpperInvariant();
+        _label = Rule.PersistedKey()
+            ?? throw new InvalidOperationException($"Alarm source {Rule} cannot be toggled");
         _id = $"alarm-rule-toggle-{_label}";
         _disabled = AppSettings.DisabledAlarmRules.Contains(_label);
     }
@@ -43,9 +45,6 @@
     private async Task OnChanged(ChangeEventArgs e)
     {
         bool on = e.Value is bool b && b;
-        // Setter does its own trim/uppercase so we pass the raw
-        // Title; staying close to the input avoids two separate
-        // normalisation paths drifting apart.
-        await AppSettings.SetAlarmRuleDisabledAsync(Title, disabled: !on);
+        await AppSettings.SetAlarmRuleDisabledAsync(_label, disabled: !on);
     }
 }
