@@ -4,7 +4,7 @@ Builds OnaPlotter as a SignalK webapp and deploys it to a SignalK server via SSH
 
 ## Prerequisites
 
-- .NET 10 SDK with `wasm-tools` workload
+- .NET 11 SDK with `wasm-tools` workload
 - `ssh` and `scp` in PATH (Windows 10+ has these built in via OpenSSH client)
 - SSH key set up for the target host (otherwise you'll type your password twice)
 - Write access to `~/.signalk/node_modules/` on the target

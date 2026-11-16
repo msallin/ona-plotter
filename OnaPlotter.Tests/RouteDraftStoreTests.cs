@@ -15,6 +15,7 @@ public class RouteDraftStoreTests
     private sealed class InMemoryKv : IKeyValueStore
     {
         private readonly Dictionary<string, string> _d = [];
+        public IReadOnlyCollection<string> Keys => _d.Keys;
         public Task<string?> GetAsync(string key, CancellationToken ct = default)
             => Task.FromResult(_d.TryGetValue(key, out var v) ? v : null);
         public Task SetAsync(string key, string value, CancellationToken ct = default)
@@ -123,7 +124,10 @@ public class RouteDraftStoreTests
         // compatible model change can bump to v2 without resurrecting
         // old drafts in a new schema. Test this here so a developer
         // who renames the constant sees the contract spelled out.
-        await Assert.That(RouteDraftStore.StorageKey).IsEqualTo("route.draft.v1");
+        var kv = new InMemoryKv();
+        await new RouteDraftStore(kv).SaveAsync(NewDraft());
+
+        await Assert.That(kv.Keys).IsEquivalentTo(new[] { "route.draft.v1" });
     }
 
     [Test]

@@ -129,7 +129,7 @@ Non-PowerShell:
 
 ```bash
 dotnet publish -c Release OnaPlotter/OnaPlotter.csproj
-scp -r OnaPlotter/bin/Release/net10.0/publish/wwwroot/* \
+scp -r OnaPlotter/bin/Release/net11.0/publish/wwwroot/* \
     user@host:~/.signalk/node_modules/signalk-onaplotter/
 ```
 

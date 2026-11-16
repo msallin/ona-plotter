@@ -163,7 +163,6 @@
             _results = [];
             _open = false;
             _loading = false;
-            StateHasChanged();
             return;
         }
 
@@ -210,11 +209,6 @@
         _results = results;
         _highlight = 0;
         _loading = false;
-        // Explicit render so the new results are committed to the
-        // DOM at the EXACT moment we set the state. Belt-and-braces
-        // against any future Blazor lifecycle change that defers
-        // implicit post-handler renders.
-        StateHasChanged();
     }
 
     private async Task OnKeyDown(KeyboardEventArgs e)

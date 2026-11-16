@@ -7,51 +7,12 @@ namespace OnaPlotter.Tests;
 /// <summary>
 /// Pins the IMapAnchorJs wrapper around the leafletInterop.js
 /// anchor-watch surface. Tests hit the four happy paths via a
-/// recording fake JSObjectReference; the JSDisconnected /
+/// recording fake JSObjectReference (<see cref="RecordingJsRef"/>); the JSDisconnected /
 /// ObjectDisposed swallows are pinned via the <c>MarkDisposed</c>
 /// path (subsequent calls become no-ops without throwing).
 /// </summary>
 public class MapAnchorJsTests
 {
-    /// <summary>
-    /// Recording fake. Captures (identifier, args) tuples per call.
-    /// Throws on dispose so calls AFTER dispose surface the
-    /// expected ObjectDisposed which the wrapper must swallow.
-    /// </summary>
-    private sealed class RecordingJsRef : IJSObjectReference
-    {
-        public List<(string id, object?[] args)> Calls { get; } = new();
-        public bool ThrowDisconnectedNext { get; set; }
-        public bool ThrowDisposedNext { get; set; }
-        public bool ThrowJsExceptionNext { get; set; }
-
-        public ValueTask<TValue> InvokeAsync<TValue>(string identifier, object?[]? args)
-        {
-            Calls.Add((identifier, args ?? Array.Empty<object?>()));
-            if (ThrowDisconnectedNext)
-            {
-                ThrowDisconnectedNext = false;
-                throw new JSDisconnectedException("test disconnect");
-            }
-            if (ThrowDisposedNext)
-            {
-                ThrowDisposedNext = false;
-                throw new ObjectDisposedException("test");
-            }
-            if (ThrowJsExceptionNext)
-            {
-                ThrowJsExceptionNext = false;
-                throw new JSException("test js error");
-            }
-            return new ValueTask<TValue>(default(TValue)!);
-        }
-
-        public ValueTask<TValue> InvokeAsync<TValue>(string identifier, CancellationToken cancellationToken, object?[]? args)
-            => InvokeAsync<TValue>(identifier, args);
-
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-    }
-
     [Test]
     public async Task SetAnchorAsync_PassesAllArgs()
     {

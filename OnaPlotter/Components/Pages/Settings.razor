@@ -1542,7 +1542,6 @@
         if (authInFlight) return;
         loginError = null;
         authInFlight = true;
-        StateHasChanged();
         try
         {
             var ok = await AuthSession.LoginAsync(loginUsername, loginPassword,
@@ -1568,7 +1567,6 @@
         finally
         {
             authInFlight = false;
-            StateHasChanged();
         }
     }
 
@@ -1576,7 +1574,6 @@
     {
         if (authInFlight) return;
         authInFlight = true;
-        StateHasChanged();
         try
         {
             await AuthSession.LogoutAsync();
@@ -1589,7 +1586,6 @@
         finally
         {
             authInFlight = false;
-            StateHasChanged();
         }
     }
 
@@ -2116,10 +2112,6 @@
             polarError = ex.Message;
             Console.Error.WriteLine($"OnaPlotter: Polar import failed: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
         }
-        finally
-        {
-            StateHasChanged();
-        }
     }
 
     private async Task ClearPolar()
@@ -2133,7 +2125,6 @@
 
         await Polar.ClearAsync();
         Toasts.Success("Polar cleared");
-        StateHasChanged();
     }
 
     // ---- Polar plot ---------------------------------------------------

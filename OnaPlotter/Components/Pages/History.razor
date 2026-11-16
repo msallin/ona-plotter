@@ -620,7 +620,14 @@
             ApplyQueryParams();
 
             // Auto-load the (possibly query-overridden) timespan.
-            await LoadTrack();
+            // LoadTrack relies on the event dispatcher's render-on-yield
+            // and render-on-completion when bound to the button; this
+            // lifecycle path gets neither, so mirror both here to show
+            // the spinner while the fetch runs and the result after.
+            var load = LoadTrack();
+            StateHasChanged();
+            await load;
+            StateHasChanged();
         }
         catch (JSDisconnectedException) { /* page teardown race */ }
         catch (JSException ex)
@@ -637,22 +644,26 @@
         if (SignalkClient.Data.Latitude is null || SignalkClient.Data.Longitude is null) return;
         double lat = SignalkClient.Data.Latitude.Value;
         double lon = SignalkClient.Data.Longitude.Value;
-        await JS.InvokeVoidAsync("eval", $@"
-            (function() {{
-                var m = window._historyMap;
-                if (!m) return;
-                if (window._historyBoatMarker) m.removeLayer(window._historyBoatMarker);
-                // Pull --sk-accent so the marker tracks theme. Falls
-                // back to the previous frozen sky-blue if the token
-                // isn't set (defensive; in practice every theme block
-                // defines it).
-                var col = getComputedStyle(document.documentElement)
-                    .getPropertyValue('--sk-accent').trim() || '#60a5fa';
-                window._historyBoatMarker = L.circleMarker([{lat}, {lon}], {{
-                    radius: 7, color: col, fillColor: col, fillOpacity: 1, weight: 2
-                }}).bindTooltip('Current position').addTo(m);
-            }})()
-        ");
+        try
+        {
+            await JS.InvokeVoidAsync("eval", $@"
+                (function() {{
+                    var m = window._historyMap;
+                    if (!m) return;
+                    if (window._historyBoatMarker) m.removeLayer(window._historyBoatMarker);
+                    // Pull --sk-accent so the marker tracks theme. Falls
+                    // back to the previous frozen sky-blue if the token
+                    // isn't set (defensive; in practice every theme block
+                    // defines it).
+                    var col = getComputedStyle(document.documentElement)
+                        .getPropertyValue('--sk-accent').trim() || '#60a5fa';
+                    window._historyBoatMarker = L.circleMarker([{lat}, {lon}], {{
+                        radius: 7, color: col, fillColor: col, fillOpacity: 1, weight: 2
+                    }}).bindTooltip('Current position').addTo(m);
+                }})()
+            ");
+        }
+        catch (JSDisconnectedException) { }
     }
 
     private async Task GoToBoat()
@@ -660,12 +671,16 @@
         if (SignalkClient.Data.Latitude is null || SignalkClient.Data.Longitude is null) return;
         double lat = SignalkClient.Data.Latitude.Value;
         double lon = SignalkClient.Data.Longitude.Value;
-        await JS.InvokeVoidAsync("eval", $@"
-            (function() {{
-                var m = window._historyMap;
-                if (m) m.setView([{lat}, {lon}], 14);
-            }})()
-        ");
+        try
+        {
+            await JS.InvokeVoidAsync("eval", $@"
+                (function() {{
+                    var m = window._historyMap;
+                    if (m) m.setView([{lat}, {lon}], 14);
+                }})()
+            ");
+        }
+        catch (JSDisconnectedException) { return; }
         await DrawBoatMarker();
     }
 
@@ -1236,7 +1251,6 @@
         var cts = new CancellationTokenSource();
         cts.CancelAfter(TimeSpan.FromSeconds(30));
         _loadCts = cts;
-        StateHasChanged();
         try
         {
             await LoadTrackInner(cts.Token);
@@ -1262,7 +1276,6 @@
             // assigned a new CTS in between, don't clobber that one.
             if (ReferenceEquals(_loadCts, cts)) _loadCts = null;
             cts.Dispose();
-            StateHasChanged();
         }
     }
 

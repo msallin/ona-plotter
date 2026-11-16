@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
@@ -29,7 +29,7 @@
     <!-- FakeTimeProvider for deterministic clock control in tests
          that exercise the MOB retry-loop backoff schedule. Avoids
          hand-rolling the CreateTimer plumbing. -->
-    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" Version="9.*" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" Version="11.*" />
   </ItemGroup>
 
   <ItemGroup>

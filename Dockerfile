@@ -18,7 +18,7 @@
 #     -e SK_SERVER_URL=https://my-sk:3000 \
 #     ghcr.io/msallin/ona-plotter:<version>
 
-ARG DOTNET_VERSION=10.0
+ARG DOTNET_VERSION=11.0
 
 # -------- Build stage --------
 FROM mcr.microsoft.com/dotnet/sdk:${DOTNET_VERSION}-alpine AS build

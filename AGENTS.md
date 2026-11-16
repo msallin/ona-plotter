@@ -5,7 +5,7 @@ SignalK setup.
 
 ## Scope
 
-Safety-critical marine chartplotter. Blazor WASM, net10.0, no server-side
+Safety-critical marine chartplotter. Blazor WASM, net11.0, no server-side
 Blazor. Runs on iPad / phone / 21" helm touchscreen. Any exception reaching
 Blazor's error UI is a user-visible failure on a boat with flaky wifi.
 Benchmark UX against dedicated commercial chartplotter hardware.

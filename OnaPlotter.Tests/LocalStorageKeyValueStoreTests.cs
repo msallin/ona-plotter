@@ -101,6 +101,44 @@ public class LocalStorageKeyValueStoreTests
     }
 
     [Test]
+    public async Task GetAsync_Returns_Null_When_Js_Runtime_Disconnected()
+    {
+        // Page teardown: the JS runtime is gone. A settings load racing
+        // the teardown must read as "unset" instead of throwing into
+        // Blazor's error UI.
+        using var ctx = new Bunit.TestContext();
+        ctx.JSInterop.Setup<string?>("localStorage.getItem", "ona.k")
+            .SetException(new JSDisconnectedException("gone"));
+        var store = new LocalStorageKeyValueStore(ctx.JSInterop.JSRuntime);
+
+        await Assert.That(await store.GetAsync("k")).IsNull();
+    }
+
+    [Test]
+    public async Task SetAsync_Swallows_Js_Runtime_Disconnected()
+    {
+        // A settings save fired from a component's dispose path lands
+        // after the runtime is gone; there is nowhere to persist to.
+        using var ctx = new Bunit.TestContext();
+        ctx.JSInterop.SetupVoid("localStorage.setItem", "ona.x", "y")
+            .SetException(new JSDisconnectedException("gone"));
+        var store = new LocalStorageKeyValueStore(ctx.JSInterop.JSRuntime);
+
+        await Assert.That(async () => await store.SetAsync("x", "y")).ThrowsNothing();
+    }
+
+    [Test]
+    public async Task RemoveAsync_Swallows_Js_Runtime_Disconnected()
+    {
+        using var ctx = new Bunit.TestContext();
+        ctx.JSInterop.SetupVoid("localStorage.removeItem", "ona.x")
+            .SetException(new JSDisconnectedException("gone"));
+        var store = new LocalStorageKeyValueStore(ctx.JSInterop.JSRuntime);
+
+        await Assert.That(async () => await store.RemoveAsync("x")).ThrowsNothing();
+    }
+
+    [Test]
     public async Task IKeyValueStore_GetAsync_Interface_Adapts_To_Task()
     {
         // The interface returns Task<string?>; the concrete class exposes

@@ -105,10 +105,14 @@ public partial class Map
             }).ToList();
             if (module is not null && existing.Latitude is double elat && existing.Longitude is double elon)
             {
-                await module.InvokeVoidAsync("removeWaypointMarker", editingId);
-                await module.InvokeVoidAsync("addWaypointMarker",
-                    editingId, elat, elon, name,
-                    existing.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture));
+                try
+                {
+                    await module.InvokeVoidAsync("removeWaypointMarker", editingId);
+                    await module.InvokeVoidAsync("addWaypointMarker",
+                        editingId, elat, elon, name,
+                        existing.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture));
+                }
+                catch (JSDisconnectedException) { }
             }
             Toasts.Success($"Saved waypoint '{name}'");
             return;
@@ -133,8 +137,12 @@ public partial class Map
             // immediately. The server's round-trip on next reload
             // will agree (resources-fs preserves the body verbatim).
             string createdAtIso = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture);
-            await module.InvokeVoidAsync("addWaypointMarker",
-                id, contextMenuLat, contextMenuLon, name, createdAtIso);
+            try
+            {
+                await module.InvokeVoidAsync("addWaypointMarker",
+                    id, contextMenuLat, contextMenuLon, name, createdAtIso);
+            }
+            catch (JSDisconnectedException) { }
         }
         loadedWaypoints = await SafeLoad(() => WaypointApi.GetAllAsync(), "waypoints") ?? loadedWaypoints;
         Toasts.Success($"Saved waypoint '{name}'");
@@ -177,7 +185,8 @@ public partial class Map
         if (!r.Success) { Toasts.Error($"Delete waypoint '{label}' failed: {r.Error ?? "server rejected"}"); return; }
 
         if (module is not null)
-            await module.InvokeVoidAsync("removeWaypointMarker", id);
+            try { await module.InvokeVoidAsync("removeWaypointMarker", id); }
+            catch (JSDisconnectedException) { }
         loadedWaypoints.RemoveAll(w => w.Id == id);
         Toasts.Info($"Waypoint '{label}' deleted");
     }
@@ -331,11 +340,15 @@ public partial class Map
             }).ToList();
             if (module is not null && existing.Position is not null)
             {
-                await module.InvokeVoidAsync("removeNoteMarker", editingId);
-                await module.InvokeVoidAsync("addNoteMarker",
-                    editingId, existing.Position.Latitude, existing.Position.Longitude,
-                    title, description,
-                    existing.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture));
+                try
+                {
+                    await module.InvokeVoidAsync("removeNoteMarker", editingId);
+                    await module.InvokeVoidAsync("addNoteMarker",
+                        editingId, existing.Position.Latitude, existing.Position.Longitude,
+                        title, description,
+                        existing.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture));
+                }
+                catch (JSDisconnectedException) { }
             }
             Toasts.Success($"Saved note '{title}'");
             return;
@@ -361,8 +374,12 @@ public partial class Map
             // popup formats this for display; ISO-8601 round-trips
             // through JSInterop without DateTime fuzz.
             string createdAtIso = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture);
-            await module.InvokeVoidAsync("addNoteMarker",
-                id, contextMenuLat, contextMenuLon, title, description, createdAtIso);
+            try
+            {
+                await module.InvokeVoidAsync("addNoteMarker",
+                    id, contextMenuLat, contextMenuLon, title, description, createdAtIso);
+            }
+            catch (JSDisconnectedException) { }
         }
         loadedNotes = await SafeLoad(() => NoteApi.GetAllAsync(), "notes") ?? loadedNotes;
         Toasts.Success($"Saved note '{title}'");
@@ -387,7 +404,8 @@ public partial class Map
         if (!r.Success) { Toasts.Error($"Delete note '{label}' failed: {r.Error ?? "server rejected"}"); return; }
 
         if (module is not null)
-            await module.InvokeVoidAsync("removeNoteMarker", id);
+            try { await module.InvokeVoidAsync("removeNoteMarker", id); }
+            catch (JSDisconnectedException) { }
         loadedNotes.RemoveAll(n => n.Id == id);
         Toasts.Info("Note deleted");
     }
@@ -632,7 +650,8 @@ public partial class Map
         if (!r.Success) { Toasts.Error($"Delete region '{label}' failed: {r.Error ?? "server rejected"}"); return; }
 
         if (module is not null)
-            await module.InvokeVoidAsync("removeRegion", id);
+            try { await module.InvokeVoidAsync("removeRegion", id); }
+            catch (JSDisconnectedException) { }
         loadedRegions.RemoveAll(rg => rg.Id == id);
         Toasts.Info($"Region '{label}' deleted");
     }

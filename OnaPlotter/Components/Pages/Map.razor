@@ -4972,15 +4972,15 @@
     }
 
     /// <summary>Helm edited the chain field. Persist it (so the next
-    /// drop's Auto starts from the same rode assumption) and re-render
-    /// so AutoRadiusPreview / AutoRadiusBreakdown recompute. When Auto
+    /// drop's Auto starts from the same rode assumption); the
+    /// EventCallback dispatch re-renders so AutoRadiusPreview /
+    /// AutoRadiusBreakdown recompute. When Auto
     /// is the panel's active pick, the panel re-emits OnPreviewRadius
     /// off the new AutoPreviewRadius, so the on-map ring follows the
     /// chain entry without a PUT.</summary>
     private async Task OnAnchorPanelChainChanged(int meters)
     {
         await Settings.SetAnchorChainLengthMetersAsync(meters);
-        StateHasChanged();
     }
 
     /// <summary>Commit a pending manual move as part of Set. Reads the

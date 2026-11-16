@@ -1467,7 +1467,7 @@ public class MobServiceTests
 
         // The disconnect raise must not have replaced LastReconcileTask;
         // it should still point at the first reconcile (completed).
-        await Assert.That(f.Service.LastReconcileTask).IsSameReferenceAs(firstReconcile);
+        await Assert.That<Task?>(f.Service.LastReconcileTask).IsSameReferenceAs(firstReconcile);
     }
 
     // ------------------------------------------------------------

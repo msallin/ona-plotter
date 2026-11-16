@@ -90,14 +90,18 @@ public class AlarmRuleMetadataTests
         // here would crash the manager loop and silence ALL alarms.
         // Pin the property's read-without-throw contract for every
         // rule we can construct.
+        int rulesRead = 0;
         foreach (var t in DiscoverRuleTypes())
         {
             var rule = TryConstruct(t);
             if (rule is null) continue;
             // Just reading the property is enough; a throw fails the test.
             _ = rule.AutoClear;
+            rulesRead++;
         }
-        await Assert.That(true).IsTrue();   // explicit pass marker
+        // Guards against a discovery regression that would turn the
+        // loop above into a silent no-op.
+        await Assert.That(rulesRead).IsGreaterThan(0);
     }
 
     private static IAlarmRule? TryConstruct(Type t)

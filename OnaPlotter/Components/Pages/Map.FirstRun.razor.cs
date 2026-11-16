@@ -163,7 +163,14 @@ public partial class Map
             // Auto-dismiss after a generous window so someone glancing
             // up from a chart plot still catches it.
             touchCoachmarkTimer = new System.Threading.Timer(
-                _ => _ = InvokeAsync(async () => await DismissTouchCoachmark()),
+                // Timer callbacks get no implicit post-event render,
+                // so this path renders explicitly; the @onclick path
+                // is re-rendered by the event dispatcher.
+                _ => _ = InvokeAsync(async () =>
+                {
+                    await DismissTouchCoachmark();
+                    StateHasChanged();
+                }),
                 null, 6_000, Timeout.Infinite);
         }
         catch (Exception) { /* KV unavailable in some test hosts; degrade silently. */ }
@@ -176,6 +183,5 @@ public partial class Map
         touchCoachmarkTimer?.Dispose();
         touchCoachmarkTimer = null;
         try { await Kv.SetAsync(TouchCoachmarkKey, "1"); } catch { }
-        StateHasChanged();
     }
 }

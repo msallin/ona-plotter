@@ -619,7 +619,6 @@
         totals = null;
         daily = [];
         loading = true;
-        StateHasChanged();
         // 30 s timeout backstops a wedged or under-provisioned history
         // server. Aggregate computes can hit that cap on long
         // (year-scale) windows at 30 s resolution; the helm is asked

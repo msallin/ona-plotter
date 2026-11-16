@@ -810,7 +810,6 @@
     {
         await Settings.MarkManualNightToggleAsync(SunClusterFromState(SignalkClient.Data.SunState));
         await Settings.SetNightModeAsync(!Settings.NightMode);
-        StateHasChanged();
     }
 
     /// <summary>Same env.sun cluster mapping as Map.SunClusterFromState
@@ -889,18 +888,17 @@
     // instance as Map.razor via ES module caching, so these drive the
     // exact same `map` object the Map page set up. No-op when the
     // module hasn't loaded yet / map not initialised (JS guards that).
-    private async Task EnsureLeafletModuleAsync()
-    {
-        leafletModule ??= await JS.InvokeAsync<IJSObjectReference>(
-            "import", "./js/leafletInterop.js");
-    }
+    // Each caller imports lazily inside its own try block so the
+    // import shares the JSDisconnectedException guard of the call
+    // that follows it.
+    private const string LeafletModulePath = "./js/leafletInterop.js";
 
     private async Task ZoomInAsync()
     {
         try
         {
-            await EnsureLeafletModuleAsync();
-            await leafletModule!.InvokeVoidAsync("zoomIn", 1);
+            leafletModule ??= await JS.InvokeAsync<IJSObjectReference>("import", LeafletModulePath);
+            await leafletModule.InvokeVoidAsync("zoomIn", 1);
         }
         catch (JSDisconnectedException) { }
     }
@@ -917,11 +915,11 @@
     {
         try
         {
-            await EnsureLeafletModuleAsync();
+            leafletModule ??= await JS.InvokeAsync<IJSObjectReference>("import", LeafletModulePath);
             // null zoom -> JS keeps current zoom but lifts to a
             // sensible minimum (12) so a world-zoom helm searching
             // a city doesn't end up looking at a continent.
-            await leafletModule!.InvokeVoidAsync(
+            await leafletModule.InvokeVoidAsync(
                 "flyToSearchResult", result.Lat, result.Lon, null);
         }
         catch (JSDisconnectedException) { }
@@ -950,8 +948,8 @@
     {
         try
         {
-            await EnsureLeafletModuleAsync();
-            await leafletModule!.InvokeVoidAsync("clearSearchPin");
+            leafletModule ??= await JS.InvokeAsync<IJSObjectReference>("import", LeafletModulePath);
+            await leafletModule.InvokeVoidAsync("clearSearchPin");
         }
         catch (JSDisconnectedException) { }
         catch (JSException ex)
@@ -964,8 +962,8 @@
     {
         try
         {
-            await EnsureLeafletModuleAsync();
-            await leafletModule!.InvokeVoidAsync("zoomOut", 1);
+            leafletModule ??= await JS.InvokeAsync<IJSObjectReference>("import", LeafletModulePath);
+            await leafletModule.InvokeVoidAsync("zoomOut", 1);
         }
         catch (JSDisconnectedException) { }
     }
@@ -1079,71 +1077,74 @@
             // OnAlarmsChanged event fires if anything was loaded.
             await Alarms.InitializeAsync();
             StateHasChanged();
-            audioModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/platform/audioAlert.js");
-            fsModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/platform/fullscreen.js");
-            // Theme module applies theme + night-mode classes to <html>
-            // so body background + anything outside .page honours the
-            // palette. Both writes go through the helper's whitelist so
-            // a corrupt Settings store can't smuggle a class injection.
-            themeModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/platform/themeApply.js");
+            // One guard for the whole module wiring sequence: a
+            // JSDisconnectedException here means the layout is being
+            // torn down, so the remaining steps (and the first-run
+            // offline timer below) have nothing left to attach to.
             try
             {
+                audioModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/platform/audioAlert.js");
+                fsModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/platform/fullscreen.js");
+                // Theme module applies theme + night-mode classes to <html>
+                // so body background + anything outside .page honours the
+                // palette. Both writes go through the helper's whitelist so
+                // a corrupt Settings store can't smuggle a class injection.
+                themeModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/platform/themeApply.js");
                 await themeModule.InvokeVoidAsync("setTheme", EffectiveTheme);
                 await themeModule.InvokeVoidAsync("setNightMode",
                     Settings.NightMode);
-            }
-            catch (JSDisconnectedException) { }
-            fsSelfRef = DotNetObjectReference.Create(this);
-            await fsModule.InvokeVoidAsync("subscribe", fsSelfRef);
+                fsSelfRef = DotNetObjectReference.Create(this);
+                await fsModule.InvokeVoidAsync("subscribe", fsSelfRef);
 
-            // Hook tab-visibilitychange so the not-logged-in chip
-            // re-probes the server the moment the helm returns from
-            // signing in via the SK admin tab. The same fsSelfRef
-            // doubles as the JSInvokable target - one DotNetObjectReference
-            // serves both fullscreen-state and tab-visible callbacks.
-            // Best-effort: a missing module file or a JSDisconnected at
-            // boot leaves us on the 5-min poll fallback rather than
-            // failing the whole layout init.
-            try
-            {
-                visibilityModule = await JS.InvokeAsync<IJSObjectReference>(
-                    "import", "./js/visibility.js");
-                await visibilityModule.InvokeVoidAsync(
-                    "attachVisibilityListener", fsSelfRef, nameof(OnTabVisible));
-            }
-            catch (JSDisconnectedException) { }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"[auth] visibility hook failed: {ex.Message}");
-            }
-            // Wire a native click listener to the fullscreen button
-            // (NOT via Blazor @onclick). Safari / iOS reject
-            // requestFullscreen() if the call isn't synchronous with
-            // a user gesture, and Blazor's event dispatcher crosses
-            // enough async boundaries to break the gesture chain.
-            // Resolve fullscreen support BEFORE attaching the trigger
-            // so an unsupported browser (iPad Safari tab mode) hides
-            // the button entirely; no point wiring a listener to an
-            // element about to unmount via the d-none class swap.
-            fullscreenSupported = await fsModule.InvokeAsync<bool>("isSupported");
-            if (fullscreenSupported)
-            {
-                await fsModule.InvokeVoidAsync("attachTrigger", fsBtnRef);
-            }
-            isFullscreen = await fsModule.InvokeAsync<bool>("getState");
-            StateHasChanged();
-
-            // Wake lock is now managed from here rather than from the
-            // Map page, so switching Chart -> Wind / History / Settings
-            // mid-watch doesn't drop the screen lock. Lives in its own
-            // tiny module (wakeLock.js) so importing doesn't drag the
-            // whole Leaflet bundle in.
-            wakeLockModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/platform/wakeLock.js");
-            if (Settings.KeepScreenAwake)
-            {
-                try { await wakeLockModule.InvokeVoidAsync("setWakeLock", true); }
+                // Hook tab-visibilitychange so the not-logged-in chip
+                // re-probes the server the moment the helm returns from
+                // signing in via the SK admin tab. The same fsSelfRef
+                // doubles as the JSInvokable target - one DotNetObjectReference
+                // serves both fullscreen-state and tab-visible callbacks.
+                // Best-effort: a missing module file or a JSDisconnected at
+                // boot leaves us on the 5-min poll fallback rather than
+                // failing the whole layout init.
+                try
+                {
+                    visibilityModule = await JS.InvokeAsync<IJSObjectReference>(
+                        "import", "./js/visibility.js");
+                    await visibilityModule.InvokeVoidAsync(
+                        "attachVisibilityListener", fsSelfRef, nameof(OnTabVisible));
+                }
                 catch (JSDisconnectedException) { }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"[auth] visibility hook failed: {ex.Message}");
+                }
+                // Wire a native click listener to the fullscreen button
+                // (NOT via Blazor @onclick). Safari / iOS reject
+                // requestFullscreen() if the call isn't synchronous with
+                // a user gesture, and Blazor's event dispatcher crosses
+                // enough async boundaries to break the gesture chain.
+                // Resolve fullscreen support BEFORE attaching the trigger
+                // so an unsupported browser (iPad Safari tab mode) hides
+                // the button entirely; no point wiring a listener to an
+                // element about to unmount via the d-none class swap.
+                fullscreenSupported = await fsModule.InvokeAsync<bool>("isSupported");
+                if (fullscreenSupported)
+                {
+                    await fsModule.InvokeVoidAsync("attachTrigger", fsBtnRef);
+                }
+                isFullscreen = await fsModule.InvokeAsync<bool>("getState");
+                StateHasChanged();
+
+                // Wake lock is now managed from here rather than from the
+                // Map page, so switching Chart -> Wind / History / Settings
+                // mid-watch doesn't drop the screen lock. Lives in its own
+                // tiny module (wakeLock.js) so importing doesn't drag the
+                // whole Leaflet bundle in.
+                wakeLockModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/platform/wakeLock.js");
+                if (Settings.KeepScreenAwake)
+                {
+                    await wakeLockModule.InvokeVoidAsync("setWakeLock", true);
+                }
             }
+            catch (JSDisconnectedException) { return; }
 
             // First-run offline guidance. If we never connect within 5s of
             // the app loading, surface a toast pointing at the SignalK

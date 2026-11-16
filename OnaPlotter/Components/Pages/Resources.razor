@@ -709,7 +709,6 @@
         _importProgressTotal = 0;
         _importCts = new CancellationTokenSource();
         var ct = _importCts.Token;
-        StateHasChanged();
         try
         {
             string content;
@@ -870,7 +869,6 @@
             _importProgressTotal = 0;
             _importCts?.Dispose();
             _importCts = null;
-            StateHasChanged();
         }
 
         static string Plural(int n) => n == 1 ? "" : "s";
