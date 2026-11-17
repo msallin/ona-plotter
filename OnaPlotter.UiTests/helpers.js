@@ -63,7 +63,9 @@ export function collectErrors(page) {
         if (text.includes('net::ERR_FAILED')) return;
         if (text.includes('net::ERR_CONNECTION_REFUSED')) return;
         if (text.includes('Failed to load resource: net::ERR')) return;
-        errors.push(`console.error: ${text}`);
+        // A failed fetch logs only the status; the location carries the URL.
+        const url = msg.location()?.url;
+        errors.push(url ? `console.error: ${text} [${url}]` : `console.error: ${text}`);
     });
     // Blazor renders a fixed-id error UI for unhandled exceptions.
     // Watch for it becoming visible.

@@ -11,6 +11,9 @@ import { collectErrors, waitForMapReady } from './helpers.js';
 const ROUTES = ['', 'map', 'sailsteer', 'wind', 'history', 'resources', 'paths', 'raw', 'settings'];
 
 test('every top-level page renders without crashing', async ({ page }) => {
+    // Nine routes with a settle wait each; WebKit needs more than the
+    // 60 s default.
+    test.setTimeout(150_000);
     const { errors, assertBlazorErrorNotVisible } = collectErrors(page);
 
     // Blazor's <NotFound> template (App.razor) renders this exact phrase
