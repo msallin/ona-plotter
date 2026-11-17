@@ -48,9 +48,6 @@ public static class GeoMath
     /// <summary>
     /// Great-circle distance in metres between two lat/lon points
     /// (decimal degrees). Haversine on a sphere of mean Earth radius.
-    /// Same formula as the existing <c>RouteProgress.HaversineMeters</c>;
-    /// kept as a separate entry-point so non-route code reads as
-    /// "geometry helper" rather than "route progress helper".
     /// </summary>
     public static double HaversineMeters(double lat1, double lon1, double lat2, double lon2)
     {

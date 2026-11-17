@@ -310,7 +310,7 @@ public class RouteProgressTests
         // approximation here while leaving HaversineMeters alone.
         var coords = new double[][] { [47.00, 8.00], [47.10, 8.10] };
         var total = RouteProgress.TotalDistanceMeters(coords);
-        var leg = RouteProgress.HaversineMeters(47.00, 8.00, 47.10, 8.10);
+        var leg = GeoMath.HaversineMeters(47.00, 8.00, 47.10, 8.10);
         await Assert.That(total).IsEqualTo(leg);
     }
 
@@ -327,9 +327,9 @@ public class RouteProgressTests
             [47.30, 8.30],
         ];
         double expected =
-            RouteProgress.HaversineMeters(47.00, 8.00, 47.10, 8.10)
-          + RouteProgress.HaversineMeters(47.10, 8.10, 47.20, 8.20)
-          + RouteProgress.HaversineMeters(47.20, 8.20, 47.30, 8.30);
+            GeoMath.HaversineMeters(47.00, 8.00, 47.10, 8.10)
+          + GeoMath.HaversineMeters(47.10, 8.10, 47.20, 8.20)
+          + GeoMath.HaversineMeters(47.20, 8.20, 47.30, 8.30);
         var total = RouteProgress.TotalDistanceMeters(route);
 
         // Allow a tiny tolerance for floating-point drift across the

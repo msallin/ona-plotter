@@ -4452,7 +4452,7 @@
                  && Data.Latitude is double lat
                  && Data.Longitude is double lon)
         {
-            double distM = OnaPlotter.Utilities.RouteProgress.HaversineMeters(aLat, aLon, lat, lon);
+            double distM = OnaPlotter.Utilities.GeoMath.HaversineMeters(aLat, aLon, lat, lon);
             if (double.IsFinite(distM) && distM >= 0)
             {
                 observed = distM;
@@ -4711,7 +4711,7 @@
             moved is OnaPlotter.Services.Js.AnchorLatLng m
             && Data.AnchorLatitude is double sLat
             && Data.AnchorLongitude is double sLon
-            && OnaPlotter.Utilities.RouteProgress.HaversineMeters(sLat, sLon, m.Lat, m.Lon) >= 0.5;
+            && OnaPlotter.Utilities.GeoMath.HaversineMeters(sLat, sLon, m.Lat, m.Lon) >= 0.5;
 
         if (!moveIsRealistic)
         {

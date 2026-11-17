@@ -214,7 +214,7 @@ public sealed class SignalkClient : ISignalkClient, OnaPlotter.Services.Startup.
         // adopts the plugin's authoritative readouts (rode counter,
         // bow-corrected distance + bearing) the moment a helm
         // upgrades the plugin - no client redeploy required. The
-        // client-side GeoBearing fallback in the HUD card stays put
+        // client-side GeoMath.BearingDeg fallback in the HUD card stays put
         // for the JS-only manual flow.
         Utilities.SkPaths.Navigation.Anchor.BearingTrue,
         Utilities.SkPaths.Navigation.Anchor.ApparentBearing,

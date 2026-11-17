@@ -318,7 +318,7 @@ yesterday's WASM with today's HTML.
 - `Services/Map/*` - diff-and-push `*Controller`s around JS interop.
 - `Services/Signalk/*` - delta dispatcher, per-store handlers, REST seeders.
 - `Utilities/*.cs` - pure math (Cpa, Colregs, Format, AisPalette,
-  GeoBearing, RouteProgress).
+  GeoMath, RouteProgress).
 - `Models/*.cs` - value records (TrackPoint, TrackBbox, ...).
 - `wwwroot/js/leafletInterop.js` + sibling modules - renderer;
   `mapRotation.js` course-up; `historyMapLayer.js` History map.

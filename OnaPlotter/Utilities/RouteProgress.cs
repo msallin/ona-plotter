@@ -91,25 +91,8 @@ public static class RouteProgress
             var a = coords[i - 1];
             var b = coords[i];
             if (a is null || b is null || a.Length < 2 || b.Length < 2) continue;
-            sum += HaversineMeters(a[0], a[1], b[0], b[1]);
+            sum += GeoMath.HaversineMeters(a[0], a[1], b[0], b[1]);
         }
         return sum;
-    }
-
-    /// <summary>Great-circle distance in metres between two lat/lon
-    /// points. Mean Earth radius 6,371,000 m - accurate to ~0.5%
-    /// across the typical sailing scale.</summary>
-    public static double HaversineMeters(double lat1, double lon1, double lat2, double lon2)
-    {
-        const double R = 6_371_000.0;
-        double phi1 = lat1 * Math.PI / 180.0;
-        double phi2 = lat2 * Math.PI / 180.0;
-        double dPhi = (lat2 - lat1) * Math.PI / 180.0;
-        double dLam = (lon2 - lon1) * Math.PI / 180.0;
-        double a = Math.Sin(dPhi / 2) * Math.Sin(dPhi / 2)
-            + Math.Cos(phi1) * Math.Cos(phi2)
-            * Math.Sin(dLam / 2) * Math.Sin(dLam / 2);
-        double c = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
-        return R * c;
     }
 }

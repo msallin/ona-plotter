@@ -84,8 +84,8 @@ public class RouteProgressFuzzTests
             double lat2 = rng.NextDouble() * 160.0 - 80.0;
             double lon2 = rng.NextDouble() * 360.0 - 180.0;
 
-            double d1 = RouteProgress.HaversineMeters(lat1, lon1, lat2, lon2);
-            double d2 = RouteProgress.HaversineMeters(lat2, lon2, lat1, lon1);
+            double d1 = GeoMath.HaversineMeters(lat1, lon1, lat2, lon2);
+            double d2 = GeoMath.HaversineMeters(lat2, lon2, lat1, lon1);
 
             await Assert.That(double.IsFinite(d1)).IsTrue();
             await Assert.That(d1).IsGreaterThanOrEqualTo(0.0);
@@ -104,7 +104,7 @@ public class RouteProgressFuzzTests
         {
             double lat = rng.NextDouble() * 160.0 - 80.0;
             double lon = rng.NextDouble() * 360.0 - 180.0;
-            double d = RouteProgress.HaversineMeters(lat, lon, lat, lon);
+            double d = GeoMath.HaversineMeters(lat, lon, lat, lon);
             // 0.001 mm: tiny floating-point dust acceptable.
             await Assert.That(d).IsLessThan(1e-6);
         }
@@ -125,9 +125,9 @@ public class RouteProgressFuzzTests
             double[] b = [rng.NextDouble() * 60.0 - 30.0, rng.NextDouble() * 60.0 - 30.0];
             double[] c = [rng.NextDouble() * 60.0 - 30.0, rng.NextDouble() * 60.0 - 30.0];
 
-            double ab = RouteProgress.HaversineMeters(a[0], a[1], b[0], b[1]);
-            double bc = RouteProgress.HaversineMeters(b[0], b[1], c[0], c[1]);
-            double ac = RouteProgress.HaversineMeters(a[0], a[1], c[0], c[1]);
+            double ab = GeoMath.HaversineMeters(a[0], a[1], b[0], b[1]);
+            double bc = GeoMath.HaversineMeters(b[0], b[1], c[0], c[1]);
+            double ac = GeoMath.HaversineMeters(a[0], a[1], c[0], c[1]);
 
             await Assert.That(ac).IsLessThanOrEqualTo(ab + bc + 1.0);
         }
@@ -155,7 +155,7 @@ public class RouteProgressFuzzTests
             double total = RouteProgress.TotalDistanceMeters(coords);
             double sum = 0;
             for (int j = 1; j < n; j++)
-                sum += RouteProgress.HaversineMeters(
+                sum += GeoMath.HaversineMeters(
                     coords[j - 1][0], coords[j - 1][1],
                     coords[j][0],     coords[j][1]);
             // 1 ppm tolerance for round-off across both paths.

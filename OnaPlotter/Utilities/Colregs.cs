@@ -139,7 +139,7 @@ public static class Colregs
             return new Result(Category.Indeterminate, Role.None);
 
         // Absolute bearing from own to target (0..360 degrees, 0 = north).
-        double bearing = BearingDeg(ownLat, ownLon, tgtLat, tgtLon);
+        double bearing = GeoMath.BearingDeg(ownLat, ownLon, tgtLat, tgtLon);
 
         // Relative bearing: 0 = dead ahead, 90 = starboard beam, 180 = dead astern.
         double ownCogDeg = Norm360(ownCogRad * RadToDeg);
@@ -247,15 +247,6 @@ public static class Colregs
         double relE = tgtSogMs * Math.Sin(tc) - ownSogMs * Math.Sin(oc);
         double relN = tgtSogMs * Math.Cos(tc) - ownSogMs * Math.Cos(oc);
         return losE * relE + losN * relN < 0;
-    }
-
-    private static double BearingDeg(double lat1, double lon1, double lat2, double lon2)
-    {
-        double lat1r = lat1 * DegToRad, lat2r = lat2 * DegToRad;
-        double dLon = (lon2 - lon1) * DegToRad;
-        double y = Math.Sin(dLon) * Math.Cos(lat2r);
-        double x = Math.Cos(lat1r) * Math.Sin(lat2r) - Math.Sin(lat1r) * Math.Cos(lat2r) * Math.Cos(dLon);
-        return Norm360(Math.Atan2(y, x) * RadToDeg);
     }
 
     private static double Norm360(double deg)

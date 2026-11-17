@@ -231,7 +231,7 @@ public sealed class NavigationData
     /// HUD card renders a small needle at this bearing so the helm can
     /// sight the anchor at night when it's out of view. Null on the
     /// JS-only manual flow + on plugin v1.x; in those cases the HUD
-    /// computes a substitute via Utilities.GeoBearing.</summary>
+    /// computes a substitute via GeoMath.BearingDeg.</summary>
     public double? AnchorBearingTrue { get; private set; }
 
     /// <summary>Apparent bearing - bearing back to anchor in
@@ -620,7 +620,7 @@ public sealed class NavigationData
                 && AnchorLongitude is double prevLon
                 && (Math.Abs(prevLat - latitude) > 1e-7
                     || Math.Abs(prevLon - longitude) > 1e-7)
-                && OnaPlotter.Utilities.RouteProgress.HaversineMeters(prevLat, prevLon, latitude, longitude) > ReDropResetMetres;
+                && OnaPlotter.Utilities.GeoMath.HaversineMeters(prevLat, prevLon, latitude, longitude) > ReDropResetMetres;
             AnchorLatitude = latitude;
             AnchorLongitude = longitude;
             if (isReDrop)
@@ -647,7 +647,7 @@ public sealed class NavigationData
             // followed by a re-drop in a different anchorage doesn't
             // surface stale rode / bearing / distance from the
             // previous spot for one tick before the new ones land.
-            // The HUD-side substitute (GeoBearing on lat/lon) also
+            // The HUD-side substitute (GeoMath.BearingDeg on lat/lon) also
             // stops rendering naturally once AnchorLatitude is null.
             AnchorBearingTrue = null;
             AnchorApparentBearing = null;

@@ -131,7 +131,7 @@
         string? DormantReason,
         double? PeakRadius = null,
         // True-north bearing back to the anchor (radians, 0..2pi).
-        // Computed client-side via Utilities.GeoBearing in the parent
+        // Computed client-side via GeoMath.BearingDeg in the parent
         // (MapHud.BuildAnchorSnapshot) from anchor + own-ship lat/lon
         // so it works on both the plugin and the JS-only manual flow.
         // Null when either endpoint is missing (no GPS, no anchor)

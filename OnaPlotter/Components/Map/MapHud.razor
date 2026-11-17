@@ -1267,9 +1267,10 @@
             // pin + own-ship position. Null when either endpoint is
             // missing - the HUD card uses that as the needle's hide
             // signal.
-            BearingTrue: OnaPlotter.Utilities.GeoBearing.RadiansFromTo(
-                Data.Latitude, Data.Longitude,
-                Data.AnchorLatitude, Data.AnchorLongitude));
+            BearingTrue: Data.Latitude is double lat && Data.Longitude is double lon
+                && Data.AnchorLatitude is double anchorLat && Data.AnchorLongitude is double anchorLon
+                ? GeoMath.BearingDeg(lat, lon, anchorLat, anchorLon) * GeoMath.DegToRad
+                : null);
 
     // NOAA / UKHO station names often run 40+ chars. The BL depth-
     // card width budget is tight; a long name pushes the row off the

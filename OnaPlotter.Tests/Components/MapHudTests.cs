@@ -510,7 +510,7 @@ public class MapHudTests
 
     // ---- Anchor bearing source ----
     // BuildAnchorSnapshot computes the bearing client-side via
-    // Utilities.GeoBearing from anchor + own-ship lat/lon. Pin the
+    // GeoMath.BearingDeg from anchor + own-ship lat/lon. Pin the
     // happy path (renders) and the no-GPS case (hides) so a refactor
     // that swaps the source can't silently regress.
 
@@ -526,18 +526,20 @@ public class MapHudTests
         var cut = Render(ctx, data);
 
         await Assert.That(cut.FindAll(".anchor-bearing").Count).IsEqualTo(1);
+        // Boat due north of the anchor: the bearing back to it is due south.
+        await Assert.That(cut.Find(".anchor-bearing-value").TextContent).Contains("180");
     }
 
     [Test]
     public async Task BuildAnchorSnapshot_HidesNeedle_WhenOwnShipPositionMissing()
     {
-        // No GPS fix on own-ship - GeoBearing returns null and
+        // No GPS fix on own-ship - the HUD gives a null bearing and
         // the needle hides.
         using var ctx = new Bunit.BunitContext();
         var data = new NavigationData();
         data.ApplyAnchorPosition(0.0, 0.0);
         data.Apply("navigation.anchor.maxRadius", 30.0);
-        // No ApplyPosition for own-ship - GeoBearing returns null.
+        // No ApplyPosition for own-ship - the HUD gives a null bearing.
 
         var cut = Render(ctx, data);
 

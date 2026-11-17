@@ -139,7 +139,7 @@ public static class TrackSegmenter
         if (other is null) return false;
         var dt = Math.Abs((p.Timestamp - other.Timestamp).TotalSeconds);
         if (dt <= 0) return false;     // belt-and-braces; the loop already filters
-        var dm = RouteProgress.HaversineMeters(
+        var dm = GeoMath.HaversineMeters(
             other.Latitude, other.Longitude, p.Latitude, p.Longitude);
         return (dm / dt) > MovingThresholdMs;
     }
@@ -272,7 +272,7 @@ public static class TrackSegmenter
         double distance = 0.0;
         for (int i = startIdx + 1; i <= endIdx; i++)
         {
-            distance += RouteProgress.HaversineMeters(
+            distance += GeoMath.HaversineMeters(
                 points[i - 1].Latitude, points[i - 1].Longitude,
                 points[i].Latitude, points[i].Longitude);
         }

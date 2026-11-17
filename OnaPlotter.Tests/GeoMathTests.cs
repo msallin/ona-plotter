@@ -131,6 +131,48 @@ public class GeoMathTests
     }
 
     [Test]
+    public async Task BearingDeg_SamePoint_ReturnsZero()
+    {
+        // atan2(0, 0) is 0; pin so a refactor can't introduce NaN here.
+        await Assert.That(GeoMath.BearingDeg(46.4, 6.5, 46.4, 6.5)).IsEqualTo(0.0);
+    }
+
+    [Test]
+    public async Task BearingDeg_FromFiniteLatitude_CardinalsMatchRadiansConversion()
+    {
+        // The anchor HUD converts BearingDeg to radians; the cardinals at
+        // Lac Leman must land on 0, pi/2, pi, 3pi/2 within a milli-degree.
+        var cases = new (double Lat, double Lon, double ExpectedRad)[]
+        {
+            (46.401, 6.5, 0.0),
+            (46.4, 6.501, Math.PI / 2.0),
+            (46.399, 6.5, Math.PI),
+            (46.4, 6.499, 3.0 * Math.PI / 2.0),
+        };
+        foreach (var (lat, lon, expected) in cases)
+        {
+            double rad = GeoMath.BearingDeg(46.4, 6.5, lat, lon) * GeoMath.DegToRad;
+            await Assert.That(rad).IsGreaterThanOrEqualTo(0.0);
+            await Assert.That(rad).IsLessThan(2.0 * Math.PI);
+            await Assert.That(rad).IsCloseTo(expected, 1e-3);
+        }
+    }
+
+    [Test]
+    public async Task BearingDeg_FromNorthPole_PointsSouthOnEveryMeridian()
+    {
+        // At the pole every direction is south; atan2 must still return a
+        // finite value in [0, 360) rather than NaN.
+        for (double lon = -180; lon <= 180; lon += 45)
+        {
+            double b = GeoMath.BearingDeg(90.0, 0.0, 45.0, lon);
+            await Assert.That(double.IsFinite(b)).IsTrue();
+            await Assert.That(b).IsGreaterThanOrEqualTo(0);
+            await Assert.That(b).IsLessThan(360);
+        }
+    }
+
+    [Test]
     public async Task DestPoint_Roundtrip_ReturnsApproximateOriginal()
     {
         // Walk 1 km north from a known fix; the destination's lat
