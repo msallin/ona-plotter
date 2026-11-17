@@ -1,4 +1,5 @@
 using System.Globalization;
+using OnaPlotter.Models;
 
 namespace OnaPlotter.Utilities;
 
@@ -143,6 +144,38 @@ public static class Format
         meters < 1000
             ? string.Create(CultureInfo.InvariantCulture, $"{meters} m")
             : string.Create(CultureInfo.InvariantCulture, $"{meters / MetersPerNm:F1} nm");
+
+    /// <summary>Label for one radar range option. Prefers the radar's own
+    /// per-value description ("1/4 nm", "1.5 nm", "24 nm") so the control
+    /// matches what the helm sees on a brand-native MFD; falls back to
+    /// <see cref="RadarRange(int)"/> when the description for that exact
+    /// metres value is absent.</summary>
+    public static string RadarRange(RadarInfo radar, int meters,
+        IReadOnlyDictionary<string, RadarCapabilities?> capabilities)
+    {
+        if (capabilities.TryGetValue(radar.Id, out var caps)
+            && caps?.Controls.TryGetValue("range", out var rangeCtl) == true
+            && rangeCtl.Descriptions is { } desc
+            && desc.TryGetValue(meters.ToString(CultureInfo.InvariantCulture), out var label)
+            && !string.IsNullOrWhiteSpace(label))
+        {
+            return label;
+        }
+        return RadarRange(meters);
+    }
+
+    /// <summary>Compact time until <paramref name="futureUtc"/>: "now",
+    /// "42m", "3h", "3h05". <paramref name="prefix"/> goes before every
+    /// non-"now" value ("in 3h").</summary>
+    public static string Interval(DateTime futureUtc, DateTime nowUtc, string prefix = "")
+    {
+        var span = futureUtc - nowUtc;
+        if (span.TotalSeconds <= 0) return "now";
+        if (span.TotalMinutes < 60) return $"{prefix}{(int)span.TotalMinutes}m";
+        int hours = (int)span.TotalHours;
+        int minutes = (int)(span.TotalMinutes - hours * 60);
+        return minutes == 0 ? $"{prefix}{hours}h" : $"{prefix}{hours}h{minutes:D2}";
+    }
 
     /// <summary>Value for an HTML <c>datetime-local</c> input:
     /// <c>yyyy-MM-ddTHH:mm</c>. Any other shape (seconds, offset) renders

@@ -672,20 +672,16 @@
         v is null ? "sailsteer-value sailsteer-value-muted" : "sailsteer-value";
 
     private static MarkupString Txt(double x, double y, string content, string cls) =>
-        new($"<text x=\"{x:F1}\" y=\"{y:F1}\" class=\"{cls}\" text-anchor=\"middle\">{Esc(content)}</text>");
+        new(SvgText.Element(x, y, content, cssClass: cls, centralBaseline: false));
 
     private static MarkupString SvgTxt(double x, double y, string content, string fill, int fontSize, string fontWeight) =>
-        new($"<text x=\"{x:F1}\" y=\"{y:F1}\" style=\"fill: {fill};\" font-size=\"{fontSize}\" font-weight=\"{fontWeight}\" " +
-            $"text-anchor=\"middle\" dominant-baseline=\"central\">{Esc(content)}</text>");
+        new(SvgText.Element(x, y, content, styleFill: fill, fontSize: fontSize, fontWeight: fontWeight));
 
     // Class-based variant used by the rotating compass cardinals so
     // the fill colour follows the theme (--sk-text / --sk-text-muted /
     // --sev-danger for North) instead of being baked into the markup.
     private static MarkupString SvgTxtCls(double x, double y, string content, string cls, int fontSize, string fontWeight) =>
-        new($"<text x=\"{x:F1}\" y=\"{y:F1}\" class=\"{cls}\" font-size=\"{fontSize}\" font-weight=\"{fontWeight}\" " +
-            $"text-anchor=\"middle\" dominant-baseline=\"central\">{Esc(content)}</text>");
-
-    private static string Esc(string s) => System.Net.WebUtility.HtmlEncode(s);
+        new(SvgText.Element(x, y, content, cssClass: cls, fontSize: fontSize, fontWeight: fontWeight));
 
     /// <summary>Caps re-renders at 4 Hz: the steering SVG is rebuilt on
     /// every render and self deltas arrive 25-35 times a second.</summary>

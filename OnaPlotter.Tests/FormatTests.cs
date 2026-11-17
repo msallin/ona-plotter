@@ -273,4 +273,64 @@ public class FormatTests
     {
         await Assert.That(Format.Eta(ttgSeconds, EvenOfJune1)).IsEqualTo(expected);
     }
+
+    // - RadarRange with the radar's own descriptions -----------------
+
+    private static IReadOnlyDictionary<string, OnaPlotter.Models.RadarCapabilities?> RangeCaps(
+        string radarId, int meters, string? description)
+    {
+        var caps = new OnaPlotter.Models.RadarCapabilities();
+        caps.Controls["range"] = new OnaPlotter.Models.ControlDefinition
+        {
+            Descriptions = new Dictionary<string, string> { [meters.ToString()] = description! },
+        };
+        return new Dictionary<string, OnaPlotter.Models.RadarCapabilities?> { [radarId] = caps };
+    }
+
+    [Test]
+    public async Task RadarRange_PrefersTheRadarsDescription()
+    {
+        var radar = new OnaPlotter.Models.RadarInfo { Id = "r1" };
+
+        await Assert.That(Format.RadarRange(radar, 463, RangeCaps("r1", 463, "1/4 nm"))).IsEqualTo("1/4 nm");
+    }
+
+    [Test]
+    public async Task RadarRange_FallsBackWhenNoDescriptionForThatValue()
+    {
+        var radar = new OnaPlotter.Models.RadarInfo { Id = "r1" };
+
+        await Assert.That(Format.RadarRange(radar, 1852, RangeCaps("r1", 463, "1/4 nm"))).IsEqualTo("1.0 nm");
+        await Assert.That(Format.RadarRange(radar, 463, RangeCaps("r1", 463, "  "))).IsEqualTo("463 m");
+        await Assert.That(Format.RadarRange(radar, 250, RangeCaps("other", 250, "x"))).IsEqualTo("250 m");
+        await Assert.That(Format.RadarRange(radar, 250,
+            new Dictionary<string, OnaPlotter.Models.RadarCapabilities?> { ["r1"] = null })).IsEqualTo("250 m");
+    }
+
+    // - Interval ------------------------------------------------------
+
+    [Test]
+    [Arguments(-5, "now")]
+    [Arguments(0, "now")]
+    [Arguments(59 * 60, "59m")]
+    [Arguments(60 * 60, "1h")]
+    [Arguments(3 * 3600 + 5 * 60, "3h05")]
+    [Arguments(3 * 3600 + 59, "3h")]
+    public async Task Interval_FormatsTimeUntil(int seconds, string expected)
+    {
+        var now = TestClock.FixedUtcNow;
+
+        await Assert.That(Format.Interval(now.AddSeconds(seconds), now)).IsEqualTo(expected);
+    }
+
+    [Test]
+    public async Task Interval_PrefixAppliesToEveryValueButNow()
+    {
+        var now = TestClock.FixedUtcNow;
+
+        await Assert.That(Format.Interval(now.AddMinutes(42), now, "in ")).IsEqualTo("in 42m");
+        await Assert.That(Format.Interval(now.AddMinutes(125), now, "in ")).IsEqualTo("in 2h05");
+        await Assert.That(Format.Interval(now.AddMinutes(120), now, "in ")).IsEqualTo("in 2h");
+        await Assert.That(Format.Interval(now, now, "in ")).IsEqualTo("now");
+    }
 }

@@ -1163,15 +1163,7 @@
     private string TideArrow => NextExtreme?.Label == "HW" ? "\u25B2" : "\u25BC";
     private string TideDirectionLabel => NextExtreme?.Label == "HW" ? "flooding" : "ebbing";
 
-    private static string FormatInterval(DateTime futureUtc)
-    {
-        var span = futureUtc - DateTime.UtcNow;
-        if (span.TotalSeconds <= 0) return "now";
-        if (span.TotalMinutes < 60) return $"{(int)span.TotalMinutes}m";
-        int hours = (int)span.TotalHours;
-        int minutes = (int)(span.TotalMinutes - hours * 60);
-        return minutes == 0 ? $"{hours}h" : $"{hours}h{minutes:D2}";
-    }
+    private static string FormatInterval(DateTime futureUtc) => Format.Interval(futureUtc, DateTime.UtcNow);
 
     // Wind dial arrow rotations - 30 s circular mean once the
     // buffer warms up, falling back to the live angle during warmup.
@@ -1284,11 +1276,7 @@
     // Class-routed so the colour follows --hud-ink-dim / --hud-ink-stale
     // and flips with theme; a hard-coded fill is invisible on the light card.
     private static MarkupString SvgTextCls(double x, double y, string content, string cls, int fontSize)
-    {
-        return new MarkupString(
-            $"<text x=\"{x}\" y=\"{y}\" class=\"{cls}\" font-size=\"{fontSize}\" " +
-            $"text-anchor=\"middle\" dominant-baseline=\"central\">{System.Net.WebUtility.HtmlEncode(content)}</text>");
-    }
+        => new(SvgText.Element(x, y, content, cssClass: cls, fontSize: fontSize, coordFormat: null));
 
     // --- Autopilot hold-to-engage ---
     // 600 ms is long enough that an accidental brush does nothing, short

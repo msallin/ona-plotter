@@ -931,20 +931,12 @@
                 "Connected. No environment.wind.* data yet; check the sensor or SK paths.");
     }
 
-    /// <summary>
-    /// Renders an SVG text element as raw markup, avoiding Razor's &lt;text&gt; directive conflict.
-    /// Uses style="fill: ..." rather than the fill attribute so callers
-    /// can pass CSS var() references (tokens) that SVG presentation-
-    /// attribute parsing wouldn't resolve.
-    /// </summary>
+    /// <summary>Uses a style fill rather than the fill attribute so callers
+    /// can pass CSS var() tokens.</summary>
     private static MarkupString SvgText(double x, double y, string content, string fill, int fontSize,
         string? fontWeight = null, string anchor = "middle")
-    {
-        string weight = fontWeight is not null ? $" font-weight=\"{fontWeight}\"" : "";
-        return new MarkupString(
-            $"<text x=\"{x}\" y=\"{y}\" style=\"fill: {fill};\" font-size=\"{fontSize}\"{weight} " +
-            $"text-anchor=\"{anchor}\" dominant-baseline=\"central\">{System.Net.WebUtility.HtmlEncode(content)}</text>");
-    }
+        => new(OnaPlotter.Utilities.SvgText.Element(x, y, content, styleFill: fill, fontSize: fontSize,
+            fontWeight: fontWeight, anchor: anchor, coordFormat: null));
 
     /// <summary>
     /// Formats a "seconds ago" value as a short human-readable label
@@ -1206,24 +1198,13 @@
     private const int AxisFontSize = 12;
 
     /// <summary>String-builder equivalent of <see cref="SvgText"/> for
-    /// the chart helper. Same attribute shape so a stylesheet rule
-    /// targeting "wind-history-svg text" applies uniformly.</summary>
+    /// the chart helper; a stylesheet rule targeting
+    /// "wind-history-svg text" applies uniformly.</summary>
     private static void AppendSvgText(System.Text.StringBuilder sb,
         double x, double y, string content, string fill, int fontSize,
         string? fontWeight = null, string anchor = "middle")
-    {
-        var ci = System.Globalization.CultureInfo.InvariantCulture;
-        sb.Append("<text x=\"").Append(x.ToString("F1", ci))
-          .Append("\" y=\"").Append(y.ToString("F1", ci))
-          .Append("\" style=\"fill: ").Append(fill).Append(";\" font-size=\"").Append(fontSize)
-          .Append('"');
-        if (fontWeight is not null)
-            sb.Append(" font-weight=\"").Append(fontWeight).Append('"');
-        sb.Append(" text-anchor=\"").Append(anchor)
-          .Append("\" dominant-baseline=\"central\">")
-          .Append(System.Net.WebUtility.HtmlEncode(content))
-          .Append("</text>");
-    }
+        => OnaPlotter.Utilities.SvgText.Append(sb, x, y, content, styleFill: fill, fontSize: fontSize,
+            fontWeight: fontWeight, anchor: anchor);
 
     /// <summary>
     /// Generates the SVG polyline points string for the history chart

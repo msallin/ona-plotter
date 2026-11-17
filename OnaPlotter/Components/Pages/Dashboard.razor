@@ -522,14 +522,7 @@
             || Data.TideTimeLow is not null);
 
     private string FormatDashInterval(DateTime futureUtc)
-    {
-        var span = futureUtc - Time.GetUtcNow().UtcDateTime;
-        if (span.TotalSeconds <= 0) return "now";
-        if (span.TotalMinutes < 60) return $"in {(int)span.TotalMinutes}m";
-        int hours = (int)span.TotalHours;
-        int minutes = (int)(span.TotalMinutes - hours * 60);
-        return minutes == 0 ? $"in {hours}h" : $"in {hours}h{minutes:D2}";
-    }
+        => Format.Interval(futureUtc, Time.GetUtcNow().UtcDateTime, "in ");
 
 
     protected override async Task OnInitializedAsync()

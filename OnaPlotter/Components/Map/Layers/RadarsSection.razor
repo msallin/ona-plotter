@@ -129,25 +129,7 @@
         return ranges.OrderBy(v => v);
     }
 
-    /// <summary>Label for one range option. Prefers the radar's own
-    /// per-value description ("1/4 nm", "1.5 nm", "24 nm") so the
-    /// dropdown matches what the helm sees on a brand-native MFD;
-    /// falls back to <see cref="Format.RadarRange"/> when the description
-    /// for that exact metres value is absent.</summary>
-    private string FormatRangeFor(RadarInfo r, int meters)
-    {
-        if (Capabilities.TryGetValue(r.Id, out var caps)
-            && caps?.Controls.TryGetValue("range", out var rangeCtl) == true
-            && rangeCtl.Descriptions is { } desc
-            && desc.TryGetValue(
-                meters.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                out var label)
-            && !string.IsNullOrWhiteSpace(label))
-        {
-            return label;
-        }
-        return Format.RadarRange(meters);
-    }
+    private string FormatRangeFor(RadarInfo r, int meters) => Format.RadarRange(r, meters, Capabilities);
 
     private bool expanded = false;
 

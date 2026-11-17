@@ -237,20 +237,7 @@
         return sorted;
     }
 
-    private string FormatRangeFor(RadarInfo r, int meters)
-    {
-        if (Capabilities.TryGetValue(r.Id, out var caps)
-            && caps?.Controls.TryGetValue("range", out var rangeCtl) == true
-            && rangeCtl.Descriptions is { } desc
-            && desc.TryGetValue(
-                meters.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                out var label)
-            && !string.IsNullOrWhiteSpace(label))
-        {
-            return label;
-        }
-        return Format.RadarRange(meters);
-    }
+    private string FormatRangeFor(RadarInfo r, int meters) => Format.RadarRange(r, meters, Capabilities);
 
     // Generic spread of metric ranges in metres. Used only as a
     // placeholder while /capabilities is in flight; once caps arrive

@@ -1701,43 +1701,56 @@
         catch (Microsoft.JSInterop.JSException) { }
     }
 
-    private async Task OnDepthChanged(ChangeEventArgs e)
+    private static bool IsOn(ChangeEventArgs e) => e.Value is bool b && b;
+
+    // InvariantGlobalization is on, so the culture is fixed; the explicit
+    // invariant parse documents that the input is a number-input value.
+    private static bool TryNum(ChangeEventArgs e, out double val)
+        => double.TryParse(e.Value?.ToString(), System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out val);
+
+    private static bool TryInt(ChangeEventArgs e, out int val)
+        => int.TryParse(e.Value?.ToString(), System.Globalization.NumberStyles.Integer,
+            System.Globalization.CultureInfo.InvariantCulture, out val);
+
+    /// <summary>Parses a number input and hands it to the setter. Non-numeric
+    /// input, or a value below <paramref name="min"/>, keeps the existing
+    /// value rather than zeroing it; the service clamps the rest.</summary>
+    private static Task SetNumAsync(ChangeEventArgs e, Func<double, Task> set, double? min = null)
     {
-        if (double.TryParse(e.Value?.ToString(), out double val) && val >= 0)
-            await AppSettings.SetDepthAlarmThresholdAsync(val);
+        if (!TryNum(e, out double val)) return Task.CompletedTask;
+        if (min is { } lo && !(val >= lo)) return Task.CompletedTask;
+        return set(val);
     }
 
-    private async Task OnCpaAlarmNmChanged(ChangeEventArgs e)
+    private static Task SetIntAsync(ChangeEventArgs e, Func<int, Task> set)
+        => TryInt(e, out int val) ? set(val) : Task.CompletedTask;
+
+    /// <summary>Deadman minutes: clamp to 0..120 here and toast the
+    /// adjustment so the input does not show a value the setting never took.</summary>
+    private async Task SetDeadmanMinutesAsync(ChangeEventArgs e, Func<double, Task> set)
     {
-        if (double.TryParse(e.Value?.ToString(),
-            System.Globalization.NumberStyles.Float,
-            System.Globalization.CultureInfo.InvariantCulture, out double val))
-            await AppSettings.SetCpaAlarmNmAsync(val);
+        if (!TryNum(e, out double raw)) return;
+        double clamped = System.Math.Clamp(raw, 0, 120);
+        if (System.Math.Abs(clamped - raw) > 0.001)
+            Toasts.Show($"Clamped to {clamped:F0} min (range 0–120)");
+        await set(clamped);
     }
 
-    private async Task OnTcpaAlarmMinChanged(ChangeEventArgs e)
-    {
-        if (double.TryParse(e.Value?.ToString(),
-            System.Globalization.NumberStyles.Float,
-            System.Globalization.CultureInfo.InvariantCulture, out double val))
-            await AppSettings.SetTcpaAlarmMinAsync(val);
-    }
+    private Task OnDepthChanged(ChangeEventArgs e)
+        => SetNumAsync(e, AppSettings.SetDepthAlarmThresholdAsync, min: 0);
 
-    private async Task OnCpaAwarenessNmChanged(ChangeEventArgs e)
-    {
-        if (double.TryParse(e.Value?.ToString(),
-            System.Globalization.NumberStyles.Float,
-            System.Globalization.CultureInfo.InvariantCulture, out double val))
-            await AppSettings.SetCpaAwarenessNmAsync(val);
-    }
+    private Task OnCpaAlarmNmChanged(ChangeEventArgs e)
+        => SetNumAsync(e, AppSettings.SetCpaAlarmNmAsync);
 
-    private async Task OnTcpaAwarenessMinChanged(ChangeEventArgs e)
-    {
-        if (double.TryParse(e.Value?.ToString(),
-            System.Globalization.NumberStyles.Float,
-            System.Globalization.CultureInfo.InvariantCulture, out double val))
-            await AppSettings.SetTcpaAwarenessMinAsync(val);
-    }
+    private Task OnTcpaAlarmMinChanged(ChangeEventArgs e)
+        => SetNumAsync(e, AppSettings.SetTcpaAlarmMinAsync);
+
+    private Task OnCpaAwarenessNmChanged(ChangeEventArgs e)
+        => SetNumAsync(e, AppSettings.SetCpaAwarenessNmAsync);
+
+    private Task OnTcpaAwarenessMinChanged(ChangeEventArgs e)
+        => SetNumAsync(e, AppSettings.SetTcpaAwarenessMinAsync);
 
     private async Task OnHeadingPrefChanged(bool magnetic)
         => await AppSettings.SetPreferMagneticHeadingAsync(magnetic);
@@ -1764,31 +1777,16 @@
         await AppSettings.SetShipOrientationSourceAsync(raw);
     }
 
-    private async Task OnAutoAdvanceChanged(ChangeEventArgs e)
-    {
-        bool on = e.Value is bool b && b;
-        await AppSettings.SetAutoAdvanceWaypointsAsync(on);
-    }
+    private Task OnAutoAdvanceChanged(ChangeEventArgs e)
+        => AppSettings.SetAutoAdvanceWaypointsAsync(IsOn(e));
 
-    private async Task OnArrivalCircleChanged(ChangeEventArgs e)
-    {
-        // Service clamps to 5..1000 m so an out-of-range typed value
-        // doesn't drive a server request the spec might reject. Bad
-        // input (non-numeric) silently keeps the existing value
-        // rather than zeroing the circle.
-        if (double.TryParse(e.Value?.ToString(),
-            System.Globalization.NumberStyles.Float,
-            System.Globalization.CultureInfo.InvariantCulture, out var meters))
-        {
-            await AppSettings.SetArrivalCircleMetersAsync(meters);
-        }
-    }
+    // The service clamps to 5..1000 m so an out-of-range typed value
+    // doesn't drive a server request the spec might reject.
+    private Task OnArrivalCircleChanged(ChangeEventArgs e)
+        => SetNumAsync(e, AppSettings.SetArrivalCircleMetersAsync);
 
-    private async Task OnServerSideApproachAlarmsChanged(ChangeEventArgs e)
-    {
-        bool val = e.Value is bool b && b;
-        await AppSettings.SetServerSideApproachAlarmsAsync(val);
-    }
+    private Task OnServerSideApproachAlarmsChanged(ChangeEventArgs e)
+        => AppSettings.SetServerSideApproachAlarmsAsync(IsOn(e));
 
     /// <summary>True when no rule is in <c>DisabledAlarmRules</c>;
     /// drives the master "All on" / "All off" switch label and
@@ -1819,160 +1817,68 @@
         }
     }
 
-    private async Task OnDeadmanTimeoutChanged(ChangeEventArgs e)
-    {
-        if (!double.TryParse(e.Value?.ToString(), out double raw)) return;
-        double clamped = System.Math.Clamp(raw, 0, 120);
-        if (System.Math.Abs(clamped - raw) > 0.001)
-            Toasts.Show($"Clamped to {clamped:F0} min (range 0–120)");
-        await AppSettings.SetDeadmanTimeoutMinutesAsync(clamped);
-    }
+    private Task OnDeadmanTimeoutChanged(ChangeEventArgs e)
+        => SetDeadmanMinutesAsync(e, AppSettings.SetDeadmanTimeoutMinutesAsync);
 
-    private async Task OnDeadmanNightChanged(ChangeEventArgs e)
-    {
-        if (!double.TryParse(e.Value?.ToString(), out double raw)) return;
-        double clamped = System.Math.Clamp(raw, 0, 120);
-        if (System.Math.Abs(clamped - raw) > 0.001)
-            Toasts.Show($"Clamped to {clamped:F0} min (range 0–120)");
-        await AppSettings.SetDeadmanNightMinutesAsync(clamped);
-    }
+    private Task OnDeadmanNightChanged(ChangeEventArgs e)
+        => SetDeadmanMinutesAsync(e, AppSettings.SetDeadmanNightMinutesAsync);
 
     private async Task OnSnoozeDurationChanged(ChangeEventArgs e)
     {
-        if (!int.TryParse(e.Value?.ToString(), out int raw)) return;
+        if (!TryInt(e, out int raw)) return;
         int clamped = System.Math.Clamp(raw, 1, 120);
         if (clamped != raw)
             Toasts.Show($"Clamped to {clamped} min (range 1–120)");
         await AppSettings.SetSnoozeDurationMinutesAsync(clamped);
     }
 
-    private async Task OnWindShiftChanged(ChangeEventArgs e)
-    {
-        if (double.TryParse(e.Value?.ToString(), out double val) && val >= 5)
-            await AppSettings.SetWindShiftAlarmThresholdAsync(val);
-    }
+    private Task OnWindShiftChanged(ChangeEventArgs e)
+        => SetNumAsync(e, AppSettings.SetWindShiftAlarmThresholdAsync, min: 5);
 
-    private async Task OnWindShiftLookbackChanged(ChangeEventArgs e)
-    {
-        if (double.TryParse(e.Value?.ToString(), out double val) && val >= 1)
-            await AppSettings.SetWindShiftLookbackMinutesAsync(val);
-    }
+    private Task OnWindShiftLookbackChanged(ChangeEventArgs e)
+        => SetNumAsync(e, AppSettings.SetWindShiftLookbackMinutesAsync, min: 1);
 
-    private async Task OnWindShiftMinTwsChanged(ChangeEventArgs e)
-    {
-        if (double.TryParse(e.Value?.ToString(), out double val) && val >= 0)
-            await AppSettings.SetWindShiftMinTrueWindSpeedAsync(val);
-    }
+    private Task OnWindShiftMinTwsChanged(ChangeEventArgs e)
+        => SetNumAsync(e, AppSettings.SetWindShiftMinTrueWindSpeedAsync, min: 0);
 
-    private async Task OnOwnCogVectorChanged(ChangeEventArgs e)
-    {
-        if (double.TryParse(e.Value?.ToString(),
-            System.Globalization.NumberStyles.Float,
-            System.Globalization.CultureInfo.InvariantCulture, out double val))
-        {
-            await AppSettings.SetOwnCogVectorMinutesAsync(val);
-        }
-    }
+    private Task OnOwnCogVectorChanged(ChangeEventArgs e)
+        => SetNumAsync(e, AppSettings.SetOwnCogVectorMinutesAsync);
 
-    private async Task OnAisCogVectorChanged(ChangeEventArgs e)
-    {
-        if (double.TryParse(e.Value?.ToString(),
-            System.Globalization.NumberStyles.Float,
-            System.Globalization.CultureInfo.InvariantCulture, out double val))
-        {
-            await AppSettings.SetAisCogVectorMinutesAsync(val);
-        }
-    }
+    private Task OnAisCogVectorChanged(ChangeEventArgs e)
+        => SetNumAsync(e, AppSettings.SetAisCogVectorMinutesAsync);
 
-    private async Task OnAisInactiveChanged(ChangeEventArgs e)
-    {
-        if (double.TryParse(e.Value?.ToString(),
-            System.Globalization.NumberStyles.Float,
-            System.Globalization.CultureInfo.InvariantCulture, out double val))
-        {
-            await AppSettings.SetAisInactiveMinutesAsync(val);
-        }
-    }
+    private Task OnAisInactiveChanged(ChangeEventArgs e)
+        => SetNumAsync(e, AppSettings.SetAisInactiveMinutesAsync);
 
-    private async Task OnAisRemoveChanged(ChangeEventArgs e)
-    {
-        if (double.TryParse(e.Value?.ToString(),
-            System.Globalization.NumberStyles.Float,
-            System.Globalization.CultureInfo.InvariantCulture, out double val))
-        {
-            await AppSettings.SetAisRemoveMinutesAsync(val);
-        }
-    }
+    private Task OnAisRemoveChanged(ChangeEventArgs e)
+        => SetNumAsync(e, AppSettings.SetAisRemoveMinutesAsync);
 
-    private async Task OnRadarRangeRingsEnabledChanged(ChangeEventArgs e)
-    {
-        bool enabled = e.Value is bool b && b;
-        await AppSettings.SetRadarRangeRingsEnabledAsync(enabled);
-    }
+    private Task OnRadarRangeRingsEnabledChanged(ChangeEventArgs e)
+        => AppSettings.SetRadarRangeRingsEnabledAsync(IsOn(e));
 
-    private async Task OnRadarRangeRingsCountChanged(ChangeEventArgs e)
-    {
-        if (int.TryParse(e.Value?.ToString(),
-            System.Globalization.NumberStyles.Integer,
-            System.Globalization.CultureInfo.InvariantCulture, out int val))
-        {
-            await AppSettings.SetRadarRangeRingsCountAsync(val);
-        }
-    }
+    private Task OnRadarRangeRingsCountChanged(ChangeEventArgs e)
+        => SetIntAsync(e, AppSettings.SetRadarRangeRingsCountAsync);
 
-    private async Task OnDistanceRingsEnabledChanged(ChangeEventArgs e)
-    {
-        bool enabled = e.Value is bool b && b;
-        await AppSettings.SetDistanceRingsEnabledAsync(enabled);
-    }
+    private Task OnDistanceRingsEnabledChanged(ChangeEventArgs e)
+        => AppSettings.SetDistanceRingsEnabledAsync(IsOn(e));
 
-    private async Task OnDistanceRingsBaseNmChanged(ChangeEventArgs e)
-    {
-        if (double.TryParse(e.Value?.ToString(),
-            System.Globalization.NumberStyles.Float,
-            System.Globalization.CultureInfo.InvariantCulture, out double val))
-        {
-            await AppSettings.SetDistanceRingsBaseNmAsync(val);
-        }
-    }
+    private Task OnDistanceRingsBaseNmChanged(ChangeEventArgs e)
+        => SetNumAsync(e, AppSettings.SetDistanceRingsBaseNmAsync);
 
-    private async Task OnDistanceRingsCountChanged(ChangeEventArgs e)
-    {
-        if (int.TryParse(e.Value?.ToString(),
-            System.Globalization.NumberStyles.Integer,
-            System.Globalization.CultureInfo.InvariantCulture, out int val))
-        {
-            await AppSettings.SetDistanceRingsCountAsync(val);
-        }
-    }
+    private Task OnDistanceRingsCountChanged(ChangeEventArgs e)
+        => SetIntAsync(e, AppSettings.SetDistanceRingsCountAsync);
 
-    private async Task OnRadarUseWireBearingChanged(ChangeEventArgs e)
-    {
-        bool enabled = e.Value is bool b && b;
-        await AppSettings.SetRadarUseWireBearingAsync(enabled);
-    }
+    private Task OnRadarUseWireBearingChanged(ChangeEventArgs e)
+        => AppSettings.SetRadarUseWireBearingAsync(IsOn(e));
 
-    private async Task OnRadarBearingCorrectionChanged(ChangeEventArgs e)
-    {
-        if (double.TryParse(e.Value?.ToString(),
-            System.Globalization.NumberStyles.Float,
-            System.Globalization.CultureInfo.InvariantCulture, out double val))
-        {
-            await AppSettings.SetRadarBearingCorrectionDegAsync(val);
-        }
-    }
+    private Task OnRadarBearingCorrectionChanged(ChangeEventArgs e)
+        => SetNumAsync(e, AppSettings.SetRadarBearingCorrectionDegAsync);
 
-    private async Task OnAnchorTideMarginChanged(ChangeEventArgs e)
-    {
-        if (double.TryParse(e.Value?.ToString(), out double val) && val >= 0)
-            await AppSettings.SetAnchorTideSafetyMarginAsync(val);
-    }
+    private Task OnAnchorTideMarginChanged(ChangeEventArgs e)
+        => SetNumAsync(e, AppSettings.SetAnchorTideSafetyMarginAsync, min: 0);
 
-    private async Task OnAnchorAutoRadiusMarginChanged(ChangeEventArgs e)
-    {
-        if (double.TryParse(e.Value?.ToString(), out double val) && val >= 0)
-            await AppSettings.SetAnchorAutoRadiusSafetyMarginAsync(val);
-    }
+    private Task OnAnchorAutoRadiusMarginChanged(ChangeEventArgs e)
+        => SetNumAsync(e, AppSettings.SetAnchorAutoRadiusSafetyMarginAsync, min: 0);
 
     private async Task OnOwnVesselTypeChanged(string value)
         => await AppSettings.SetOwnVesselTypeAsync(value);
@@ -1980,35 +1886,20 @@
     private async Task OnSailingModeChanged(string value)
         => await AppSettings.SetSailingModeAsync(value);
 
-    private async Task OnKeepScreenAwakeChanged(ChangeEventArgs e)
-    {
-        bool on = e.Value is bool b && b;
-        await AppSettings.SetKeepScreenAwakeAsync(on);
-    }
+    private Task OnKeepScreenAwakeChanged(ChangeEventArgs e)
+        => AppSettings.SetKeepScreenAwakeAsync(IsOn(e));
 
-    private async Task OnShowKeyboardHintsChanged(ChangeEventArgs e)
-    {
-        bool on = e.Value is bool b && b;
-        await AppSettings.SetShowKeyboardHintsAsync(on);
-    }
+    private Task OnShowKeyboardHintsChanged(ChangeEventArgs e)
+        => AppSettings.SetShowKeyboardHintsAsync(IsOn(e));
 
-    private async Task OnShowAutopilotHudChanged(ChangeEventArgs e)
-    {
-        bool on = e.Value is bool b && b;
-        await AppSettings.SetShowAutopilotHudAsync(on);
-    }
+    private Task OnShowAutopilotHudChanged(ChangeEventArgs e)
+        => AppSettings.SetShowAutopilotHudAsync(IsOn(e));
 
-    private async Task OnShowRadarHudChanged(ChangeEventArgs e)
-    {
-        bool on = e.Value is bool b && b;
-        await AppSettings.SetShowRadarHudAsync(on);
-    }
+    private Task OnShowRadarHudChanged(ChangeEventArgs e)
+        => AppSettings.SetShowRadarHudAsync(IsOn(e));
 
-    private async Task OnChartUpscaleEnabledChanged(ChangeEventArgs e)
-    {
-        bool on = e.Value is bool b && b;
-        await AppSettings.SetChartUpscaleEnabledAsync(on);
-    }
+    private Task OnChartUpscaleEnabledChanged(ChangeEventArgs e)
+        => AppSettings.SetChartUpscaleEnabledAsync(IsOn(e));
 
     private async Task OnChartUpscaleLevelsChanged(ChangeEventArgs e)
     {
@@ -2019,7 +1910,7 @@
         // belt-and-braces against future call paths and corrupted
         // localStorage; the in-handler clamp is purely for UX so the
         // input doesn't display "99" while the persisted value is 3.
-        if (!int.TryParse(e.Value?.ToString(), out int raw)) return;
+        if (!TryInt(e, out int raw)) return;
         int clamped = OnaPlotter.Utilities.ChartUpscale.ClampLevels(raw);
         if (clamped != raw)
             Toasts.Show($"Clamped to {clamped} (range " +
@@ -2040,29 +1931,17 @@
         await AppSettings.SetNightModeAsync(val);
     }
 
-    private async Task OnNightAutoChanged(ChangeEventArgs e)
-    {
-        bool val = e.Value is bool b && b;
-        await AppSettings.SetNightModeAutoAsync(val);
-    }
+    private Task OnNightAutoChanged(ChangeEventArgs e)
+        => AppSettings.SetNightModeAutoAsync(IsOn(e));
 
-    private async Task OnExpandAllHudChanged(ChangeEventArgs e)
-    {
-        bool val = e.Value is bool b && b;
-        await AppSettings.SetExpandAllHudAsync(val);
-    }
+    private Task OnExpandAllHudChanged(ChangeEventArgs e)
+        => AppSettings.SetExpandAllHudAsync(IsOn(e));
 
-    private async Task OnTideVisibleChanged(ChangeEventArgs e)
-    {
-        bool on = e.Value is bool b && b;
-        await AppSettings.SetTideVisibleAsync(on);
-    }
+    private Task OnTideVisibleChanged(ChangeEventArgs e)
+        => AppSettings.SetTideVisibleAsync(IsOn(e));
 
-    private async Task OnBigTypeChanged(ChangeEventArgs e)
-    {
-        bool val = e.Value is bool b && b;
-        await AppSettings.SetBigTypeAsync(val);
-    }
+    private Task OnBigTypeChanged(ChangeEventArgs e)
+        => AppSettings.SetBigTypeAsync(IsOn(e));
 
     private async Task OnThemeChanged(string value) => await AppSettings.SetThemeAsync(value);
 
@@ -2239,15 +2118,8 @@
         return sb.ToString();
     }
 
-    // Razor reserves <text> as a literal-text block marker in component
-    // markup, so we emit SVG <text> elements via MarkupString to bypass
-    // the parser. Same trick as MapHud.SvgTextCls.
     private static MarkupString SvgLabel(double x, double y, string content, string fill, int fontSize, string anchor)
-    {
-        return new MarkupString(
-            $"<text x=\"{F(x)}\" y=\"{F(y)}\" fill=\"{fill}\" font-size=\"{fontSize}\" "
-            + $"text-anchor=\"{anchor}\">{System.Net.WebUtility.HtmlEncode(content)}</text>");
-    }
+        => new(SvgText.Element(x, y, content, fillAttr: fill, fontSize: fontSize, anchor: anchor, centralBaseline: false));
 
     protected override async Task OnInitializedAsync()
     {
