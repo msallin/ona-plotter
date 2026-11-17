@@ -67,6 +67,10 @@ jobs:
           node-version: '22.x'
           registry-url: 'https://registry.npmjs.org'
 
+      # OIDC trusted publishing needs npm CLI 11.5.1+; Node 22 ships npm 10.
+      - name: Upgrade npm
+        run: npm install -g npm@^11.5.1
+
       # esbuild is required by the MinifyPublishedJs target in
       # OnaPlotter.csproj. The Release publish below fails with a
       # clear MSBuild error if node_modules/esbuild is missing.
@@ -85,6 +89,12 @@ jobs:
           { "SignalK": { "ServerUrl": "auto" } }
           EOF
 
+      # The SDK precompressed index.html and appsettings.json before the
+      # two patches above. SignalK server serves .br/.gz siblings of webapp
+      # files, so stale siblings would boot the app with base href "/".
+      - name: Drop stale precompressed siblings of patched files
+        run: rm -f publish/wwwroot/{index.html,appsettings.json}.{br,gz}
+
       # Version from the tag - strip leading 'v'. So tag v1.2.3 maps
       # to npm version 1.2.3. Pre-release identifiers (-alpha / -beta
       # / -rc) pass through unchanged and pick up the matching npm
@@ -99,6 +109,8 @@ jobs:
           mkdir -p "$stage"
           sed "s|__VERSION__|$version|" deploy/package.json.template > "$stage/package.json"
           cp deploy/index.js "$stage/index.js"
+          cp deploy/README.npm.md "$stage/README.md"
+          cp LICENSE "$stage/LICENSE"
           cp -r publish/wwwroot "$stage/public"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "stage=$stage" >> "$GITHUB_OUTPUT"

@@ -175,8 +175,8 @@
       <_JsToMinify Include="$(PublishDir)wwwroot\js\**\*.js" />
     </ItemGroup>
     <Message Text="esbuild: minifying wwwroot/js in $(PublishDir)" Importance="high" />
-    <Exec Command="npx --no-install esbuild --minify --allow-overwrite --outdir=&quot;$(PublishDir)wwwroot\js&quot; --outbase=&quot;$(PublishDir)wwwroot\js&quot; @(_JsToMinify->'&quot;%(FullPath)&quot;', ' ')"
-          WorkingDirectory="$(MSBuildThisFileDirectory)..\"
+    <Exec Command="npx --no-install esbuild --minify --allow-overwrite --outdir=&quot;$(PublishDir)wwwroot/js&quot; --outbase=&quot;$(PublishDir)wwwroot/js&quot; @(_JsToMinify->'&quot;%(FullPath)&quot;', ' ')"
+          WorkingDirectory="$(MSBuildThisFileDirectory)../"
           Condition="'@(_JsToMinify)' != ''" />
   </Target>
 
@@ -191,8 +191,8 @@
   <Target Name="BundleInteropModules"
           AfterTargets="MinifyPublishedJs"
           Condition="'$(Configuration)' == 'Release'">
-    <Exec Command="node &quot;$(MSBuildThisFileDirectory)..\scripts\bundle-interop.mjs&quot; &quot;$(MSBuildProjectDirectory)\wwwroot\js&quot; &quot;$(PublishDir)wwwroot\js&quot;"
-          WorkingDirectory="$(MSBuildThisFileDirectory)..\" />
+    <Exec Command="node &quot;$(MSBuildThisFileDirectory)../scripts/bundle-interop.mjs&quot; &quot;$(MSBuildProjectDirectory)/wwwroot/js&quot; &quot;$(PublishDir)wwwroot/js&quot;"
+          WorkingDirectory="$(MSBuildThisFileDirectory)../" />
   </Target>
 
   <!-- Same esbuild pass for the stylesheets: app.css is hand-formatted
@@ -205,8 +205,8 @@
       <_CssToMinify Include="$(PublishDir)wwwroot\css\**\*.css" />
     </ItemGroup>
     <Message Text="esbuild: minifying wwwroot/css in $(PublishDir)" Importance="high" />
-    <Exec Command="npx --no-install esbuild --minify --allow-overwrite --outdir=&quot;$(PublishDir)wwwroot\css&quot; --outbase=&quot;$(PublishDir)wwwroot\css&quot; @(_CssToMinify->'&quot;%(FullPath)&quot;', ' ')"
-          WorkingDirectory="$(MSBuildThisFileDirectory)..\"
+    <Exec Command="npx --no-install esbuild --minify --allow-overwrite --outdir=&quot;$(PublishDir)wwwroot/css&quot; --outbase=&quot;$(PublishDir)wwwroot/css&quot; @(_CssToMinify->'&quot;%(FullPath)&quot;', ' ')"
+          WorkingDirectory="$(MSBuildThisFileDirectory)../"
           Condition="'@(_CssToMinify)' != ''" />
   </Target>
 
@@ -230,7 +230,7 @@
     <PropertyGroup>
       <_SwPath>$(PublishDir)wwwroot\service-worker.js</_SwPath>
     </PropertyGroup>
-    <Exec Command="node &quot;$(MSBuildThisFileDirectory)..\scripts\stamp-cache-name.mjs&quot; &quot;$(_SwPath)&quot; &quot;$(OnaGitHash)&quot;"
+    <Exec Command="node &quot;$(MSBuildThisFileDirectory)../scripts/stamp-cache-name.mjs&quot; &quot;$(_SwPath)&quot; &quot;$(OnaGitHash)&quot;"
           Condition="Exists('$(_SwPath)')" />
   </Target>
 
@@ -256,7 +256,7 @@
   <Target Name="PrecompressPublishedAssets"
           AfterTargets="DropStalePrecompressedSiblings"
           Condition="'$(Configuration)' == 'Release'">
-    <Exec Command="node &quot;$(MSBuildThisFileDirectory)..\scripts\precompress.mjs&quot; &quot;$(PublishDir)wwwroot\js&quot; &quot;$(PublishDir)wwwroot\css&quot; &quot;$(PublishDir)wwwroot\lib&quot;" />
+    <Exec Command="node &quot;$(MSBuildThisFileDirectory)../scripts/precompress.mjs&quot; &quot;$(PublishDir)wwwroot/js&quot; &quot;$(PublishDir)wwwroot/css&quot; &quot;$(PublishDir)wwwroot/lib&quot;" />
   </Target>
 
 </Project>

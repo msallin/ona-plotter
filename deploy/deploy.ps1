@@ -76,6 +76,16 @@ $AppSettings = Join-Path $WwwRootSrc "appsettings.json"
 Set-Content -Path $AppSettings -Value '{ "SignalK": { "ServerUrl": "auto" } }'
 Write-Host "Set ServerUrl to 'auto' for deployed build" -ForegroundColor Green
 
+# The SDK precompressed index.html and appsettings.json before the
+# patches above. SignalK server serves .br/.gz siblings of webapp files,
+# so stale siblings would boot the app with base href "/".
+foreach ($name in @("index.html", "appsettings.json")) {
+    foreach ($ext in @(".br", ".gz")) {
+        $sibling = Join-Path $WwwRootSrc "$name$ext"
+        if (Test-Path $sibling) { Remove-Item -Force $sibling }
+    }
+}
+
 # 3. Prepare staging folder with SignalK webapp layout:
 #    signalk-onaplotter/
 #      package.json
@@ -104,6 +114,8 @@ if (-not (Test-Path $PluginShim)) {
     throw "Expected plugin shim at $PluginShim - deploy/index.js is required."
 }
 Copy-Item -Path $PluginShim -Destination (Join-Path $WebappStaging "index.js")
+Copy-Item -Path (Join-Path $PSScriptRoot "README.npm.md") -Destination (Join-Path $WebappStaging "README.md")
+Copy-Item -Path (Join-Path $RepoRoot "LICENSE") -Destination (Join-Path $WebappStaging "LICENSE")
 
 # Copy wwwroot -> public/
 Copy-Item -Recurse -Path $WwwRootSrc -Destination (Join-Path $WebappStaging "public")

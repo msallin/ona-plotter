@@ -1,15 +1,28 @@
 {
   "name": "signalk-onaplotter",
   "version": "__VERSION__",
-  "description": "OnaPlotter: Blazor WASM chartplotter webapp for SignalK",
+  "description": "Touch-first chartplotter webapp for SignalK: charts, AIS with CPA/TCPA alarms, anchor watch, MOB, routes and waypoints on helm screen, tablet and phone.",
   "main": "index.js",
   "keywords": [
     "signalk-webapp",
     "signalk-node-server-plugin",
-    "signalk-category-instruments"
+    "signalk-category-chart-plotters",
+    "signalk",
+    "chartplotter",
+    "marine",
+    "ais"
   ],
-  "signalk-plugin-enabled-by-default": true,
+  "author": "msallin (https://github.com/msallin)",
   "license": "MIT",
+  "homepage": "https://msallin.github.io/ona-plotter/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/msallin/ona-plotter.git"
+  },
+  "bugs": {
+    "url": "https://github.com/msallin/ona-plotter/issues"
+  },
+  "signalk-plugin-enabled-by-default": true,
   "signalk": {
     "appIcon": "favicon.svg",
     "displayName": "OnaPlotter"

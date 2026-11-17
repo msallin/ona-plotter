@@ -114,6 +114,12 @@ absent.
 
 ## Install on a SignalK server
 
+Install **OnaPlotter** from the App Store in the SignalK server admin UI
+(npm package [`signalk-onaplotter`](https://www.npmjs.com/package/signalk-onaplotter)).
+Documentation: https://msallin.github.io/ona-plotter/
+
+To deploy a local build instead:
+
 ```powershell
 pwsh ./deploy/deploy.ps1            # publish + scp to pi@openplotter.local
 pwsh ./deploy/deploy.ps1 -SkipBuild # reuse the last publish output
@@ -157,3 +163,7 @@ actions live on the **Add** button in the bottom control bar.
 
 See [`AGENTS.md`](AGENTS.md) for architecture, design decisions, the
 six test surfaces, and SignalK setup for development.
+
+## License
+
+[MIT](LICENSE)
