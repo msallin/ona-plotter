@@ -157,10 +157,16 @@ public partial class Map
         // refused with a helm-facing toast; the popup also hides the
         // Delete button when isMob, but the JSInvokable is the trust
         // boundary - a stale UI shouldn't bypass the contract.
-        if (wp?.IsMob == true)
+        // The store copy is checked too: a delta can turn the waypoint
+        // into a MOB before this page's copy has been refreshed.
+        switch (WaypointDeleteGuard.Check(wp, ResourceStore.GetWaypoint(id)))
         {
-            Toasts.Warning($"MOB waypoint '{label}' cannot be deleted (persistent history)");
-            return;
+            case WaypointDeleteVerdict.IsMob:
+                Toasts.Warning($"MOB waypoint '{label}' cannot be deleted (persistent history)");
+                return;
+            case WaypointDeleteVerdict.Unknown:
+                Toasts.Warning("Waypoint not found");
+                return;
         }
 
         ApiResult r;
