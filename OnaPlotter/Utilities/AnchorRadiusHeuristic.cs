@@ -121,4 +121,148 @@ public static class AnchorRadiusHeuristic
             return 0;                       // rode shorter than depth -> ~vertical, no horizontal reach
         return Math.Sqrt(chainLengthMeters * chainLengthMeters - d * d);
     }
+
+    /// <summary>Smallest radius the Auto picker ships. Stops a stale GPS
+    /// sitting on top of the pin from committing a 5 m alarm radius
+    /// (smaller than helm-typical swing on any cruising boat).</summary>
+    public const int AutoFloorMeters = 20;
+
+    /// <summary>Auto radii are rounded up to a multiple of this.</summary>
+    public const double AutoStepMeters = 5.0;
+
+    /// <summary>Which input drove the swing component of the Auto
+    /// radius; selects the breakdown label so the helm can tell whether
+    /// the number came from observed motion or the entered rode.</summary>
+    public enum SwingSource { Peak, Current, Distance, Chain }
+
+    /// <summary>Live inputs for the Auto radius. Anchor / own-ship
+    /// positions feed the distance fallback; the tide pair is
+    /// <c>environment.tide.heightNow</c> / <c>heightLow</c>.</summary>
+    public readonly record struct AutoInputs(
+        double? PeakRadius,
+        double? CurrentRadius,
+        double? AnchorLat,
+        double? AnchorLon,
+        double? OwnLat,
+        double? OwnLon,
+        double ChainLengthMeters,
+        double? DepthMeters,
+        double? TideHeightNow,
+        double? TideHeightLow);
+
+    /// <summary>Unrounded components of the Auto radius.</summary>
+    public readonly record struct AutoParts(
+        double SwingMeters,
+        double TideDropMeters,
+        SwingSource Source);
+
+    /// <summary>
+    /// Auto = swing + tide drop + safety margin, rounded up to
+    /// <see cref="AutoStepMeters"/>, floored at <see cref="AutoFloorMeters"/>.
+    /// Returns null when there is no usable signal (no observed swing
+    /// and no chain entered).
+    ///
+    /// <list type="bullet">
+    ///   <item><b>swing</b>: the largest distance the boat has reached
+    ///     from the anchor pin since drop: the plugin's peak radius,
+    ///     else its current radius, else the haversine distance from
+    ///     boat to pin. The helm-entered rode projected onto the
+    ///     horizontal (<see cref="ChainHorizontalProjection"/>) is a
+    ///     floor, and the sole input when nothing is observed yet.</item>
+    ///   <item><b>tide drop</b>: heightNow minus the next predicted
+    ///     low; zero when either is missing or the tide is already at
+    ///     or below that low. Adding it directly is conservative.</item>
+    /// </list>
+    /// </summary>
+    public static AutoParts? ComputeAutoParts(in AutoInputs i)
+    {
+        // Observed swing from the most reliable source available.
+        double? observed = null;
+        SwingSource source = SwingSource.Distance;
+        if (i.PeakRadius is double pk && double.IsFinite(pk) && pk >= 0)
+        {
+            observed = pk;
+            source = SwingSource.Peak;
+        }
+        else if (i.CurrentRadius is double cur && double.IsFinite(cur) && cur >= 0)
+        {
+            observed = cur;
+            source = SwingSource.Current;
+        }
+        else if (i.AnchorLat is double aLat
+                 && i.AnchorLon is double aLon
+                 && i.OwnLat is double lat
+                 && i.OwnLon is double lon)
+        {
+            double distM = GeoMath.HaversineMeters(aLat, aLon, lat, lon);
+            if (double.IsFinite(distM) && distM >= 0)
+            {
+                observed = distM;
+                source = SwingSource.Distance;
+            }
+        }
+
+        // Chain floor: how far the boat CAN swing on the rode that's
+        // out, even before it has blown back that far. Keeps Auto safe
+        // on a calm set where the boat sits over its anchor with lots
+        // of scope out.
+        double chainProjection = ChainHorizontalProjection(i.ChainLengthMeters, i.DepthMeters);
+
+        double swing;
+        if (observed is double os)
+        {
+            if (chainProjection > os) { swing = chainProjection; source = SwingSource.Chain; }
+            else swing = os;
+        }
+        else if (chainProjection > 0)
+        {
+            // No GPS / pin signal yet, but the helm gave us chain.
+            swing = chainProjection;
+            source = SwingSource.Chain;
+        }
+        else
+        {
+            return null;
+        }
+
+        double tideDrop = 0;
+        if (i.TideHeightNow is double hn
+            && i.TideHeightLow is double hl
+            && double.IsFinite(hn) && double.IsFinite(hl)
+            && hn > hl)
+        {
+            tideDrop = hn - hl;
+        }
+        return new AutoParts(swing, tideDrop, source);
+    }
+
+    /// <summary>The radius the Auto chip commits: components plus
+    /// <paramref name="marginMeters"/>, rounded up to
+    /// <see cref="AutoStepMeters"/>, never below
+    /// <see cref="AutoFloorMeters"/>.</summary>
+    public static int AutoRadiusMeters(in AutoParts parts, double marginMeters)
+    {
+        double total = parts.SwingMeters + parts.TideDropMeters + marginMeters;
+        int rounded = (int)Math.Ceiling(total / AutoStepMeters) * (int)AutoStepMeters;
+        return Math.Max(rounded, AutoFloorMeters);
+    }
+
+    /// <summary>Helm-readable breakdown of the Auto radius, e.g.
+    /// "swing 38 m + tide drop 4 m + 5 m margin". The tide term is
+    /// omitted when it rounds to zero so the line carries no
+    /// "+ 0 m" noise.</summary>
+    public static string DescribeAuto(in AutoParts parts, double marginMeters)
+    {
+        int swing = (int)Math.Round(parts.SwingMeters);
+        int tide = (int)Math.Round(parts.TideDropMeters);
+        string swingLabel = parts.Source switch
+        {
+            SwingSource.Peak => "swing",
+            SwingSource.Chain => "rode",
+            _ => "current",
+        };
+        return tide > 0
+            ? $"{swingLabel} {swing} m + tide drop {tide} m + {marginMeters:F0} m margin"
+            : $"{swingLabel} {swing} m + {marginMeters:F0} m margin";
+    }
 }

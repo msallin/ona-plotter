@@ -360,4 +360,149 @@ public class AnchorRadiusHeuristicTests
             await Assert.That(proj).IsLessThanOrEqualTo(rode);
         }
     }
+
+    // --- Auto radius: ComputeAutoParts -----------------------------------
+
+    private static AnchorRadiusHeuristic.AutoInputs Inputs(
+        double? peak = null, double? current = null,
+        double? anchorLat = null, double? anchorLon = null,
+        double? ownLat = null, double? ownLon = null,
+        double chain = 0, double? depth = null,
+        double? tideNow = null, double? tideLow = null) =>
+        new(peak, current, anchorLat, anchorLon, ownLat, ownLon, chain, depth, tideNow, tideLow);
+
+    [Test]
+    public async Task AutoParts_NoSignal_ReturnsNull()
+    {
+        await Assert.That(AnchorRadiusHeuristic.ComputeAutoParts(Inputs()).HasValue).IsFalse();
+    }
+
+    [Test]
+    public async Task AutoParts_PeakWinsOverCurrent()
+    {
+        var p = AnchorRadiusHeuristic.ComputeAutoParts(Inputs(peak: 38, current: 12))!.Value;
+        await Assert.That(p.Source).IsEqualTo(AnchorRadiusHeuristic.SwingSource.Peak);
+        await Assert.That(p.SwingMeters).IsEqualTo(38.0);
+    }
+
+    [Test]
+    [Arguments(null)]
+    [Arguments(-1.0)]
+    [Arguments(double.NaN)]
+    [Arguments(double.PositiveInfinity)]
+    public async Task AutoParts_UnusablePeak_FallsBackToCurrent(double? peak)
+    {
+        var p = AnchorRadiusHeuristic.ComputeAutoParts(Inputs(peak: peak, current: 12))!.Value;
+        await Assert.That(p.Source).IsEqualTo(AnchorRadiusHeuristic.SwingSource.Current);
+        await Assert.That(p.SwingMeters).IsEqualTo(12.0);
+    }
+
+    [Test]
+    public async Task AutoParts_NoPluginRadii_UsesDistanceToPin()
+    {
+        var p = AnchorRadiusHeuristic.ComputeAutoParts(Inputs(
+            anchorLat: 47.0, anchorLon: 8.0, ownLat: 47.001, ownLon: 8.0))!.Value;
+        await Assert.That(p.Source).IsEqualTo(AnchorRadiusHeuristic.SwingSource.Distance);
+        await Assert.That(p.SwingMeters)
+            .IsCloseTo(GeoMath.HaversineMeters(47.0, 8.0, 47.001, 8.0), 1e-9);
+    }
+
+    [Test]
+    public async Task AutoParts_MissingOwnFix_ReturnsNull()
+    {
+        var parts = AnchorRadiusHeuristic.ComputeAutoParts(Inputs(anchorLat: 47.0, anchorLon: 8.0));
+        await Assert.That(parts.HasValue).IsFalse();
+    }
+
+    [Test]
+    public async Task AutoParts_ChainLongerThanObserved_FloorsSwingAtChain()
+    {
+        // 50 m rode at 10 m depth reaches sqrt(2500-100) ~ 49 m even though
+        // the boat has only drifted 12 m so far.
+        var p = AnchorRadiusHeuristic.ComputeAutoParts(Inputs(current: 12, chain: 50, depth: 10))!.Value;
+        await Assert.That(p.Source).IsEqualTo(AnchorRadiusHeuristic.SwingSource.Chain);
+        await Assert.That(p.SwingMeters).IsCloseTo(Math.Sqrt(2400), 1e-9);
+    }
+
+    [Test]
+    public async Task AutoParts_ChainShorterThanObserved_KeepsObserved()
+    {
+        var p = AnchorRadiusHeuristic.ComputeAutoParts(Inputs(peak: 60, chain: 40, depth: 8))!.Value;
+        await Assert.That(p.Source).IsEqualTo(AnchorRadiusHeuristic.SwingSource.Peak);
+        await Assert.That(p.SwingMeters).IsEqualTo(60.0);
+    }
+
+    [Test]
+    public async Task AutoParts_ChainOnly_IsStillASuggestion()
+    {
+        var p = AnchorRadiusHeuristic.ComputeAutoParts(Inputs(chain: 30, depth: null))!.Value;
+        await Assert.That(p.Source).IsEqualTo(AnchorRadiusHeuristic.SwingSource.Chain);
+        await Assert.That(p.SwingMeters).IsEqualTo(30.0);
+    }
+
+    [Test]
+    public async Task AutoParts_FallingTide_AddsDropToLow()
+    {
+        var p = AnchorRadiusHeuristic.ComputeAutoParts(Inputs(peak: 30, tideNow: 3.2, tideLow: 0.7))!.Value;
+        await Assert.That(p.TideDropMeters).IsCloseTo(2.5, 1e-9);
+    }
+
+    [Test]
+    [Arguments(0.7, 3.2)]
+    [Arguments(1.0, 1.0)]
+    [Arguments(null, 1.0)]
+    [Arguments(1.0, null)]
+    [Arguments(double.NaN, 1.0)]
+    [Arguments(2.0, double.NaN)]
+    public async Task AutoParts_RisingOrMissingTide_ContributesNothing(double? now, double? low)
+    {
+        var p = AnchorRadiusHeuristic.ComputeAutoParts(Inputs(peak: 30, tideNow: now, tideLow: low))!.Value;
+        await Assert.That(p.TideDropMeters).IsEqualTo(0.0);
+    }
+
+    // --- Auto radius: AutoRadiusMeters / DescribeAuto --------------------
+
+    private static AnchorRadiusHeuristic.AutoParts Parts(
+        double swing, double tide = 0,
+        AnchorRadiusHeuristic.SwingSource source = AnchorRadiusHeuristic.SwingSource.Peak) =>
+        new(swing, tide, source);
+
+    [Test]
+    [Arguments(38.0, 4.0, 5.0, 50)]    // 47 -> next multiple of 5
+    [Arguments(40.0, 0.0, 5.0, 45)]    // exactly 45 stays 45
+    [Arguments(40.1, 0.0, 5.0, 50)]    // just over rounds up
+    [Arguments(2.0, 0.0, 5.0, 20)]     // floor
+    [Arguments(10.0, 0.0, 10.0, 20)]   // exactly the floor
+    [Arguments(30.0, 0.0, 0.0, 30)]    // zero margin
+    public async Task AutoRadiusMeters_RoundsUpToFiveAndFloorsAtTwenty(
+        double swing, double tide, double margin, int expected)
+    {
+        await Assert.That(AnchorRadiusHeuristic.AutoRadiusMeters(Parts(swing, tide), margin))
+            .IsEqualTo(expected);
+    }
+
+    [Test]
+    public async Task DescribeAuto_WithTide_ListsAllThreeTerms()
+    {
+        await Assert.That(AnchorRadiusHeuristic.DescribeAuto(Parts(38.2, 3.6), 5))
+            .IsEqualTo("swing 38 m + tide drop 4 m + 5 m margin");
+    }
+
+    [Test]
+    public async Task DescribeAuto_TideRoundingToZero_IsOmitted()
+    {
+        await Assert.That(AnchorRadiusHeuristic.DescribeAuto(Parts(38, 0.4), 5))
+            .IsEqualTo("swing 38 m + 5 m margin");
+    }
+
+    [Test]
+    [Arguments(AnchorRadiusHeuristic.SwingSource.Peak, "swing")]
+    [Arguments(AnchorRadiusHeuristic.SwingSource.Chain, "rode")]
+    [Arguments(AnchorRadiusHeuristic.SwingSource.Current, "current")]
+    [Arguments(AnchorRadiusHeuristic.SwingSource.Distance, "current")]
+    public async Task DescribeAuto_LabelFollowsSource(AnchorRadiusHeuristic.SwingSource source, string label)
+    {
+        await Assert.That(AnchorRadiusHeuristic.DescribeAuto(Parts(20, 0, source), 5))
+            .IsEqualTo($"{label} 20 m + 5 m margin");
+    }
 }

@@ -4338,193 +4338,34 @@
         anchorEditMode = true;
     }
 
-    /// <summary>Auto chip preview value: the radius the next tap on
-    /// Auto will commit. The helm-readable model:
-    ///
-    /// <para><b>Auto = swing + tide drop + 5 m margin</b>, rounded up
-    /// to the nearest 5 m, floored at 20 m.</para>
-    ///
-    /// <list type="bullet">
-    ///   <item><b>swing</b>: the largest distance the boat has reached
-    ///     from the anchor pin since drop. Sourced from
-    ///     <see cref="OnaPlotter.Models.NavigationData.AnchorPeakRadius"/>
-    ///     when the plugin has been publishing currentRadius;
-    ///     falls back to AnchorCurrentRadius (current snapshot) and
-    ///     then to the haversine distance boat-to-pin if neither
-    ///     stream is available (e.g. manual anchor with no plugin
-    ///     publishing currentRadius). The peak captures the
-    ///     worst-case drift during the set phase: helm lets out
-    ///     chain, the boat backs down, the chain becomes taut, and
-    ///     the chart-recorded peak is the alarm-relevant number.</item>
-    ///   <item><b>tide drop</b>: amount the tide is expected to fall
-    ///     between now and the next predicted low water
-    ///     (<c>environment.tide.heightNow</c> minus
-    ///     <c>environment.tide.heightLow</c>). As tide drops the boat
-    ///     descends with it and more chain becomes effective scope,
-    ///     so the swing radius grows. Adding the drop directly is
-    ///     conservative; the catenary maths actually deliver
-    ///     somewhat less extra horizontal swing at typical 5:1
-    ///     scope, but the safety direction is the right one. Zero
-    ///     when tide data is missing or tide is already at / below
-    ///     the predicted low.</item>
-    ///   <item><b>5 m margin</b>: blanket safety pad on top of the
-    ///     above so the alarm doesn't trip on a single-step boat
-    ///     swing right at the calculated edge. Constant; the
-    ///     helm has the numeric chips for finer control if they
-    ///     want a different cushion.</item>
-    /// </list>
-    ///
-    /// <para>Returns null when no anchor pin is set or no GPS fix
-    /// has landed yet; the panel's Auto chip then renders as plain
-    /// "Auto" without the previewed number, and the OnPickAuto
-    /// handler refuses to commit a placeholder. The 20 m floor
-    /// stops a stale GPS sitting right on top of the pin from
-    /// shipping a 5 m alarm radius (smaller than helm-typical
-    /// anchor swing on any cruising boat).</para>
-    ///
-    /// <para><see cref="AutoRadiusBreakdown"/> renders the same
-    /// inputs as a helm-readable string for the chip tooltip and
-    /// the panel's eyebrow hint, so the two read consistently.</para>
-    /// </summary>
-    private int? AutoRadiusPreview()
-    {
-        var p = AutoRadiusParts();
-        if (p is null) return null;
-        double total = p.Value.SwingMeters + p.Value.TideDropMeters + Settings.AnchorAutoRadiusSafetyMargin;
-        int rounded = (int)Math.Ceiling(total / 5.0) * 5;
-        return Math.Max(rounded, AutoRadiusFloorMeters);
-    }
+    /// <summary>Auto chip preview: the radius the next tap on Auto will
+    /// commit; null (chip renders as plain "Auto") when no signal is
+    /// available yet. Maths in <see cref="AnchorRadiusHeuristic"/>.</summary>
+    private int? AutoRadiusPreview() =>
+        AutoRadiusParts() is { } p
+            ? AnchorRadiusHeuristic.AutoRadiusMeters(p, Settings.AnchorAutoRadiusSafetyMargin)
+            : null;
 
-    /// <summary>Helm-readable breakdown of the live Auto radius: the
-    /// summed components in <see cref="AutoRadiusPreview"/> rendered
-    /// as e.g. "swing 38 m + tide drop 4 m + 5 m margin". Powers the
-    /// Auto chip's tooltip and the panel's eyebrow hint; null
-    /// (rendered as plain "Auto") when no preview is available.
-    /// Tide span is omitted when the tide drop is zero (rising tide
-    /// or no tide data) so the line doesn't read as "+ 0 m" noise.</summary>
-    private string? AutoRadiusBreakdown()
-    {
-        var p = AutoRadiusParts();
-        if (p is null) return null;
-        int swing = (int)Math.Round(p.Value.SwingMeters);
-        int tide = (int)Math.Round(p.Value.TideDropMeters);
-        // "rode" when the helm-entered chain projection is the
-        // dominant term, otherwise the observed-swing label so the
-        // helm can tell which input drove the number.
-        string swingLabel = p.Value.Source switch
-        {
-            SwingSource.Peak    => "swing",
-            SwingSource.Chain   => "rode",
-            _                   => "current",
-        };
-        double margin = Settings.AnchorAutoRadiusSafetyMargin;
-        return tide > 0
-            ? $"{swingLabel} {swing} m + tide drop {tide} m + {margin:F0} m margin"
-            : $"{swingLabel} {swing} m + {margin:F0} m margin";
-    }
+    /// <summary>Helm-readable breakdown behind <see cref="AutoRadiusPreview"/>
+    /// for the Auto chip tooltip and the panel eyebrow; null when no
+    /// preview is available.</summary>
+    private string? AutoRadiusBreakdown() =>
+        AutoRadiusParts() is { } p
+            ? AnchorRadiusHeuristic.DescribeAuto(p, Settings.AnchorAutoRadiusSafetyMargin)
+            : null;
 
-    /// <summary>Compute the unrounded components that feed
-    /// <see cref="AutoRadiusPreview"/> and <see cref="AutoRadiusBreakdown"/>.
-    /// Returns null when no usable signal is available (no anchor
-    /// pin AND no GPS fix). Both consumers run off the same source
-    /// so the chip's number always matches its tooltip's breakdown.</summary>
-    private AutoRadiusComponents? AutoRadiusParts()
-    {
-        // Observed swing from the most reliable source available.
-        // Peak first (monotonic worst-case during the anchor session);
-        // current radius next (live snapshot from the plugin); finally
-        // a haversine fallback against the anchor pin when the plugin
-        // isn't publishing currentRadius.
-        double? observed = null;
-        SwingSource source = SwingSource.Distance;
-        if (Data.AnchorPeakRadius is double pk && double.IsFinite(pk) && pk >= 0)
-        {
-            observed = pk;
-            source = SwingSource.Peak;
-        }
-        else if (Data.AnchorCurrentRadius is double cur && double.IsFinite(cur) && cur >= 0)
-        {
-            observed = cur;
-            source = SwingSource.Current;
-        }
-        else if (Data.AnchorLatitude is double aLat
-                 && Data.AnchorLongitude is double aLon
-                 && Data.Latitude is double lat
-                 && Data.Longitude is double lon)
-        {
-            double distM = OnaPlotter.Utilities.GeoMath.HaversineMeters(aLat, aLon, lat, lon);
-            if (double.IsFinite(distM) && distM >= 0)
-            {
-                observed = distM;
-                source = SwingSource.Distance;
-            }
-        }
-
-        // Chain floor: how far the boat CAN swing on the rode that's
-        // out, even before it has blown back that far. The helm-
-        // entered chain length is projected onto the horizontal at the
-        // current depth; 0 when no chain is entered. Taking the max
-        // with observed swing keeps Auto safe on a calm set where the
-        // boat is sitting over its anchor with lots of scope out.
-        double chainProjection = OnaPlotter.Utilities.AnchorRadiusHeuristic
-            .ChainHorizontalProjection(Settings.AnchorChainLengthMeters, Data.Depth);
-
-        double swing;
-        if (observed is double os)
-        {
-            if (chainProjection > os) { swing = chainProjection; source = SwingSource.Chain; }
-            else swing = os;
-        }
-        else if (chainProjection > 0)
-        {
-            // No GPS / pin signal yet, but the helm gave us chain - a
-            // chain-only Auto is still better than no suggestion right
-            // after the drop.
-            swing = chainProjection;
-            source = SwingSource.Chain;
-        }
-        else
-        {
-            return null;
-        }
-
-        // Tide-drop component. Both fields are populated by
-        // signalk-tides-api / similar plugins as
-        // environment.tide.heightNow / .heightLow. heightLow is the
-        // *next* predicted low; heightNow is the current level. A
-        // positive delta means the tide is still falling toward the
-        // predicted low. Negative or absent -> zero drop.
-        double tideDrop = 0;
-        if (Data.TideHeightNow is double hn
-            && Data.TideHeightLow is double hl
-            && double.IsFinite(hn) && double.IsFinite(hl)
-            && hn > hl)
-        {
-            tideDrop = hn - hl;
-        }
-        return new AutoRadiusComponents(swing, tideDrop, source);
-    }
-
-    /// <summary>Which input drove the swing component of the Auto
-    /// radius. Drives the breakdown label so the helm can tell whether
-    /// the number came from observed motion or the entered rode.
-    /// When adding a source, extend the label switch in
-    /// <see cref="AutoRadiusBreakdown"/>.</summary>
-    private enum SwingSource { Peak, Current, Distance, Chain }
-
-    /// <summary>Per-component values feeding the Auto radius. Record
-    /// struct so the two helpers can return the same shape without
-    /// allocating per call (the chip preview ticks every render).</summary>
-    private readonly record struct AutoRadiusComponents(
-        double SwingMeters,
-        double TideDropMeters,
-        SwingSource Source);
-
-    /// <summary>Smallest radius the Auto picker will ever ship.
-    /// Stops a stale GPS that puts the boat right on top of the pin
-    /// from shipping a 5 m alarm radius (smaller than helm-typical
-    /// anchor swing on any cruising boat).</summary>
-    private const int AutoRadiusFloorMeters = 20;
+    private AnchorRadiusHeuristic.AutoParts? AutoRadiusParts() =>
+        AnchorRadiusHeuristic.ComputeAutoParts(new AnchorRadiusHeuristic.AutoInputs(
+            PeakRadius: Data.AnchorPeakRadius,
+            CurrentRadius: Data.AnchorCurrentRadius,
+            AnchorLat: Data.AnchorLatitude,
+            AnchorLon: Data.AnchorLongitude,
+            OwnLat: Data.Latitude,
+            OwnLon: Data.Longitude,
+            ChainLengthMeters: Settings.AnchorChainLengthMeters,
+            DepthMeters: Data.Depth,
+            TideHeightNow: Data.TideHeightNow,
+            TideHeightLow: Data.TideHeightLow));
 
     /// <summary>Open the panel in Set Radius state. When the anchor
     /// is already armed (Data.AnchorMaxRadius published), pre-select
@@ -4559,14 +4400,14 @@
     /// ("swing 38 m + tide drop 4 m + 5 m margin") so the panel's
     /// helm-visible hint matches the calculation behind the Auto
     /// chip. Falls back to the depth-based 5:1 scope description
-    /// from <see cref="OnaPlotter.Utilities.AnchorRadiusHeuristic"/>
+    /// from <see cref="AnchorRadiusHeuristic"/>
     /// when no Auto breakdown is available yet (no anchor pin /
     /// no GPS / no tide data combined with no published peak),
     /// because a depth-only suggestion is still better than no
     /// hint at all.</summary>
     private string AnchorEyebrowHint() =>
         AutoRadiusBreakdown()
-        ?? OnaPlotter.Utilities.AnchorRadiusHeuristic.DescribeSuggestion(Data.Depth);
+        ?? AnchorRadiusHeuristic.DescribeSuggestion(Data.Depth);
 
     /// <summary>Render a helm-readable failure toast for an anchor PUT
     /// based on the response status code. 401 / 403 = auth problem

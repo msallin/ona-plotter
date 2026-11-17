@@ -179,4 +179,56 @@ public class AnchorRadiusHeuristicFuzzTests
         if (dice < 97) return rng.NextDouble() * 1e15;             // wildly large
         return 0.0;
     }
+
+    [Test]
+    public async Task AutoRadiusMeters_FlooredStepAlignedAndCoversComponents()
+    {
+        // For any finite non-negative components the committed radius is
+        // a multiple of the step, at least the floor, and never smaller
+        // than swing + tide + margin (rounding only ever goes up).
+        var rng = new Random(Seed ^ 0x51);
+        for (int i = 0; i < Iterations; i++)
+        {
+            double swing = rng.NextDouble() * 400;
+            double tide = rng.NextDouble() * 8;
+            double margin = rng.NextDouble() * 30;
+            var parts = new AnchorRadiusHeuristic.AutoParts(
+                swing, tide, AnchorRadiusHeuristic.SwingSource.Peak);
+            int r = AnchorRadiusHeuristic.AutoRadiusMeters(parts, margin);
+            await Assert.That(r).IsGreaterThanOrEqualTo(AnchorRadiusHeuristic.AutoFloorMeters);
+            await Assert.That(r % (int)AnchorRadiusHeuristic.AutoStepMeters).IsEqualTo(0);
+            await Assert.That((double)r).IsGreaterThanOrEqualTo(swing + tide + margin);
+            await Assert.That(r - (swing + tide + margin))
+                .IsLessThan(AnchorRadiusHeuristic.AutoStepMeters + AnchorRadiusHeuristic.AutoFloorMeters);
+        }
+    }
+
+    [Test]
+    public async Task ComputeAutoParts_SwingNeverBelowObservedOrChain()
+    {
+        // The swing term is the max of the observed radius and the
+        // horizontal rode projection; tide drop is never negative.
+        var rng = new Random(Seed ^ 0xA7);
+        for (int i = 0; i < Iterations; i++)
+        {
+            double? peak = i % 3 == 0 ? null : rng.NextDouble() * 200;
+            double chain = i % 4 == 0 ? 0 : rng.NextDouble() * 100;
+            double? depth = i % 5 == 0 ? null : rng.NextDouble() * 30;
+            double? now = i % 2 == 0 ? null : rng.NextDouble() * 6 - 1;
+            double? low = rng.NextDouble() * 4 - 1;
+            var parts = AnchorRadiusHeuristic.ComputeAutoParts(new AnchorRadiusHeuristic.AutoInputs(
+                peak, null, null, null, null, null, chain, depth, now, low));
+
+            double projection = AnchorRadiusHeuristic.ChainHorizontalProjection(chain, depth);
+            if (peak is null && projection <= 0)
+            {
+                await Assert.That(parts.HasValue).IsFalse();
+                continue;
+            }
+            await Assert.That(parts.HasValue).IsTrue();
+            await Assert.That(parts!.Value.SwingMeters)
+                .IsEqualTo(Math.Max(peak ?? 0, projection));
+            await Assert.That(parts.Value.TideDropMeters).IsGreaterThanOrEqualTo(0.0);
+        }
+    }
 }
