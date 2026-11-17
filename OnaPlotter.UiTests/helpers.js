@@ -19,6 +19,18 @@ export function collectErrors(page) {
     // is the fallback that puts the stack inline in the test log.
     const critErrors = [];
     page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+    // errorRelayBoot.js POSTs every client error to <base>/log. On a
+    // SignalK server the plugin shim serves that route; the bare dev
+    // host does not. Answer it here and fail the test with the relayed
+    // message, so a client error names itself instead of surfacing as
+    // an anonymous failed POST.
+    void page.route('**/log', async (route) => {
+        if (route.request().method() !== 'POST') return route.fallback();
+        let message = route.request().postData() ?? '';
+        try { message = JSON.parse(message).message ?? message; } catch { /* keep raw body */ }
+        errors.push(`relayed client error: ${String(message).slice(0, 2000)}`);
+        await route.fulfill({ status: 204 });
+    });
     page.on('console', (msg) => {
         if (msg.type() !== 'error') return;
         const text = msg.text();
