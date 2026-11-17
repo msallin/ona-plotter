@@ -23,7 +23,12 @@ export function collectErrors(page) {
     // CI's --reporter=list output drops the trace path. critErrors
     // is the fallback that puts the stack inline in the test log.
     const critErrors = [];
-    page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+    page.on('pageerror', (e) => {
+        // WebKit's wording of a CORS failure; the dev host serves the app
+        // from another origin than the SignalK server it talks to.
+        if (e.message.includes('due to access control checks')) return;
+        errors.push(`pageerror: ${e.message}`);
+    });
     // errorRelayBoot.js POSTs every client error to <base>/log. On a
     // SignalK server the plugin shim serves that route; the bare dev
     // host answers 405. Read the relayed message off the request (no
@@ -33,6 +38,9 @@ export function collectErrors(page) {
         if (req.method() !== 'POST' || !isRelayUrl(req.url())) return;
         let message = req.postData() ?? '';
         try { message = JSON.parse(message).message ?? message; } catch { /* keep raw body */ }
+        // AlarmPublisher sends its [INFO] diagnostics through the relay
+        // on purpose, so they reach the SignalK server log.
+        if (String(message).startsWith('[INFO]')) return;
         errors.push(`relayed client error: ${String(message).slice(0, 2000)}`);
     });
     page.on('console', (msg) => {
@@ -76,6 +84,7 @@ export function collectErrors(page) {
         // (and optional Mayara radar port) isn't reachable. Out of
         // scope for a UI fuzz that hunts JS / Blazor bugs.
         if (text.includes('blocked by CORS policy')) return;
+        if (text.includes('due to access control checks')) return;
         if (text.includes('net::ERR_FAILED')) return;
         if (text.includes('net::ERR_CONNECTION_REFUSED')) return;
         if (text.includes('Failed to load resource: net::ERR')) return;
