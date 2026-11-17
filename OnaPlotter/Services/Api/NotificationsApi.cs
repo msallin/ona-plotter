@@ -76,7 +76,10 @@ public sealed class NotificationsApi : INotificationsApi
     /// <inheritdoc/>
     public async Task<ApiResult<string>> RaiseAsync(string path, NotificationPayload body, CancellationToken ct = default)
     {
-        // SignalK v2 raise: POST /notifications with { path, value }.
+        // SignalK v2 raise: POST /notifications with path, state, method
+        // and message as top-level properties; a body that nests them
+        // under `value` is rejected with 400 ("Notification `state` or
+        // `message` properties are missing!").
         // Server derives the id from (context, path, $source) so
         // re-raising the same path overlays rather than duplicating
         // (the cross-plotter sync property the publisher relies on).
@@ -85,7 +88,7 @@ public sealed class NotificationsApi : INotificationsApi
         // a clean Fail rather than a half-applied state.
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(CallTimeout);
-        var envelope = new { path, value = body };
+        var envelope = new { path, state = body.State, method = body.Method, message = body.Message };
         try
         {
             return await ResourceHttp.PostCreateAsync(_http,

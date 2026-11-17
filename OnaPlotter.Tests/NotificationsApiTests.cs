@@ -99,6 +99,14 @@ public class NotificationsApiTests
         // Method array round-trips as an array, not a comma-string. The
         // server validates with strict typing; a stringified list 400s.
         await Assert.That(capturedBody).Contains("\"method\":[\"visual\",\"sound\"]");
+        // The server reads state and message from the top level and
+        // rejects a body that nests them under `value`.
+        using var json = System.Text.Json.JsonDocument.Parse(capturedBody!);
+        var root = json.RootElement;
+        await Assert.That(root.TryGetProperty("value", out _)).IsFalse();
+        await Assert.That(root.GetProperty("state").GetString()).IsEqualTo("alarm");
+        await Assert.That(root.GetProperty("message").GetString()).IsEqualTo("Wind shifted 30 degrees");
+        await Assert.That(root.GetProperty("method").GetArrayLength()).IsEqualTo(2);
     }
 
     [Test]
