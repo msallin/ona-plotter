@@ -21,6 +21,20 @@ npm install signalk-onaplotter
 Restart the server and open `http://<your-server>:3000/signalk-onaplotter/`.
 It also appears under *Webapps* in the admin UI.
 
+## Try it in the browser
+
+**[Open OnaPlotter](app/)** — the latest build, straight from this site.
+
+To connect it to your boat, open **Settings**, turn on **Standalone mode**
+and enter your SignalK server's URL. Two requirements on the server side:
+
+- **HTTPS.** This page is served over HTTPS, so browsers only allow it to
+  talk to an `https://` / `wss://` SignalK server, not a plain
+  `http://boat.local:3000`. Installing from the App Store above has no
+  such limit.
+- **CORS.** Allow the origin `https://msallin.github.io` in the SignalK
+  server's security settings (*Allowed CORS origins*).
+
 ## Features
 
 - **Charts** from any tile source your SignalK server exposes, plus OSM,

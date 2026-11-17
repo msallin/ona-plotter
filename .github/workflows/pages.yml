@@ -1,0 +1,96 @@
+name: GitHub Pages
+
+# Publishes https://<owner>.github.io/<repo>/: the docs/ site (Jekyll) at
+# the root and the Release build of the app under /app/. The app runs
+# in the browser against any SignalK server the user enters in
+# Settings > Standalone mode; the server must allow this origin (CORS)
+# and serve https/wss, since browsers block plain http from an https page.
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      APP_BASE: /${{ github.event.repository.name }}/app/
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: Install workloads
+        run: dotnet workload install wasm-tools
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+
+      # esbuild is required by the Release minify and bundle targets.
+      - name: Install JS toolchain (esbuild)
+        run: npm ci
+
+      - name: Publish OnaPlotter (Release + AOT)
+        run: dotnet publish OnaPlotter/OnaPlotter.csproj -c Release -o publish
+
+      # "auto" resolves to the page origin, which has no SignalK server;
+      # the user points the app at their server via Standalone mode.
+      # The SDK precompressed index.html and appsettings.json before
+      # these patches, and Pages compresses on its own, so every
+      # .br/.gz sibling goes.
+      - name: Configure the app for the Pages subpath
+        run: |
+          set -euo pipefail
+          sed -i "s|<base href=\"/\" />|<base href=\"$APP_BASE\" />|" publish/wwwroot/index.html
+          grep -q "<base href=\"$APP_BASE\" />" publish/wwwroot/index.html
+          printf '{ "SignalK": { "ServerUrl": "auto" } }\n' > publish/wwwroot/appsettings.json
+          find publish/wwwroot \( -name '*.br' -o -name '*.gz' \) -delete
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Build docs (Jekyll)
+        uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./docs
+          destination: ./_site
+
+      # Pages serves one 404.html for the whole site. Using the app's
+      # index.html (absolute base href) lets deep links such as
+      # /app/map load the app, whose router then takes over.
+      - name: Add the app to the site
+        run: |
+          set -euo pipefail
+          sudo cp -r publish/wwwroot _site/app
+          sudo cp publish/wwwroot/index.html _site/404.html
+
+      - name: Upload site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
