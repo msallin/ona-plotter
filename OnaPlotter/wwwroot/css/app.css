@@ -4959,9 +4959,9 @@ html.night-mode-global body {
     .leaflet-control-attribution { font-size: 8px; padding: 1px 4px; }
 }
 
-/* Zoom badge in the bottom-left corner of the map but lifted ABOVE
-   the depth-HUD card so the two don't collide. No scale bars here:
-   rose / radar overlays carry their own range cues.
+/* Bottom-left Leaflet control rail, lifted ABOVE the depth-HUD card so
+   the two don't collide. No scale bars here: rose / radar overlays
+   carry their own range cues.
 
    The bottom offset clears a typical depth card (~80 px tall when
    expanded) plus the HUD edge token. Hand-tuned - a CSS-variable-
@@ -4981,14 +4981,6 @@ html.night-mode-global body {
     clear: none;
     margin: 0;
     flex: 0 0 auto;
-}
-
-/* Zoom-level badge: hidden - the topbar +/- pair covers the
-   zoom-control case, and the badge sits in an awkward spot inside
-   Leaflet's bottom-left control stack. initMap still adds the
-   control; this rule keeps it invisible. */
-.ona-zoom-badge {
-    display: none !important;
 }
 
 /* Range-scale chip placement: bottom-centre, just above the bc-stack

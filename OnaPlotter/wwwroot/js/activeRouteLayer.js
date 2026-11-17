@@ -32,7 +32,6 @@ let clearCourseLineFn = null;
 let setCoursePulseSuppressedFn = null;
 
 let activeRouteLayer = null;
-let activeRouteCoords = null;
 let nextWpMarker = null;
 let activeOverlayHidden = false;
 // Cached call args so refreshActiveRoute() can re-issue the original
@@ -61,7 +60,6 @@ export function init(map, deps) {
 // line on each tick. Hidden while the helm is editing the active
 // route so we don't fight the edit-mode polyline.
 export function isOverlayHidden() { return activeOverlayHidden; }
-export function getActiveRouteCoords() { return activeRouteCoords; }
 
 // Draw the active route as two polylines split by progress, plus
 // numbered waypoint markers. Already-passed legs are dotted and
@@ -109,7 +107,6 @@ export function setActiveRoute(coords, wpIdx, routeId, routeName, totalNm) {
     }
     if (!mapRef || !coords || coords.length < 2) return;
 
-    activeRouteCoords = coords;
     // Defensive bounds-check; C# already clamps but a stray NaN/-1
     // from a future caller must not crash the renderer.
     const idx = Math.max(0, Math.min(coords.length - 1, wpIdx | 0));
@@ -246,7 +243,6 @@ function attachJumpHandler(layer, routeId, pointIndex) {
 export function clearActiveRoute() {
     if (activeRouteLayer && mapRef) { mapRef.removeLayer(activeRouteLayer); }
     activeRouteLayer = null;
-    activeRouteCoords = null;
     nextWpMarker = null;
     // Hand the destination pulse back to courseLineLayer so a
     // Navigate-Here destination (without an active route) still
@@ -313,7 +309,6 @@ export function setActiveRouteStoppingPolyline(stopping) {
 
 export function dispose() {
     activeRouteLayer = null;
-    activeRouteCoords = null;
     nextWpMarker = null;
     activeOverlayHidden = false;
     lastSetArgs = null;

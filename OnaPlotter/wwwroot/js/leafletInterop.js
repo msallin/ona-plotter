@@ -156,10 +156,6 @@ function flagUrl(mmsi) {
 // addChartLayer so they share the lifecycle + opacity stacking.
 const chartLayers = new MarkerLayer();  // keyed by chart identifier
 
-// Zoom-level badge (bottom-right). Assigned in initMap so the control
-// exists before the first zoomend fires.
-let zoomBadge = null;
-
 // How long the pinch-zoom preview chip lingers AFTER zoomend before
 // fading out. The 0.4s opacity transition on `.ona-zoom-preview` runs
 // AFTER this timer expires, so total visible time is LINGER + 400ms.
@@ -185,23 +181,6 @@ function computeNiceScale(map, sampleHalfPx, minPx) {
 
 // Wake-lock code lives in platform/wakeLock.js so it can
 // be held across every page, not just the Map. MainLayout manages it.
-
-// Zoom-level badge. Compact "zN" at a glance; the longer "Zoom N"
-// text goes in the title tooltip rather than widening the badge,
-// which would push the depth HUD upward in the bottom-left row.
-const ZoomBadge = L.Control.extend({
-    onAdd() {
-        this._el = L.DomUtil.create('div', 'ona-zoom-badge');
-        L.DomEvent.disableClickPropagation(this._el);
-        return this._el;
-    },
-    update() {
-        if (!this._el || !this._map) return;
-        const z = this._map.getZoom();
-        this._el.textContent = `z${z}`;
-        this._el.title = `Zoom ${z}`;
-    }
-});
 
 // Range-scale chip. Draws a horizontal tick at a "nice round"
 // nautical-mile value (..., 0.1, 0.2, 0.5, 1, 2, 5, 10, ...) so the
@@ -241,10 +220,7 @@ function initRangeScale(mapInstance) {
         _rangeScaleEl);
     // Zoom indicator. Pairs with the distance label so the helm sees
     // both "how wide is the bar in nautical miles" AND "what zoom
-    // level am I on" without a separate badge. The Leaflet zoom-level
-    // badge in the bottom-left was hidden a few revisions ago because
-    // it duplicated this information; folding it into the scale chip
-    // here is the one-place answer.
+    // level am I on" from one chip.
     _rangeScaleZoomEl = L.DomUtil.create('span', 'ona-range-scale-zoom',
         _rangeScaleEl);
     L.DomEvent.disableClickPropagation(_rangeScaleEl);
@@ -625,22 +601,9 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient, opt
     // setFollow shortly after, which re-applies the mode anyway.
     applyFollowZoomMode();
 
-    // Zoom-level badge in the bottom-left of the Leaflet control area:
-    // "z14" chip so the helm can tell at a glance whether they're at
-    // z14 or z16 without poking the +/- buttons until tile detail
-    // changes. No metric + nautical scale bars here: the helm wants a
-    // quiet chrome strip and the rose / radar overlays already carry
-    // their own range cues (rings, radar range chip).
-    zoomBadge = new ZoomBadge({ position: 'bottomleft' });
-    zoomBadge.addTo(map);
-    map.on('zoomend', () => zoomBadge.update());
-    zoomBadge.update();
-
     // Range scale: instrument-styled tick + label so the helm can
     // gauge distance on the chart without poking the +/- buttons.
-    // Bottom-left corner - same Leaflet control rail as the zoom
-    // badge so the two chips stack predictably even when the depth
-    // HUD card moves on viewport changes.
+    // Positioned by CSS (.ona-range-scale).
     initRangeScale(map);
 
     // No separate pinch-zoom preview chip: initRangeScale wires the
@@ -1394,12 +1357,6 @@ function setSpeedPalette(palette) {
 // the current cap, drop maxNativeZoom by 1 and redraw. Idempotent -
 // once we drop to the chart's actual native zoom, errors stop.
 //
-// Per-chart tile-error counter, surfaced via getChartTileErrors() for
-// the Settings dev section. Counts the `tileerror` Leaflet event for
-// each chart layer. Helm-facing diagnostic; also drives the
-// downshift-on-404 calibrator below.
-const chartTileErrors = new Map();   // id -> total count
-
 // Per-chart per-zoom error tally for the downshift calibrator. When
 // N errors land at the layer's current `maxNativeZoom`, we drop the
 // cap by 1 and redraw - the helm's chart server claims a maxzoom
@@ -1525,16 +1482,11 @@ export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds, up
     // (helm may have already tuned it before this chart toggled on).
     // No-op when the filter is the identity default.
     applyChartFilter(layer);
-    chartTileErrors.set(id, 0);
     chartZoomErrors.set(id, new Map());
     layer.on('tileerror', (ev) => {
-        // A late tileerror after removeChartLayer(id) would otherwise
-        // resurrect the deleted entry via the `?? 0` fallback and
-        // grow chartTileErrors unboundedly across many add/remove
-        // cycles. Guard with .has(id) so a removed chart's in-flight
-        // <img>.error events stop being counted.
-        if (!chartTileErrors.has(id)) return;
-        chartTileErrors.set(id, chartTileErrors.get(id) + 1);
+        // A removed chart's in-flight <img> errors are ignored: its zoom
+        // map is gone.
+        if (!chartZoomErrors.has(id)) return;
         // Downshift calibrator. Pure decision logic in chartDownshift.js;
         // this handler reads layer state, asks decideDownshift what to
         // do, then applies side-effects. Behaviour (idempotent, only
@@ -1571,49 +1523,12 @@ export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds, up
     return true;
 }
 
-/**
- * Diagnostic getter for the Settings dev section. Returns a flat
- * object { chartId: errorCount } so a Razor binding can render a
- * simple list. Helms see "Chart X: 47 missing tiles" and decide
- * whether to lower its upscale cap or report a server-side bug.
- *
- * Cumulative-since-add: each entry counts errors from when the
- * layer was added (chartTileErrors.set(id, 0) inside addChartLayer)
- * until removeChartLayer drops the entry. Toggling the chart off
- * and on resets the count. There is no time window; a multi-day
- * session reports the lifetime total. Helms reading "47" should
- * interpret it as "since this chart was last enabled."
- */
-export function getChartTileErrors() {
-    const out = {};
-    for (const [id, count] of chartTileErrors) out[id] = count;
-    return out;
-}
-
-/**
- * Reset a single chart's tile-error counter without removing the
- * layer. Used by the Settings dev section "reset" button so the
- * helm can re-baseline a long-running session without toggling the
- * layer (which would force a tile re-fetch and visual flicker).
- * No-op if the id has no entry; the caller doesn't need to know
- * whether the chart is currently enabled.
- */
-export function resetChartTileErrors(id) {
-    if (chartTileErrors.has(id)) chartTileErrors.set(id, 0);
-}
-
 export function removeChartLayer(id) {
-    // Stop the layer's tileerror handler before MarkerLayer.remove
-    // detaches it. Leaflet doesn't unbind layer-level listeners on
-    // _onRemove, and an in-flight <img> that 404s after detach would
-    // otherwise still fire the handler - the .has(id) guard inside
-    // the handler defends against the resulting deleted-then-re-set
-    // entry, but turning the dispatch off entirely is the simpler
-    // belt-and-suspenders.
+    // Leaflet doesn't unbind layer-level listeners on _onRemove, so stop
+    // the tileerror handler before the layer detaches.
     const layer = chartLayers.get(id);
     if (layer && typeof layer.off === 'function') layer.off('tileerror');
     chartLayers.remove(id);
-    chartTileErrors.delete(id);
     chartZoomErrors.delete(id);
     restackChartOpacities();
 }
@@ -2081,7 +1996,6 @@ export function setActiveRouteStopping(stopping) {
 export const startRouteEdit = () => routeEditLayerMod.startRouteEdit();
 export const stopRouteEdit = () => routeEditLayerMod.stopRouteEdit();
 export const getEditRouteCoords = () => routeEditLayerMod.getEditRouteCoords();
-export const undoLastEditWaypoint = () => routeEditLayerMod.undoLastEditWaypoint();
 export const reverseEditRoute = () => routeEditLayerMod.reverseEditRoute();
 export const removeRouteEditWaypoint = (index) => routeEditLayerMod.removeRouteEditWaypoint(index);
 // No getEditRouteStats: C# polls getEditRouteCoords and computes
@@ -2244,18 +2158,6 @@ export function setOwnCallsign(callsign) {
 export const setWeatherOverlay = (tileUrl, opacity) => weatherLayerMod.setWeatherOverlay(tileUrl, opacity);
 export const setWeatherOverlayOpacity = (opacity) => weatherLayerMod.setWeatherOverlayOpacity(opacity);
 export const clearWeatherOverlay = () => weatherLayerMod.clearWeatherOverlay();
-
-// --- File I/O helpers (GPX import/export) ---
-
-export function triggerFileDownload(filename, content) {
-    const blob = new Blob([content], { type: 'application/gpx+xml' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
-}
 
 // --- Tidal Current Arrow ---
 // State (`currentArrow`) is declared at the top of the module so

@@ -315,11 +315,6 @@ function writeOverscan() {
     container.style.setProperty('--map-overscan-y', `${overscan.y}px`);
 }
 
-/** Current continuous rotation in degrees (map heading up). */
-export function getRotationDeg() {
-    return rotationDeg;
-}
-
 /**
  * Rotates the map so `headingDeg` points up. Returns false when the
  * change is under minStepDeg (sub-degree COG jitter would otherwise

@@ -3,12 +3,6 @@
 // a vertex on an existing leg. Drag of a waypoint shows a "ghost"
 // marker at the original position and a delta tooltip so the helm
 // always sees "how far from where it was".
-//
-// Undo semantics: each addEditWaypoint or insertEditVertexOnSegment
-// pushes the inserted index onto routeEditAddStack. Undo pops the
-// most-recent index and splices that vertex out - so "undo last
-// thing I added" works for both append and mid-route insert (a plain
-// "pop the last coord" would be wrong on inserts).
 
 import { haversineMeters, NM_PER_METER } from './geoMath.js';
 
@@ -36,10 +30,6 @@ let routeEditLegLabels = [];
 // stopPropagation because Leaflet's map click is a separate dispatch
 // channel that DOM-level stopPropagation doesn't intercept.
 let routeEditSuppressNextMapClick = false;
-// Undo history. Each entry is the index of the most recently ADDED
-// waypoint (append OR mid-route insert).
-let routeEditAddStack = [];
-
 export function init(map, deps) {
     mapRef = map;
     colors = deps.colors;
@@ -180,13 +170,6 @@ function insertEditVertexOnSegment(ll) {
     // Insert at bestIdx + 1 so the order becomes ... prev, new, next ...
     const insertAt = bestIdx + 1;
     routeEditCoords.splice(insertAt, 0, [ll.lat, ll.lng]);
-    // Shift any stack entries >= insertAt up by one so historical
-    // indices still point at the same waypoint objects, then push
-    // the new insertion so undo finds it on top of the stack.
-    for (let i = 0; i < routeEditAddStack.length; i++) {
-        if (routeEditAddStack[i] >= insertAt) routeEditAddStack[i]++;
-    }
-    routeEditAddStack.push(insertAt);
     // Signal the map-level click handler (fires immediately after
     // this one in Leaflet's dispatch order) to skip the append-on-
     // map-click fallback. Without this the user gets a phantom Nth+1
@@ -281,7 +264,6 @@ function bindEditMarker(marker, idx) {
 export function addEditWaypoint(lat, lon) {
     const idx = routeEditCoords.length;
     routeEditCoords.push([lat, lon]);
-    routeEditAddStack.push(idx);
 
     const marker = L.marker([lat, lon], {
         icon: makeEditWpIcon(idx + 1),
@@ -310,50 +292,19 @@ export function stopRouteEdit() {
     routeEditLine = null;
     routeEditHitLine = null;
     routeEditLegLabels = [];
-    routeEditAddStack = [];
 }
 
 export function getEditRouteCoords() {
     return routeEditCoords;
 }
 
-export function undoLastEditWaypoint() {
-    if (routeEditCoords.length === 0) return;
-    // Pop the index of the most recently added waypoint. For pure
-    // appends this is always "remove the last"; for mid-route
-    // inserts it's the inserted vertex, which is what the user
-    // actually wanted undone. Fallback to last-coord pop when the
-    // stack is empty (happens after a loadRouteForEdit hydrate -
-    // the existing coords weren't "added" in this session).
-    let removeIdx;
-    if (routeEditAddStack.length > 0) {
-        removeIdx = routeEditAddStack.pop();
-    } else {
-        removeIdx = routeEditCoords.length - 1;
-    }
-    if (removeIdx < 0 || removeIdx >= routeEditCoords.length) {
-        removeIdx = routeEditCoords.length - 1;
-    }
-    // Shift any remaining stack entries above the removal point down
-    // so they keep pointing at the same waypoint objects after the
-    // splice renumbers everything below them.
-    for (let i = 0; i < routeEditAddStack.length; i++) {
-        if (routeEditAddStack[i] > removeIdx) routeEditAddStack[i]--;
-    }
-    routeEditCoords.splice(removeIdx, 1);
-    rebuildRouteEditMarkers();
-    redrawEditLine();
-}
-
 // Reverse the order of all edit waypoints in place. Used when the
 // user wants to flip a route's direction (e.g. they planned outbound
 // and now need the return leg). The marker numbers and the polyline
-// are rebuilt from the reversed coord array; the add-stack is wiped
-// because per-vertex add-order tracking is meaningless after a flip.
+// are rebuilt from the reversed coord array.
 export function reverseEditRoute() {
     if (routeEditCoords.length < 2) return;
     routeEditCoords.reverse();
-    routeEditAddStack = [];
     rebuildRouteEditMarkers();
     redrawEditLine();
 }
@@ -366,12 +317,6 @@ export function reverseEditRoute() {
 export function removeRouteEditWaypoint(index) {
     if (index < 0 || index >= routeEditCoords.length) return;
     routeEditCoords.splice(index, 1);
-    // Shift any add-stack entries. Anything at >index drops one;
-    // anything == index is dropped (the user explicitly removed it
-    // via the in-panel list, not via undo).
-    routeEditAddStack = routeEditAddStack
-        .filter(i => i !== index)
-        .map(i => i > index ? i - 1 : i);
     if (routeEditCoords.length < 2 && routeEditLine && routeEditLayer) {
         routeEditLayer.removeLayer(routeEditLine);
         if (routeEditHitLine) routeEditLayer.removeLayer(routeEditHitLine);
@@ -393,11 +338,6 @@ export function loadRouteForEdit(coords) {
     for (const c of coords) {
         addEditWaypoint(c[0], c[1]);
     }
-    // The loaded waypoints weren't "added" in this edit session -
-    // the user didn't tap them here, they came from the server.
-    // Clear the stack so Undo only removes vertices the user added
-    // AFTER opening the existing route for edit.
-    routeEditAddStack = [];
 }
 
 export function dispose() {
@@ -409,7 +349,6 @@ export function dispose() {
     routeEditHitLine = null;
     routeEditLegLabels = [];
     routeEditSuppressNextMapClick = false;
-    routeEditAddStack = [];
     mapRef = null;
     colors = null;
     pointToSegmentPixels = null;

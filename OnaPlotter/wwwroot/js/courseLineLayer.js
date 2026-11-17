@@ -16,7 +16,6 @@
 let mapRef = null;
 let colors = null;
 
-let courseLineLeg = null;
 let courseLineBearing = null;
 // Pulsing marker at the destination waypoint. Drawn here (not just
 // in activeRouteLayer.js) so the "Navigate Here" flow - which
@@ -65,14 +64,6 @@ export function init(map, deps) {
 // the destination + destination pulse.
 export function setCourseLine(selfLat, selfLon, wpLat, wpLon, arrivalRadiusMeters) {
     if (!mapRef) return;
-
-    // Tear down any leftover leg line. courseLineLeg stays declared at
-    // module scope so dispose() can null it; this just guarantees the
-    // layer is gone if some stale state left it behind.
-    if (courseLineLeg) {
-        mapRef.removeLayer(courseLineLeg);
-        courseLineLeg = null;
-    }
 
     // Bearing line: boat to next WP. Skip the setLatLngs rebuild when
     // neither endpoint moved since the last call.
@@ -163,7 +154,6 @@ export function setCoursePulseSuppressed(suppress) {
 }
 
 export function clearCourseLine() {
-    if (courseLineLeg && mapRef) { mapRef.removeLayer(courseLineLeg); courseLineLeg = null; }
     if (courseLineBearing && mapRef) { mapRef.removeLayer(courseLineBearing); courseLineBearing = null; }
     if (courseLinePulse && mapRef) { mapRef.removeLayer(courseLinePulse); courseLinePulse = null; }
     if (courseLineArrivalRing && mapRef) { mapRef.removeLayer(courseLineArrivalRing); courseLineArrivalRing = null; }
@@ -179,9 +169,6 @@ export function clearCourseLine() {
 // real teardown).
 export function setStoppingDim(stopping) {
     const opacity = stopping ? 0.3 : 1.0;
-    if (courseLineLeg) {
-        try { courseLineLeg.setStyle({ opacity }); } catch (_) { /* tooltips have no setStyle */ }
-    }
     if (courseLineBearing) {
         try { courseLineBearing.setStyle({ opacity }); } catch (_) { }
     }
@@ -194,7 +181,6 @@ export function setStoppingDim(stopping) {
 }
 
 export function dispose() {
-    courseLineLeg = null;
     courseLineBearing = null;
     courseLinePulse = null;
     courseLineArrivalRing = null;

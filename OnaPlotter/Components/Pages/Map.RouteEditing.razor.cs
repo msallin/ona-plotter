@@ -182,12 +182,6 @@ public partial class Map
         return false;
     }
 
-    // No "Undo" button on the route-edit panel: the per-waypoint
-    // remove (× on the list rows) and the marker-drag-to-reposition
-    // gestures cover the same UX, so it would be redundant chrome. The
-    // JS-side undoLastEditWaypoint export is kept for a possible
-    // gesture (e.g. swipe-back) - it's only a few lines.
-
     /// <summary>App-start prompt: when a route draft survived the
     /// previous session (save failed, accidental refresh, etc.),
     /// ask the helm whether to restore it or discard. Skips

@@ -1270,7 +1270,9 @@
 //               change); UpdateChecker starts its timer from StartAsync.
 // v120 -> v121: stale-data check, login-status poll and snooze rehydration
 //               move from MainLayout into hosted services.
-const CACHE_NAME = 'ona-plotter-v121';
+// v121 -> v122: dead-code removal (unused components, zoom badge, tile-error
+//               counter, route-edit undo, duplicate download helper).
+const CACHE_NAME = 'ona-plotter-v122';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
