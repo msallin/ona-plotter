@@ -38,11 +38,11 @@ Each of these lights up extra UI when installed; OnaPlotter works without
 them.
 
 - [signalk-anchoralarm-plugin](https://github.com/sbender9/signalk-anchoralarm-plugin) v2.0.0+: anchor watch
-- [signalk-tides-api](https://github.com/sbender9/signalk-tides-api): tide card and anchor-tide alarm
+- [signalk-tides-api](https://github.com/joabakk/signalk-tides-api): tide card and anchor-tide alarm
 - [signalk-buddylist-plugin](https://github.com/sbender9/signalk-buddylist-plugin): buddy boats
 - [signalk-parquet](https://github.com/motamman/signalk-parquet): History and Stats pages, server-side track, Wind Rose history
-- [Mayara](https://github.com/MarineYachtRadar/mayara-server): radar targets
-- [signalk-flags](https://github.com/SignalK/signalk-flags): country flags in AIS popups
+- [Mayara](https://github.com/MarineYachtRadar/mayara-server) via its [signalk plugin](https://github.com/MarineYachtRadar/mayara-server-signalk-plugin): radar targets
+- [signalk-flags](https://github.com/panaaj/signalk-flags): country flags in AIS popups
 
 ## Links
 

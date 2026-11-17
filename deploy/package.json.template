@@ -25,6 +25,14 @@
   "signalk-plugin-enabled-by-default": true,
   "signalk": {
     "appIcon": "favicon.svg",
-    "displayName": "OnaPlotter"
+    "displayName": "OnaPlotter",
+    "recommends": [
+      "signalk-anchoralarm-plugin",
+      "signalk-tides-api",
+      "signalk-buddylist-plugin",
+      "signalk-parquet",
+      "@marineyachtradar/signalk-plugin",
+      "signalk-flags"
+    ]
   }
 }
