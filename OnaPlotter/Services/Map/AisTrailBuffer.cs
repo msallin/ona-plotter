@@ -71,9 +71,6 @@ public sealed class AisTrailBuffer
         _maxAge = maxAge;
     }
 
-    /// <summary>Currently configured maximum trail age.</summary>
-    public TimeSpan MaxAge => _maxAge;
-
     /// <summary>
     /// Records a new fix for <paramref name="context"/>. Returns
     /// <c>true</c> when the trail's visible geometry changed: a fresh

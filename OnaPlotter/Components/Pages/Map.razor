@@ -2982,16 +2982,6 @@
         await InvokeAsync(StateHasChanged);
     }
 
-    /// <summary>Called by the JS AIS name resolver when an enrichment lookup
-    /// (MarineTraffic / VesselFinder via CORS proxy) returns a human-readable
-    /// name for a vessel that SignalK hasn't named yet.</summary>
-    [JSInvokable]
-    public void OnVesselNameResolved(string context, string name)
-    {
-        AisStore.SetName(context, name);
-        if (chartPanelOpen) _ = InvokeAsync(StateHasChanged);
-    }
-
     /// <summary>Called from the AIS popup's Buddy link. Adds or removes the
     /// target via the plugin's REST API, then refreshes the buddy list and
     /// retags the tracked AIS vessels.</summary>

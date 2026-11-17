@@ -12,7 +12,7 @@ namespace OnaPlotter.Components.Pages;
 /// re-entrancy guard shared with the polygon flow in
 /// <c>Map.Editing.razor.cs</c>.
 ///
-/// Interop goes through the typed <c>IMapEditJs</c> / <c>IMapRouteJs</c>
+/// Interop goes through the typed <c>MapEditJs</c> / <c>IMapRouteJs</c>
 /// wrappers; lifecycle exceptions (JSDisconnected / ObjectDisposed)
 /// are absorbed inside the wrapper so call sites focus on the save /
 /// edit logic. JSException stays explicit at sites where the failure

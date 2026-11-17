@@ -255,12 +255,4 @@ public sealed class ChartLayerController
             .OrderBy(c => index.TryGetValue(c.Identifier, out var i) ? i : int.MaxValue)
             .ToList();
     }
-
-    /// <summary>Mutable shorthand for the page's restore-on-init
-    /// path. Adds a chart id to the local enabled mirror without
-    /// firing the JS pipeline; used after <see cref="ToggleAsync"/>
-    /// to keep the mirror in sync when an external caller restored
-    /// the chart for us. (Currently unused; reserved for future
-    /// init-snapshot batching.)</summary>
-    internal void NoteEnabled(string id) => _enabled.Add(id);
 }

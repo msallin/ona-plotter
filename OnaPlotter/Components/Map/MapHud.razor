@@ -1280,16 +1280,8 @@
     private static string TruncateStation(string s) =>
         s.Length <= HudStationNameMaxChars ? s : s[..HudStationNameMaxChars] + "...";
 
-    private static MarkupString SvgText(double x, double y, string content, string fill, int fontSize)
-    {
-        return new MarkupString(
-            $"<text x=\"{x}\" y=\"{y}\" fill=\"{fill}\" font-size=\"{fontSize}\" " +
-            $"text-anchor=\"middle\" dominant-baseline=\"central\">{System.Net.WebUtility.HtmlEncode(content)}</text>");
-    }
-
-    // Class-routed variant. Used by the HDG compass cardinals so the
-    // colour follows --hud-ink-dim / --hud-ink-stale and flips with
-    // theme. Hard-coded fill="" was invisible on the white light card.
+    // Class-routed so the colour follows --hud-ink-dim / --hud-ink-stale
+    // and flips with theme; a hard-coded fill is invisible on the light card.
     private static MarkupString SvgTextCls(double x, double y, string content, string cls, int fontSize)
     {
         return new MarkupString(

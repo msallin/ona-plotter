@@ -70,7 +70,6 @@ public interface INavPreferences
     string OwnVesselType { get; }
 
     Task SetPreferMagneticHeadingAsync(bool value);
-    Task SetPreferMagneticCourseAsync(bool value);
     Task SetAutoAdvanceWaypointsAsync(bool value);
     Task SetSailingModeAsync(string value);
     Task SetOwnVesselTypeAsync(string value);

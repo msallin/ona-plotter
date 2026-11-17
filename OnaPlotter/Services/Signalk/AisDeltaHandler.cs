@@ -50,7 +50,7 @@ internal sealed class AisDeltaHandler
     /// both handled:
     /// <list type="number">
     ///   <item>Spec (v3.1): <c>radars.&lt;rid&gt;.targets.&lt;tid&gt;</c>
-    ///     with the whole <see cref="Models.RadarArpaTarget"/> as
+    ///     with the whole target object (id, status, position, motion) as
     ///     value. <c>value: null</c> signals target deletion.</item>
     ///   <item>Per-field (early Mayara):
     ///     <c>radars.&lt;rid&gt;.targets.&lt;tid&gt;.&lt;field&gt;</c>

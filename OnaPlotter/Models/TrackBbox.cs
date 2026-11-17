@@ -23,12 +23,6 @@ public readonly record struct TrackBbox(
     double North,
     double East)
 {
-    /// <summary>Default outward-pad fraction used by the History
-    /// page's viewport probe. 20 % per axis means the box only "moves"
-    /// once the helm pans ~10 % of the viewport off-screen, so a
-    /// small pan doesn't trigger a re-fetch.</summary>
-    public const double DefaultPadFraction = 0.20;
-
     /// <summary>Returns a copy expanded outward by
     /// <paramref name="fraction"/> of each axis. <c>0.20</c> grows a
     /// 1°×1° box to 1.4°×1.4°. Used by the History viewport probe so

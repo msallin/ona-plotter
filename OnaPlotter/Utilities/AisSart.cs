@@ -32,10 +32,6 @@ public static class AisSart
         };
     }
 
-    /// <summary>True when <paramref name="mmsi"/> falls in any of the
-    /// distress-transmitter ranges.</summary>
-    public static bool IsSart(string? mmsi) => Category(mmsi) is not null;
-
     /// <summary>Looks up the category for an MMSI, falling back to
     /// extracting the MMSI from a SignalK <c>vessels.urn:mrn:imo:mmsi:NNN</c>
     /// context when the bare MMSI field isn't populated yet.

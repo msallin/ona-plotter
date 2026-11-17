@@ -26,7 +26,6 @@ public class WaypointCourseApiTests
         public string CogReadoutSource => "trueSmoothed";
         public string OwnCogVectorSource => "trueSmoothed";
         public Task SetPreferMagneticHeadingAsync(bool value) => Task.CompletedTask;
-        public Task SetPreferMagneticCourseAsync(bool value) => Task.CompletedTask;
         public Task SetAutoAdvanceWaypointsAsync(bool value) => Task.CompletedTask;
         public Task SetSailingModeAsync(string value) => Task.CompletedTask;
         public Task SetOwnVesselTypeAsync(string value) => Task.CompletedTask;

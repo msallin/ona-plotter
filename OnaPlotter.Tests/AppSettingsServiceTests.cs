@@ -1331,7 +1331,7 @@ public class AppSettingsServiceTests
         var svc = new AppSettingsService(kv);
         await svc.InitializeAsync();
         await svc.SetPreferMagneticHeadingAsync(true);
-        await svc.SetPreferMagneticCourseAsync(true);
+        await svc.SetCogReadoutSourceAsync("magneticSmoothed");
 
         var svc2 = new AppSettingsService(kv);
         await svc2.InitializeAsync();

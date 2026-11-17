@@ -4,7 +4,7 @@ using OnaPlotter.Services.Js;
 namespace OnaPlotter.Tests;
 
 /// <summary>
-/// Pins the IMapEditJs wrapper around the leafletInterop.js
+/// Pins the MapEditJs wrapper around the leafletInterop.js
 /// route-edit, polygon-edit, and measure-tool surface. Mirrors
 /// <see cref="MapAnchorJsTests"/> in shape: representative happy
 /// paths via the recording fake, dispose gate via MarkDisposed,

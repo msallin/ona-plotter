@@ -209,7 +209,6 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetAisInactiveMinutesAsync(double v) { AisInactiveMinutes = v; return Task.CompletedTask; }
     public Task SetAisRemoveMinutesAsync(double v) { AisRemoveMinutes = v; return Task.CompletedTask; }
     public Task SetPreferMagneticHeadingAsync(bool v) { PreferMagneticHeading = v; return Task.CompletedTask; }
-    public Task SetPreferMagneticCourseAsync(bool v) { PreferMagneticCourse = v; return Task.CompletedTask; }
     public Task SetCogReadoutSourceAsync(string v) { CogReadoutSource = v; return Task.CompletedTask; }
     public Task SetOwnCogVectorSourceAsync(string v) { OwnCogVectorSource = v; return Task.CompletedTask; }
     public Task SetAutoAdvanceWaypointsAsync(bool v) { AutoAdvanceWaypoints = v; return Task.CompletedTask; }

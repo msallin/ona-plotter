@@ -13,7 +13,7 @@ namespace OnaPlotter.Components.Pages;
 ///
 /// Poll cadence reuses <c>RouteStatsPollIntervalMs</c> from the
 /// main Map page constants. Interop goes through the typed
-/// <c>IMapEditJs</c> / <c>IMapResourceJs</c> wrappers; lifecycle
+/// <c>MapEditJs</c> / <c>IMapResourceJs</c> wrappers; lifecycle
 /// exceptions are absorbed inside the wrapper.
 /// </summary>
 public partial class Map

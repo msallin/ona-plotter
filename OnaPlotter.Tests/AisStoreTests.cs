@@ -30,43 +30,6 @@ public class AisStoreTests
     }
 
     [Test]
-    public async Task SetName_WhenEmpty_PopulatesAndFiresEvent()
-    {
-        var store = new AisStore();
-        var pos = JsonSerializer.SerializeToElement(new { latitude = 47.0, longitude = 8.0 });
-        store.Apply("vessels.urn:mrn:imo:mmsi:222222222", "navigation.position", pos);
-        int fired = 0;
-        store.OnAisUpdated += () => fired++;
-
-        store.SetName("vessels.urn:mrn:imo:mmsi:222222222", "MARCO POLO");
-
-        await Assert.That(store.GetVessels()[0].Name).IsEqualTo("MARCO POLO");
-        await Assert.That(fired).IsEqualTo(1);
-    }
-
-    [Test]
-    public async Task SetName_WhenAlreadySet_DoesNotOverwrite()
-    {
-        var store = new AisStore();
-        var pos = JsonSerializer.SerializeToElement(new { latitude = 47.0, longitude = 8.0 });
-        store.Apply("vessels.urn:mrn:imo:mmsi:333333333", "navigation.position", pos);
-        var nameEl = JsonSerializer.SerializeToElement("ORIGINAL");
-        store.Apply("vessels.urn:mrn:imo:mmsi:333333333", "name", nameEl);
-
-        store.SetName("vessels.urn:mrn:imo:mmsi:333333333", "OVERRIDE");
-
-        await Assert.That(store.GetVessels()[0].Name).IsEqualTo("ORIGINAL");
-    }
-
-    [Test]
-    public async Task SetName_UnknownContext_NoOp()
-    {
-        var store = new AisStore();
-        store.SetName("vessels.urn:mrn:imo:mmsi:444444444", "NOBODY");
-        await Assert.That(store.Count).IsEqualTo(0);
-    }
-
-    [Test]
     public async Task UpdateBuddies_TagsExistingVessels()
     {
         var store = new AisStore();
@@ -392,7 +355,7 @@ public class AisStoreTests
     {
         // Wire-protocol robustness: the dispatcher might pass an empty
         // context if a delta is malformed. Same expectation as the
-        // SetName / Evict guards.
+        // Evict guard.
         var store = new AisStore();
         int raised = 0;
         store.OnAisUpdated += () => raised++;
@@ -538,8 +501,8 @@ public class AisStoreTests
     public async Task Evict_NullOrEmpty_NoOp()
     {
         // Wire-protocol robustness: a malformed delta could feed an
-        // empty context here. The guard mirrors RemoveContext and
-        // SetName - early-return so no event fires and no spurious
+        // empty context here. The guard mirrors RemoveContext:
+        // early-return so no event fires and no spurious
         // blocklist entry is added.
         var store = new AisStore();
         int fires = 0;

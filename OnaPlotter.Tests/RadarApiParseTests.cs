@@ -8,7 +8,7 @@ namespace OnaPlotter.Tests;
 /// Pinning tests for the Radar API response parser. Two input shapes
 /// matter to us: the spec's dict-keyed-by-id form and the
 /// reference-implementation's plain-array form. Capabilities +
-/// controls + targets follow the documented schemas verbatim, so
+/// controls follow the documented schemas verbatim, so
 /// we just verify our DTOs round-trip a sample drawn from the spec.
 /// </summary>
 public class RadarApiParseTests
@@ -392,60 +392,6 @@ public class RadarApiParseTests
         await Assert.That(cap.Legend!.PixelColors).IsEqualTo(16);
         await Assert.That(cap.Legend.TargetBorder).IsEqualTo(17);
         await Assert.That(cap.Legend.Pixels.Length).IsEqualTo(2);
-    }
-
-    [Test]
-    public async Task Target_ParsesDocSample()
-    {
-        const string json = """
-            {
-              "id": 1,
-              "status": "tracking",
-              "position": {
-                "bearing": 0.789, "distance": 1852,
-                "latitude": 52.3702, "longitude": 4.8952
-              },
-              "motion": { "course": 3.14159, "speed": 3.34 },
-              "danger": { "cpa": 150, "tcpa": 324 },
-              "acquisition": "auto",
-              "sourceZone": 1,
-              "firstSeen": "2025-01-15T10:25:00Z",
-              "lastSeen": "2025-01-15T10:30:00Z"
-            }
-            """;
-
-        var t = JsonSerializer.Deserialize<RadarArpaTarget>(json,
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-
-        await Assert.That(t).IsNotNull();
-        await Assert.That(t!.Id).IsEqualTo(1);
-        await Assert.That(t.Status).IsEqualTo("tracking");
-        await Assert.That(t.Position!.Bearing).IsEqualTo(0.789);
-        await Assert.That(t.Position.Distance).IsEqualTo(1852.0);
-        await Assert.That(t.Motion!.Speed).IsEqualTo(3.34);
-        await Assert.That(t.Danger!.Cpa).IsEqualTo(150.0);
-        await Assert.That(t.Danger.Tcpa).IsEqualTo(324.0);
-        await Assert.That(t.SourceZone).IsEqualTo(1);
-    }
-
-    [Test]
-    public async Task Target_PartialMotionOk()
-    {
-        // Freshly acquired target: no motion/danger yet.
-        const string json = """
-            {
-              "id": 5, "status": "acquiring",
-              "position": { "bearing": 1.2, "distance": 500 },
-              "acquisition": "manual",
-              "firstSeen": "x", "lastSeen": "x"
-            }
-            """;
-        var t = JsonSerializer.Deserialize<RadarArpaTarget>(json,
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-        await Assert.That(t).IsNotNull();
-        await Assert.That(t!.Motion).IsNull();
-        await Assert.That(t.Danger).IsNull();
-        await Assert.That(t.Acquisition).IsEqualTo("manual");
     }
 
     [Test]

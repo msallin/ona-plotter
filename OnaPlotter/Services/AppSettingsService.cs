@@ -254,13 +254,8 @@ public sealed class AppSettingsService : IAppSettings
     public string OwnCogVectorSource { get; private set; } =
         OnaPlotter.Utilities.CogSourceResolver.DefaultSetting;
 
-    /// <summary>Back-compat boolean derived from the True/Magnetic
-    /// axis of <see cref="CogReadoutSource"/>. Kept as a property so
-    /// existing readers (NavigationData, AlarmContext, SignalkClient
-    /// cache) don't need to change. The setter
-    /// <see cref="SetPreferMagneticCourseAsync"/> now flips
-    /// <see cref="CogReadoutSource"/>'s True/Magnetic axis while
-    /// preserving the smoothed/realtime axis.</summary>
+    /// <summary>Boolean view of the True/Magnetic axis of
+    /// <see cref="CogReadoutSource"/>; set by changing that source.</summary>
     public bool PreferMagneticCourse =>
         OnaPlotter.Utilities.CogSourceResolver.IsMagnetic(
             OnaPlotter.Utilities.CogSourceResolver.Parse(CogReadoutSource));
@@ -1202,25 +1197,6 @@ public sealed class AppSettingsService : IAppSettings
         PreferMagneticHeading = value;
         await Save(SettingKeys.PreferMagneticHeading, value ? "true" : "false");
         OnSettingsChanged?.Invoke();
-    }
-
-    /// <summary>Boolean-axis setter: flips the True/Magnetic axis of
-    /// <see cref="CogReadoutSource"/> while preserving the picked
-    /// smoothed/realtime variant, for callers that only deal in the
-    /// boolean (legacy migrations, page-side toggles). Never writes the
-    /// retired <c>preferMagneticCourse.v1</c> key.</summary>
-    public async Task SetPreferMagneticCourseAsync(bool value)
-    {
-        var current = OnaPlotter.Utilities.CogSourceResolver.Parse(CogReadoutSource);
-        var smoothed = OnaPlotter.Utilities.CogSourceResolver.IsSmoothed(current);
-        var next = (value, smoothed) switch
-        {
-            (true,  true)  => OnaPlotter.Utilities.CogSource.MagneticSmoothed,
-            (true,  false) => OnaPlotter.Utilities.CogSource.MagneticRealtime,
-            (false, true)  => OnaPlotter.Utilities.CogSource.TrueSmoothed,
-            (false, false) => OnaPlotter.Utilities.CogSource.TrueRealtime,
-        };
-        await SetCogReadoutSourceAsync(OnaPlotter.Utilities.CogSourceResolver.ToSetting(next));
     }
 
     public async Task SetCogReadoutSourceAsync(string value)

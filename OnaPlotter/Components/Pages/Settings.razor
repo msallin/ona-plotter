@@ -1742,9 +1742,6 @@
     private async Task OnHeadingPrefChanged(bool magnetic)
         => await AppSettings.SetPreferMagneticHeadingAsync(magnetic);
 
-    private async Task OnCogPrefChanged(bool magnetic)
-        => await AppSettings.SetPreferMagneticCourseAsync(magnetic);
-
     private async Task OnCogReadoutSourceChanged(ChangeEventArgs e)
     {
         var raw = e.Value?.ToString() ?? string.Empty;
@@ -2244,7 +2241,7 @@
 
     // Razor reserves <text> as a literal-text block marker in component
     // markup, so we emit SVG <text> elements via MarkupString to bypass
-    // the parser. Mirrors the trick used in MapHud.SvgText.
+    // the parser. Same trick as MapHud.SvgTextCls.
     private static MarkupString SvgLabel(double x, double y, string content, string fill, int fontSize, string anchor)
     {
         return new MarkupString(
