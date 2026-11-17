@@ -24,10 +24,10 @@ public class AlarmEvaluationDriverTests
         public RecordingManager(AlarmManager inner) => _inner = inner;
         public AlarmManager Inner => _inner;
 
-        public void Evaluate(NavigationData data, Func<IReadOnlyCollection<AisVessel>> vessels, IAppSettings settings)
-            => _inner.Evaluate(data, () => { ProviderCalls++; return vessels(); }, settings);
-        public void Evaluate(NavigationData data, IReadOnlyCollection<AisVessel> vessels, IAppSettings settings)
-            => _inner.Evaluate(data, vessels, settings);
+        public void Evaluate(NavigationData data, Func<IReadOnlyCollection<AisVessel>> vessels)
+            => _inner.Evaluate(data, () => { ProviderCalls++; return vessels(); });
+        public void Evaluate(NavigationData data, IReadOnlyCollection<AisVessel> vessels)
+            => _inner.Evaluate(data, vessels);
 
         public AlarmInfo? ActiveAlarm => _inner.ActiveAlarm;
         public IReadOnlyList<AlarmInfo> ActiveAlarms => _inner.ActiveAlarms;
@@ -70,7 +70,7 @@ public class AlarmEvaluationDriverTests
             new DeadmanAlarmRule(deadman),
             new ServerNotificationsAlarmRule(notifications, NoopNotificationsApi.Instance, NoopPublishedAlarmTracker.Instance),
         ];
-        var manager = new RecordingManager(new AlarmManager(rules, time));
+        var manager = new RecordingManager(AlarmManagerFactory.Create(rules, time, settings));
         var signalk = new SignalkClient(
             baseUrl: new OnaPlotter.Tests.Services.Resources.FakeBaseUrl(),
             loggerFactory: NullLoggerFactory.Instance,
@@ -82,7 +82,7 @@ public class AlarmEvaluationDriverTests
             serverNotifs: notifications,
             atons: new AtonStore(),
             time: time);
-        var driver = new AlarmEvaluationDriver(manager, signalk, ais, notifications, settings, time,
+        var driver = new AlarmEvaluationDriver(manager, signalk, ais, notifications, time,
             NullLogger<AlarmEvaluationDriver>.Instance);
         return new Fixture(driver, manager, time, notifications, deadman, settings);
     }

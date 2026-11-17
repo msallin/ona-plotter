@@ -74,7 +74,7 @@ public class AutoAdvanceServiceTests
             atons: new AtonStore(),
             time: time);
         var course = new FakeCourseApi();
-        var alarms = new AlarmManager([new ApproachRule()], time);
+        var alarms = AlarmManagerFactory.Create([new ApproachRule()], time, settings);
         var toasts = new ToastService();
         var svc = new AutoAdvanceService(signalk, settings, course, alarms, toasts, time);
         return new Fixture(svc, signalk, course, alarms, toasts, time, settings);
@@ -201,7 +201,7 @@ public class AutoAdvanceServiceTests
     public async Task SuccessfulAdvance_DismissesApproachBanner()
     {
         var f = NewFixture();
-        f.Alarms.Evaluate(f.Data, [], f.Settings);
+        f.Alarms.Evaluate(f.Data, []);
         await Assert.That(f.Alarms.ActiveAlarm?.RuleId).IsEqualTo(AlarmRuleId.Approach);
 
         ActiveLeg(f.Data);
@@ -215,7 +215,7 @@ public class AutoAdvanceServiceTests
     public async Task FailedAdvance_KeepsBanner_ToastsError()
     {
         var f = NewFixture();
-        f.Alarms.Evaluate(f.Data, [], f.Settings);
+        f.Alarms.Evaluate(f.Data, []);
         f.Course.Result = ApiResult.Fail("409");
         ActiveLeg(f.Data);
         f.Data.ApplyBool("navigation.course.calcValues.perpendicularPassed", true);
@@ -229,7 +229,7 @@ public class AutoAdvanceServiceTests
     public async Task ManualNextWaypoint_AdvancesRelativeAndDismisses()
     {
         var f = NewFixture();
-        f.Alarms.Evaluate(f.Data, [], f.Settings);
+        f.Alarms.Evaluate(f.Data, []);
         var approach = f.Alarms.ActiveAlarm!;
         ActiveLeg(f.Data);
 

@@ -42,10 +42,7 @@ public class AlarmManagerTests
             new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker()),
             new WindShiftAlarmRule(),
         ];
-        // OnaPlotter has [InternalsVisibleTo("OnaPlotter.Tests")] so the
-        // internal clock-injecting ctor is reachable directly. The
-        // earlier reflection ceremony predated that wiring.
-        var mgr = new AlarmManager(rules, new DelegateTimeProvider(() => clock.Now));
+        var mgr = AlarmManagerFactory.Create(rules, new DelegateTimeProvider(() => clock.Now), settings);
         int fires = 0;
         mgr.OnAlarmChanged += _ => fires++;
         return (mgr, clock, settings, fires);
@@ -61,7 +58,7 @@ public class AlarmManagerTests
         var (mgr, clock, settings, _) = NewMgr();
         var data = Nav(depth: 2.0);
 
-        mgr.Evaluate(data, [], settings);
+        mgr.Evaluate(data, []);
 
         await Assert.That(mgr.ActiveAlarm).IsNotNull();
         await Assert.That(mgr.ActiveAlarm!.Title).IsEqualTo("SHALLOW");
@@ -72,10 +69,10 @@ public class AlarmManagerTests
     public async Task DepthBackAboveThreshold_AlarmClears()
     {
         var (mgr, clock, settings, _) = NewMgr();
-        mgr.Evaluate(Nav(depth: 2.0), [], settings);
+        mgr.Evaluate(Nav(depth: 2.0), []);
         clock.Now = clock.Now.AddSeconds(2);
 
-        mgr.Evaluate(Nav(depth: 5.0), [], settings);
+        mgr.Evaluate(Nav(depth: 5.0), []);
 
         await Assert.That(mgr.ActiveAlarm).IsNull();
     }
@@ -91,7 +88,7 @@ public class AlarmManagerTests
         var (mgr, _, settings, _) = NewMgr();
         settings.DisabledAlarmRulesSet.Add("SHALLOW");
 
-        mgr.Evaluate(Nav(depth: 1.0), [], settings);
+        mgr.Evaluate(Nav(depth: 1.0), []);
 
         await Assert.That(mgr.ActiveAlarm).IsNull();
     }
@@ -104,12 +101,12 @@ public class AlarmManagerTests
         // below threshold and the rule is AutoClear=true (the
         // disabled-rule sweep handles latching rules the same way).
         var (mgr, clock, settings, _) = NewMgr();
-        mgr.Evaluate(Nav(depth: 1.0), [], settings);
+        mgr.Evaluate(Nav(depth: 1.0), []);
         await Assert.That(mgr.ActiveAlarm?.Title).IsEqualTo("SHALLOW");
 
         settings.DisabledAlarmRulesSet.Add("SHALLOW");
         clock.Now = clock.Now.AddSeconds(2);
-        mgr.Evaluate(Nav(depth: 1.0), [], settings);
+        mgr.Evaluate(Nav(depth: 1.0), []);
 
         await Assert.That(mgr.ActiveAlarm).IsNull();
     }
@@ -122,12 +119,12 @@ public class AlarmManagerTests
         // Evaluate fires the alarm fresh.
         var (mgr, clock, settings, _) = NewMgr();
         settings.DisabledAlarmRulesSet.Add("SHALLOW");
-        mgr.Evaluate(Nav(depth: 1.0), [], settings);
+        mgr.Evaluate(Nav(depth: 1.0), []);
         await Assert.That(mgr.ActiveAlarm).IsNull();
 
         settings.DisabledAlarmRulesSet.Remove("SHALLOW");
         clock.Now = clock.Now.AddSeconds(2);
-        mgr.Evaluate(Nav(depth: 1.0), [], settings);
+        mgr.Evaluate(Nav(depth: 1.0), []);
 
         await Assert.That(mgr.ActiveAlarm?.Title).IsEqualTo("SHALLOW");
     }
@@ -162,17 +159,17 @@ public class AlarmManagerTests
         var settings = new FakeSettings();
         IAlarmRule[] rules = [new OnaPlotter.Services.Alarms.ServerNotificationsAlarmRule(
             store, NoopNotificationsApi.Instance, OnaPlotter.Services.Alarms.NoopPublishedAlarmTracker.Instance)];
-        var mgr = new AlarmManager(rules, new DelegateTimeProvider(() => clock.Now));
+        var mgr = AlarmManagerFactory.Create(rules, new DelegateTimeProvider(() => clock.Now), settings);
 
         settings.DisabledAlarmRulesSet.Add("APPROACH");
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
 
         await Assert.That(mgr.AllActiveAlarms.Select(a => a.RuleId))
             .IsEquivalentTo([AlarmRuleId.ServerNotification]);
 
         settings.DisabledAlarmRulesSet.Remove("APPROACH");
         clock.Now = clock.Now.AddSeconds(2);
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
 
         await Assert.That(mgr.AllActiveAlarms.Select(a => a.RuleId))
             .Contains(AlarmRuleId.Approach);
@@ -195,7 +192,7 @@ public class AlarmManagerTests
         var data = Nav(lat: 0, lon: 0, cogRad: 0, sogMs: 2.57);   // ~5 kn
         var target = Vessel("vessels.ctx1", 0.4/60.0, 0, cogRad: Math.PI, sogMs: 2.57);
 
-        mgr.Evaluate(data, [target], settings);
+        mgr.Evaluate(data, [target]);
 
         await Assert.That(mgr.ActiveAlarm).IsNotNull();
         await Assert.That(mgr.ActiveAlarm!.Title).IsEqualTo("CPA");
@@ -211,7 +208,7 @@ public class AlarmManagerTests
         // for why we don't use 1/60 = 1 nm).
         var buddy = Vessel("vessels.friend", 0.4/60.0, 0, cogRad: Math.PI, sogMs: 2.57, buddy: true);
 
-        mgr.Evaluate(data, [buddy], settings);
+        mgr.Evaluate(data, [buddy]);
 
         await Assert.That(mgr.ActiveAlarm).IsNull();
     }
@@ -226,16 +223,16 @@ public class AlarmManagerTests
         // tags it as moored.
         var moored = Vessel("vessels.harbourtug", 0.4/60.0, 0, cogRad: 0, sogMs: 0.1);
 
-        mgr.Evaluate(data, [moored], settings);       // seen slow (t=0)
-        clock.Now = clock.Now.AddSeconds(5); mgr.Evaluate(data, [moored], settings);
-        clock.Now = clock.Now.AddSeconds(120); mgr.Evaluate(data, [moored], settings);
+        mgr.Evaluate(data, [moored]);       // seen slow (t=0)
+        clock.Now = clock.Now.AddSeconds(5); mgr.Evaluate(data, [moored]);
+        clock.Now = clock.Now.AddSeconds(120); mgr.Evaluate(data, [moored]);
 
         // First two calls might have fired CPA before the 120s hold; clear
         // any residual snooze-free alarm.
         await mgr.DismissAsync();
         clock.Now = clock.Now.AddSeconds(2);
 
-        mgr.Evaluate(data, [moored], settings);
+        mgr.Evaluate(data, [moored]);
 
         await Assert.That(mgr.ActiveAlarm).IsNull();
     }
@@ -249,19 +246,19 @@ public class AlarmManagerTests
         var a = Vessel("vessels.a", 0.4/60.0, 0, cogRad: Math.PI, sogMs: 2.57);
         var b = Vessel("vessels.b", 0.4/60.0, 0.0001, cogRad: Math.PI, sogMs: 2.57);
 
-        mgr.Evaluate(data, [a], settings);
+        mgr.Evaluate(data, [a]);
         await Assert.That(mgr.ActiveAlarm!.TargetKey).IsEqualTo("vessels.a");
 
         await mgr.SnoozeActiveAsync();
         clock.Now = clock.Now.AddSeconds(2);
 
         // Same target comes back -> still silenced.
-        mgr.Evaluate(data, [a], settings);
+        mgr.Evaluate(data, [a]);
         await Assert.That(mgr.ActiveAlarm).IsNull();
 
         // Different target -> alarm fires.
         clock.Now = clock.Now.AddSeconds(2);
-        mgr.Evaluate(data, [b], settings);
+        mgr.Evaluate(data, [b]);
         await Assert.That(mgr.ActiveAlarm).IsNotNull();
         await Assert.That(mgr.ActiveAlarm!.TargetKey).IsEqualTo("vessels.b");
     }
@@ -276,15 +273,15 @@ public class AlarmManagerTests
         mgr.OnAlarmsChanged += () => calls++;
 
         var data = Nav(depth: 2.0);
-        mgr.Evaluate(data, [], settings);
-        mgr.Evaluate(data, [], settings);            // 200 ms later - skipped
+        mgr.Evaluate(data, []);
+        mgr.Evaluate(data, []);            // 200 ms later - skipped
         clock.Now = clock.Now.AddMilliseconds(200);
-        mgr.Evaluate(data, [], settings);            // still inside 1 s window
+        mgr.Evaluate(data, []);            // still inside 1 s window
         clock.Now = clock.Now.AddMilliseconds(900);  // now past the window
 
         // Message changes so the stack updates again.
         var data2 = Nav(depth: 1.5);
-        mgr.Evaluate(data2, [], settings);
+        mgr.Evaluate(data2, []);
 
         // Fires: first alarm (1), message update (2). Two total.
         await Assert.That(calls).IsEqualTo(2);
@@ -294,7 +291,7 @@ public class AlarmManagerTests
     public async Task Dismiss_ClearsAndFires()
     {
         var (mgr, clock, settings, _) = NewMgr();
-        mgr.Evaluate(Nav(depth: 2.0), [], settings);
+        mgr.Evaluate(Nav(depth: 2.0), []);
         int firesBefore = 0;
         mgr.OnAlarmChanged += _ => firesBefore++;
 
@@ -328,7 +325,7 @@ public class AlarmManagerTests
     {
         var clock = new MutableClock();
         var settings = new FakeSettings();
-        var mgr = new AlarmManager(rules, new DelegateTimeProvider(() => clock.Now));
+        var mgr = AlarmManagerFactory.Create(rules, new DelegateTimeProvider(() => clock.Now), settings);
         return (mgr, clock, settings);
     }
 
@@ -338,7 +335,7 @@ public class AlarmManagerTests
         NewMgrWithSettings(FakeSettings settings, params IAlarmRule[] rules)
     {
         var clock = new MutableClock();
-        var mgr = new AlarmManager(rules, new DelegateTimeProvider(() => clock.Now), kv: null, settings: settings);
+        var mgr = AlarmManagerFactory.Create(rules, new DelegateTimeProvider(() => clock.Now), settings);
         return (mgr, clock, settings);
     }
 
@@ -354,7 +351,7 @@ public class AlarmManagerTests
 
         await Assert.That(mgr.SnoozeDurationMinutes).IsEqualTo(30);
 
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
         await mgr.SnoozeAsync(mgr.ActiveAlarm!);
 
         var snoozed = mgr.SnoozedTargets.Single(s => s.TargetKey == "vessels.x");
@@ -363,13 +360,13 @@ public class AlarmManagerTests
     }
 
     [Test]
-    public async Task SnoozeDuration_FallsBackToConst_WhenNoSettingsWired()
+    public async Task SnoozeDuration_FallsBackToConst_WhenSettingIsNotPositive()
     {
-        // Tests using the 2-arg ctor (no settings) still get the
-        // 10-min default. Guards against the const being silently
-        // changed to 0 or some other value.
+        // Guards against the const being silently changed to 0 or some
+        // other value, and against a zero setting snoozing forever.
         var cpa = new StubRule("CPA", 200, AlarmSeverity.Danger, "vessels.x");
-        var (mgr, _, _) = NewMgrWith(cpa);
+        var (mgr, _, settings) = NewMgrWith(cpa);
+        settings.SnoozeDurationMinutes = 0;
 
         await Assert.That(mgr.SnoozeDurationMinutes).IsEqualTo(AlarmManager.SnoozeMinutes);
     }
@@ -382,7 +379,7 @@ public class AlarmManagerTests
         var shift = new StubRule("WIND SHIFT", 300, AlarmSeverity.Warn);
         var (mgr, _, settings) = NewMgrWith(shallow, cpa, shift);
 
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
 
         // Two Danger first (by priority asc), then Warn.
         await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(3);
@@ -398,7 +395,7 @@ public class AlarmManagerTests
         var a = new StubRule("A", 100, AlarmSeverity.Danger);
         var b = new StubRule("B", 200, AlarmSeverity.Warn);
         var (mgr, _, settings) = NewMgrWith(a, b);
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
 
         var toDismiss = mgr.ActiveAlarms.First(x => x.Title == "A");
         await mgr.DismissAsync(toDismiss);
@@ -413,7 +410,7 @@ public class AlarmManagerTests
         var a = new StubRule("A", 100, AlarmSeverity.Danger);
         var b = new StubRule("B", 200, AlarmSeverity.Warn);
         var (mgr, _, settings) = NewMgrWith(a, b);
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
 
         await mgr.DismissAsync();
 
@@ -436,7 +433,7 @@ public class AlarmManagerTests
         var cpa = new StubRule("CPA", 200, AlarmSeverity.Danger, "vessels.x");
         var (mgr, clock, settings) = NewMgrWith(cpa);
 
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
         await Assert.That(mgr.ActiveAlarm).IsNotNull();
 
         await mgr.DismissAsync(mgr.ActiveAlarm!);
@@ -444,12 +441,12 @@ public class AlarmManagerTests
 
         // Advance past the 1-second evaluate debounce but under cooldown.
         clock.Now = clock.Now.AddSeconds(5);
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
         await Assert.That(mgr.ActiveAlarm).IsNull();
 
         // Another tick, still inside the window.
         clock.Now = clock.Now.AddSeconds(10);
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
         await Assert.That(mgr.ActiveAlarm).IsNull();
     }
 
@@ -459,7 +456,7 @@ public class AlarmManagerTests
         var cpa = new StubRule("CPA", 200, AlarmSeverity.Danger, "vessels.x");
         var (mgr, clock, settings) = NewMgrWith(cpa);
 
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
         await mgr.DismissAsync(mgr.ActiveAlarm!);
 
         // Advance past the cooldown. CPA uses the longer per-title
@@ -467,7 +464,7 @@ public class AlarmManagerTests
         // default 30s, so we have to step past that or the dismiss
         // remains in effect.
         clock.Now = clock.Now.AddSeconds(AlarmManager.CpaDismissCooldownSeconds + 5);
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
 
         await Assert.That(mgr.ActiveAlarm).IsNotNull();
         await Assert.That(mgr.ActiveAlarm!.Title).IsEqualTo("CPA");
@@ -482,7 +479,7 @@ public class AlarmManagerTests
         var rule = new StubRule("CPA", 200, AlarmSeverity.Warn, "vessels.x");
         var (mgr, clock, settings) = NewMgrWith(rule);
 
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
         await mgr.DismissAsync(mgr.ActiveAlarm!);
         await Assert.That(mgr.ActiveAlarm).IsNull();
 
@@ -499,7 +496,7 @@ public class AlarmManagerTests
         var (mgrE, clockE, settingsE) = NewMgrWith(escalator);
 
         // Tick 1: Warn fires.
-        mgrE.Evaluate(Nav(), [], settingsE);
+        mgrE.Evaluate(Nav(), []);
         await Assert.That(mgrE.ActiveAlarm!.Severity).IsEqualTo(AlarmSeverity.Warn);
 
         // Dismiss Warn. Cooldown now remembers "dismissed at Warn".
@@ -509,7 +506,7 @@ public class AlarmManagerTests
         // emits Danger now. Cooldown must let it through.
         escalator.CurrentSeverity = AlarmSeverity.Danger;
         clockE.Now = clockE.Now.AddSeconds(3);
-        mgrE.Evaluate(Nav(), [], settingsE);
+        mgrE.Evaluate(Nav(), []);
 
         await Assert.That(mgrE.ActiveAlarm).IsNotNull();
         await Assert.That(mgrE.ActiveAlarm!.Severity).IsEqualTo(AlarmSeverity.Danger);
@@ -525,11 +522,11 @@ public class AlarmManagerTests
         var dangerRule = new StubRule("CPA", 200, AlarmSeverity.Danger, "vessels.x");
         var (mgr, clock, settings) = NewMgrWith(dangerRule);
 
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
         await mgr.DismissAsync(mgr.ActiveAlarm!);
 
         clock.Now = clock.Now.AddSeconds(5);
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
         await Assert.That(mgr.ActiveAlarm).IsNull();
     }
 
@@ -543,7 +540,7 @@ public class AlarmManagerTests
         var ruleB = new StubRule("CPA", 201, AlarmSeverity.Danger, "vessels.b");
         var (mgr, clock, settings) = NewMgrWith(ruleA, ruleB);
 
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
         await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(2);
 
         // Dismiss only vessels.a. vessels.b must remain active; if it
@@ -554,7 +551,7 @@ public class AlarmManagerTests
         await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(1);
 
         clock.Now = clock.Now.AddSeconds(5);
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
 
         // vessels.a still suppressed (cooldown), vessels.b still active.
         await Assert.That(mgr.ActiveAlarms.Any(x => x.TargetKey == "vessels.a")).IsFalse();
@@ -572,11 +569,11 @@ public class AlarmManagerTests
         var cpa = new StubRule("CPA", 200, AlarmSeverity.Danger, "vessels.x");
         var (mgr, clock, settings) = NewMgrWith(cpa);
 
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
         await mgr.DismissAsync(mgr.ActiveAlarm!);
 
         clock.Now = clock.Now.AddSeconds(2);
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
         // Temporarily resurrect so we have an alarm to snooze.
         // With cooldown suppressing, ActiveAlarm is null - snooze needs
         // an alarm instance. Build one directly instead.
@@ -590,7 +587,7 @@ public class AlarmManagerTests
         // + wait past cooldown -> alarm resumes on same tick.
         await mgr.UnsnoozeAsync("vessels.x");
         clock.Now = clock.Now.AddSeconds(AlarmManager.DismissCooldownSeconds + 2);
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
 
         await Assert.That(mgr.ActiveAlarm).IsNotNull();
     }
@@ -613,12 +610,12 @@ public class AlarmManagerTests
     {
         var a = new StubRule("A", 100, AlarmSeverity.Danger, autoClear: true);
         var (mgr, clock, settings) = NewMgrWith(a);
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
         await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(1);
 
         a.ShouldFire = false;
         clock.Now = clock.Now.AddSeconds(2);
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
 
         await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(0);
         await Assert.That(mgr.DismissedHistory.Count).IsEqualTo(1);
@@ -630,12 +627,12 @@ public class AlarmManagerTests
     {
         var latched = new StubRule("LATCH", 100, AlarmSeverity.Warn, autoClear: false);
         var (mgr, clock, settings) = NewMgrWith(latched);
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
         await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(1);
 
         latched.ShouldFire = false;
         clock.Now = clock.Now.AddSeconds(2);
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
 
         // Latched: still active until the user dismisses.
         await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(1);
@@ -647,7 +644,7 @@ public class AlarmManagerTests
     {
         var a = new StubRule("A", 100, AlarmSeverity.Danger, "vessels.x");
         var (mgr, _, settings) = NewMgrWith(a);
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
 
         await mgr.SnoozeActiveAsync();
 
@@ -662,12 +659,12 @@ public class AlarmManagerTests
     {
         var a = new StubRule("A", 100, AlarmSeverity.Danger, "vessels.x");
         var (mgr, clock, settings) = NewMgrWith(a);
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
         await mgr.SnoozeActiveAsync();
 
         await mgr.UnsnoozeAsync("vessels.x");
         clock.Now = clock.Now.AddSeconds(2);
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
 
         await Assert.That(mgr.SnoozedTargets.Count).IsEqualTo(0);
         await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(1);
@@ -684,7 +681,7 @@ public class AlarmManagerTests
         var c = new StubRule("C", 300, AlarmSeverity.Warn);
         var d = new StubRule("D", 400, AlarmSeverity.Warn);
         var (mgr, _, settings) = NewMgrWith(a, b, c, d);
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
 
         await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(AlarmManager.MaxActiveAlarms);
         await Assert.That(mgr.ActiveAlarms.Select(x => x.Title)).IsEquivalentTo(["A", "B", "C"]);
@@ -701,10 +698,10 @@ public class AlarmManagerTests
         {
             a.ShouldFire = true;
             clock.Now = clock.Now.AddSeconds(2);
-            mgr.Evaluate(Nav(), [], settings);
+            mgr.Evaluate(Nav(), []);
             a.ShouldFire = false;
             clock.Now = clock.Now.AddSeconds(2);
-            mgr.Evaluate(Nav(), [], settings);
+            mgr.Evaluate(Nav(), []);
         }
 
         await Assert.That(mgr.DismissedHistory.Count).IsEqualTo(AlarmManager.MaxDismissedHistory);
@@ -730,7 +727,7 @@ public class AlarmManagerTests
         // Easiest: inject a custom rule subclass.
         // Instead just assert via the existing priority/order path:
         // the test below is enough to pin TTI as the second sort key.
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
         // Both fire - ordering here is priority based (NEAR rule has
         // higher priority number = lower rank). Don't assert here;
         // the next test exercises TTI explicitly.
@@ -747,7 +744,7 @@ public class AlarmManagerTests
         var nullTti = new TtiStubRule("LATCH", 10, AlarmSeverity.Danger, tti: null);
 
         var (mgr, _, settings) = NewMgrWith(tti, nullTti);
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
 
         await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(2);
         // CPA (TTI=3) beats LATCH (TTI=null) because null sorts last.
@@ -764,7 +761,7 @@ public class AlarmManagerTests
         var cpa = new TtiStubRule("CPA", 200, AlarmSeverity.Danger, tti: 5);
 
         var (mgr, _, settings) = NewMgrWith(shallow, cpa);
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
 
         await Assert.That(mgr.ActiveAlarms[0].Title).IsEqualTo("SHALLOW");
         await Assert.That(mgr.ActiveAlarms[1].Title).IsEqualTo("CPA");
@@ -799,7 +796,7 @@ public class AlarmManagerTests
     }
 
     private static AlarmManager NewMgrWithKv(IKeyValueStore kv, MutableClock clock, params IAlarmRule[] rules)
-        => new(rules, new DelegateTimeProvider(() => clock.Now), kv);
+        => AlarmManagerFactory.Create(rules, new DelegateTimeProvider(() => clock.Now), kv: kv);
 
     [Test]
     public async Task Snooze_PersistsToKv()
@@ -809,7 +806,7 @@ public class AlarmManagerTests
         var settings = new FakeSettings();
         var rule = new StubRule("A", 100, AlarmSeverity.Danger, "vessels.x");
         var mgr = NewMgrWithKv(kv, clock, rule);
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
 
         await mgr.SnoozeActiveAsync();
 
@@ -881,7 +878,7 @@ public class AlarmManagerTests
         var settings = new FakeSettings();
         var rule = new StubRule("A", 100, AlarmSeverity.Danger, "vessels.x");
         var mgr = NewMgrWithKv(kv, clock, rule);
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
         await mgr.SnoozeActiveAsync();
 
         await mgr.UnsnoozeAsync("vessels.x");
@@ -904,10 +901,10 @@ public class AlarmManagerTests
         mgr.OnAlarmChanged += _ => audio++;
         mgr.OnAlarmsChanged += () => redraw++;
 
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
         rule.Message = "CPA 0.08nm";
         clock.Now = clock.Now.AddSeconds(2);
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
 
         await Assert.That(audio).IsEqualTo(1);
         await Assert.That(redraw).IsEqualTo(2);
@@ -922,7 +919,7 @@ public class AlarmManagerTests
         var top = new StubRule("TOP", 100, AlarmSeverity.Danger);
         var other = new StubRule("OTHER", 200, AlarmSeverity.Danger);
         var (mgr, _, settings) = NewMgrWith(top, other);
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
 
         int fires = 0;
         mgr.OnAlarmChanged += _ => fires++;
@@ -967,7 +964,7 @@ public class AlarmManagerTests
         var clock = new MutableClock();
         var settings = new FakeSettings();
         IAlarmRule[] rules = [rule];
-        var mgr = new AlarmManager(rules, new DelegateTimeProvider(() => clock.Now));
+        var mgr = AlarmManagerFactory.Create(rules, new DelegateTimeProvider(() => clock.Now), settings);
         return (mgr, clock, settings);
     }
 
@@ -985,7 +982,7 @@ public class AlarmManagerTests
         };
         var (mgr, _, settings) = NewMgrWithMulti(new MultiAlarmRule(() => alarms));
 
-        mgr.Evaluate(new NavigationData(), [], settings);
+        mgr.Evaluate(new NavigationData(), []);
 
         await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(3);
         await Assert.That(mgr.ActiveAlarms.Any(a => a.Title == "DEPTH")).IsTrue();
@@ -1005,14 +1002,14 @@ public class AlarmManagerTests
             new(AlarmRuleId.ServerNotification, "ANCHOR", "dragging", AlarmSeverity.Danger, TargetKey: "notifications.navigation.anchor"),
         };
         var (mgr, clock, settings) = NewMgrWithMulti(new MultiAlarmRule(() => supply));
-        mgr.Evaluate(new NavigationData(), [], settings);
+        mgr.Evaluate(new NavigationData(), []);
         await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(2);
 
         // Drop the anchor entry from the supply list, advance past
         // the evaluate debounce, re-evaluate.
         supply.RemoveAt(1);
         clock.Now = clock.Now.AddSeconds(2);
-        mgr.Evaluate(new NavigationData(), [], settings);
+        mgr.Evaluate(new NavigationData(), []);
 
         await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(1);
         await Assert.That(mgr.ActiveAlarms[0].Title).IsEqualTo("DEPTH");
@@ -1031,7 +1028,7 @@ public class AlarmManagerTests
 
         await Assert.That(mgr.HiddenAlarmsCount).IsEqualTo(0);
 
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
         await Assert.That(mgr.HiddenAlarmsCount).IsEqualTo(0);
     }
 
@@ -1048,7 +1045,7 @@ public class AlarmManagerTests
         var d = new StubRule("D", 130, AlarmSeverity.Warn);
         var e = new StubRule("E", 140, AlarmSeverity.Warn);
         var (mgr, _, settings) = NewMgrWith(a, b, c, d, e);
-        mgr.Evaluate(Nav(), [], settings);
+        mgr.Evaluate(Nav(), []);
 
         await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(AlarmManager.MaxActiveAlarms);
         await Assert.That(mgr.HiddenAlarmsCount).IsEqualTo(5 - AlarmManager.MaxActiveAlarms);
@@ -1076,7 +1073,7 @@ public class AlarmManagerTests
         var rule = new ShallowAlarmRule();
         var (mgr, clock, settings) = NewMgrWith(rule);
         var data = Nav(depth: 1.5);
-        mgr.Evaluate(data, [], settings);
+        mgr.Evaluate(data, []);
 
         var alarm = mgr.ActiveAlarm;
         await Assert.That(alarm).IsNotNull();
@@ -1084,7 +1081,7 @@ public class AlarmManagerTests
 
         // Still shallow on the next tick; rule starts the rearm flow.
         clock.Now = clock.Now.AddSeconds(2);
-        mgr.Evaluate(Nav(depth: 1.5), [], settings);
+        mgr.Evaluate(Nav(depth: 1.5), []);
 
         var statuses = mgr.RearmStatuses(clock.Now);
         await Assert.That(statuses.Count).IsEqualTo(1);
@@ -1111,7 +1108,7 @@ public class AlarmManagerTests
 
         var clock = new MutableClock();
         var rule = new StubRule("CPA", 200, AlarmSeverity.Danger, "vessels.urn:mrn:imo:mmsi:111");
-        var mgr = new AlarmManager(new IAlarmRule[] { rule }, new DelegateTimeProvider(() => clock.Now), kv);
+        var mgr = AlarmManagerFactory.Create(new IAlarmRule[] { rule }, new DelegateTimeProvider(() => clock.Now), kv: kv);
 
         await mgr.InitializeAsync();
         await Assert.That(mgr.SnoozedTargets.Count).IsEqualTo(1);
@@ -1133,7 +1130,7 @@ public class AlarmManagerTests
         await kv.SetAsync("alarmSnoozes.v1", json);
 
         var clock = new MutableClock();
-        var mgr = new AlarmManager(Array.Empty<IAlarmRule>(), new DelegateTimeProvider(() => clock.Now), kv);
+        var mgr = AlarmManagerFactory.Create(Array.Empty<IAlarmRule>(), new DelegateTimeProvider(() => clock.Now), kv: kv);
 
         await mgr.InitializeAsync();
         await Assert.That(mgr.SnoozedTargets.Count).IsEqualTo(0);
@@ -1149,7 +1146,7 @@ public class AlarmManagerTests
         await kv.SetAsync("alarmSnoozes.v1", "{not-json");
 
         var clock = new MutableClock();
-        var mgr = new AlarmManager(Array.Empty<IAlarmRule>(), new DelegateTimeProvider(() => clock.Now), kv);
+        var mgr = AlarmManagerFactory.Create(Array.Empty<IAlarmRule>(), new DelegateTimeProvider(() => clock.Now), kv: kv);
 
         await mgr.InitializeAsync();   // must not throw
         await Assert.That(mgr.SnoozedTargets.Count).IsEqualTo(0);
@@ -1165,7 +1162,7 @@ public class AlarmManagerTests
         // _initialized flag guards this.
         var kv = new CountingKv();
         var clock = new MutableClock();
-        var mgr = new AlarmManager(Array.Empty<IAlarmRule>(), new DelegateTimeProvider(() => clock.Now), kv);
+        var mgr = AlarmManagerFactory.Create(Array.Empty<IAlarmRule>(), new DelegateTimeProvider(() => clock.Now), kv: kv);
 
         await mgr.InitializeAsync();
         await mgr.InitializeAsync();
@@ -1235,7 +1232,7 @@ public class AlarmManagerTests
             TargetKey: "notifications.navigation.anchor.position",
             Acknowledger: ack);
         var (mgr, _, settings) = NewMgrWithMulti(new MultiAlarmRule(() => new[] { alarm }));
-        mgr.Evaluate(new NavigationData(), [], settings);
+        mgr.Evaluate(new NavigationData(), []);
 
         await mgr.DismissAsync(mgr.ActiveAlarms.Single());
 
@@ -1250,7 +1247,7 @@ public class AlarmManagerTests
         // pinned by confirming the active set cleared without throwing.
         var alarm = new AlarmInfo(AlarmRuleId.Shallow, "SHALLOW", "x", AlarmSeverity.Danger);
         var (mgr, _, settings) = NewMgrWithMulti(new MultiAlarmRule(() => new[] { alarm }));
-        mgr.Evaluate(new NavigationData(), [], settings);
+        mgr.Evaluate(new NavigationData(), []);
 
         await mgr.DismissAsync(mgr.ActiveAlarm!);
         await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(0);
@@ -1268,7 +1265,7 @@ public class AlarmManagerTests
         var alarm = new AlarmInfo(AlarmRuleId.ServerNotification, "MOB", "Man overboard", AlarmSeverity.Danger,
             TargetKey: "notifications.mob", Acknowledger: ack);
         var (mgr, _, settings) = NewMgrWithMulti(new MultiAlarmRule(() => new[] { alarm }));
-        mgr.Evaluate(new NavigationData(), [], settings);
+        mgr.Evaluate(new NavigationData(), []);
 
         await mgr.DismissAsync(mgr.ActiveAlarms.Single());
 
@@ -1295,7 +1292,7 @@ public class AlarmManagerTests
                 TargetKey: "wind"), // client-side, no acknowledger
         };
         var (mgr, _, settings) = NewMgrWithMulti(new MultiAlarmRule(() => alarms));
-        mgr.Evaluate(new NavigationData(), [], settings);
+        mgr.Evaluate(new NavigationData(), []);
         await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(3);
 
         await mgr.DismissAsync();
@@ -1318,7 +1315,7 @@ public class AlarmManagerTests
             TargetKey: "notifications.navigation.anchor",
             Acknowledger: ack);
         var (mgr, _, settings) = NewMgrWithMulti(new MultiAlarmRule(() => new[] { alarm }));
-        mgr.Evaluate(new NavigationData(), [], settings);
+        mgr.Evaluate(new NavigationData(), []);
 
         await mgr.DismissAsync(mgr.ActiveAlarm!);
 

@@ -29,10 +29,10 @@ public sealed class AlarmManager : IAlarmManager
     /// on high-rate SignalK deltas.</summary>
     public const int EvaluationIntervalMs = 1_000;
 
-    /// <summary>Fallback snooze duration used when no IAppSettings is wired
-    /// (test ctors). Production callers override via IAppSettings
-    /// so the user can set a shorter / longer snooze to match the
-    /// passage style - loitering fishing fleet vs. a distant freighter.</summary>
+    /// <summary>Fallback snooze duration used when the user's
+    /// <see cref="IAppSettings.SnoozeDurationMinutes"/> is not positive.
+    /// The setting lets the helm pick a shorter / longer snooze to match
+    /// the passage style - loitering fishing fleet vs. a distant freighter.</summary>
     public const int SnoozeMinutes = 10;
 
     /// <summary>After a dismiss, suppress re-firing the same (rule, target)
@@ -75,8 +75,8 @@ public sealed class AlarmManager : IAlarmManager
     private readonly IReadOnlyList<IAlarmRule> _rules;
     private readonly Dictionary<string, SnoozedTarget> _snoozed = [];
     private readonly TimeProvider _time;
-    private readonly IKeyValueStore? _kv;
-    private readonly IAppSettings? _settings;
+    private readonly IKeyValueStore _kv;
+    private readonly IAppSettings _settings;
     private bool _initialized;
 
     // Active alarms keyed by (RuleId, TargetKey) so the same rule firing on
@@ -262,10 +262,9 @@ public sealed class AlarmManager : IAlarmManager
     public IReadOnlyList<DismissedAlarm> DismissedHistory => _history.AsReadOnly();
 
     public int SnoozeDurationMinutes =>
-        // User-configurable via IAppSettings. Falls back to the 10-min
-        // default when settings aren't wired (test ctors, DI ordering
-        // race). Clamp at 1 min minimum - zero would snooze forever.
-        (_settings?.SnoozeDurationMinutes is int m && m > 0) ? m : SnoozeMinutes;
+        // User-configurable via IAppSettings. A non-positive value falls
+        // back to the 10-min default: zero would snooze forever.
+        _settings.SnoozeDurationMinutes > 0 ? _settings.SnoozeDurationMinutes : SnoozeMinutes;
 
     private IReadOnlyList<AlarmRuleId>? _ruleIdsCache;
     public IReadOnlyList<AlarmRuleId> RegisteredRuleIds =>
@@ -277,25 +276,11 @@ public sealed class AlarmManager : IAlarmManager
     public event Action<AlarmInfo?>? OnAlarmChanged;
     public event Action? OnAlarmsChanged;
 
+    // The manager is transport-neutral: cross-plotter ack goes through the
+    // per-alarm IAlarmAcknowledger handle the bridge rule attaches to
+    // AlarmInfo, not through a SignalK API held here.
     public AlarmManager(IEnumerable<IAlarmRule> rules, IKeyValueStore kv, IAppSettings settings,
         TimeProvider time)
-        : this(rules, time, kv, settings) { }
-
-    // Overloads for tests that don't care about persistence or
-    // settings, so fixtures don't have to thread them through.
-    internal AlarmManager(IEnumerable<IAlarmRule> rules, TimeProvider time)
-        : this(rules, time, null, null) { }
-
-    internal AlarmManager(IEnumerable<IAlarmRule> rules, TimeProvider time,
-        IKeyValueStore? kv)
-        : this(rules, time, kv, null) { }
-
-    // Full-arg internal ctor. The manager is transport-neutral:
-    // cross-plotter ack goes through the per-alarm IAlarmAcknowledger
-    // handle the bridge rule attaches to AlarmInfo, not through a
-    // SignalK API held here.
-    internal AlarmManager(IEnumerable<IAlarmRule> rules, TimeProvider time,
-        IKeyValueStore? kv, IAppSettings? settings)
     {
         _rules = rules.OrderBy(r => r.Priority).ToList();
         _time = time;
@@ -309,7 +294,6 @@ public sealed class AlarmManager : IAlarmManager
     {
         if (_initialized) return;
         _initialized = true;
-        if (_kv is null) return;
         try
         {
             var raw = await _kv.GetAsync(SnoozeStorageKey);
@@ -346,7 +330,6 @@ public sealed class AlarmManager : IAlarmManager
 
     private async Task PersistSnoozesAsync()
     {
-        if (_kv is null) return;
         try
         {
             var arr = _snoozed.Values.ToArray();
@@ -364,10 +347,10 @@ public sealed class AlarmManager : IAlarmManager
         catch (Microsoft.JSInterop.JSDisconnectedException) { /* page tear-down */ }
     }
 
-    public void Evaluate(NavigationData data, IReadOnlyCollection<AisVessel> vessels, IAppSettings settings)
-        => Evaluate(data, () => vessels, settings);
+    public void Evaluate(NavigationData data, IReadOnlyCollection<AisVessel> vessels)
+        => Evaluate(data, () => vessels);
 
-    public void Evaluate(NavigationData data, Func<IReadOnlyCollection<AisVessel>> vesselsProvider, IAppSettings settings)
+    public void Evaluate(NavigationData data, Func<IReadOnlyCollection<AisVessel>> vesselsProvider)
     {
         var now = UtcNow();
         if ((now - _lastEvaluation).TotalMilliseconds < EvaluationIntervalMs) return;
@@ -377,8 +360,8 @@ public sealed class AlarmManager : IAlarmManager
         SweepExpiredSnoozes(now);
         SweepExpiredDismissCooldowns(now);
 
-        var ctx = new AlarmEvaluationContext(data, vessels, settings, now, IsSnoozed);
-        var disabledRules = settings.DisabledAlarmRules;
+        var ctx = new AlarmEvaluationContext(data, vessels, _settings, now, IsSnoozed);
+        var disabledRules = _settings.DisabledAlarmRules;
 
         // Every rule gets a chance to produce an alarm. Rather than a
         // first-wins model, we collect all hits and stack them so a depth

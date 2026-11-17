@@ -86,9 +86,10 @@ public interface IAlarmManager
     /// <summary>
     /// Fires alarm evaluation across all configured sources (depth, CPA,
     /// wind shift). Internally debounced so calling at 3 Hz is free. Pass
-    /// the current navigation snapshot, AIS snapshot, and settings.
+    /// the current navigation snapshot and AIS snapshot; settings come from
+    /// the manager's own dependencies.
     /// </summary>
-    void Evaluate(NavigationData data, IReadOnlyCollection<AisVessel> vessels, IAppSettings settings);
+    void Evaluate(NavigationData data, IReadOnlyCollection<AisVessel> vessels);
 
     /// <summary>
     /// Same as the snapshot overload, but the AIS snapshot is pulled from
@@ -96,7 +97,7 @@ public interface IAlarmManager
     /// Callers driven by the high-rate delta stream use this so a
     /// throttled call doesn't pay for building the vessel snapshot.
     /// </summary>
-    void Evaluate(NavigationData data, Func<IReadOnlyCollection<AisVessel>> vessels, IAppSettings settings);
+    void Evaluate(NavigationData data, Func<IReadOnlyCollection<AisVessel>> vessels);
 
     /// <summary>Clears all active alarms and logs each as
     /// <see cref="DismissReason.UserDismissed"/>. No effect on an empty stack.</summary>

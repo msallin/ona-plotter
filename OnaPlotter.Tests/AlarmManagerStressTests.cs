@@ -32,13 +32,13 @@ public class AlarmManagerStressTests
         var rules = BuildRules();
         var settings = new FakeSettings();
         var clock = new MutableClock();
-        var mgr = NewManager(rules, clock);
+        var mgr = NewManager(rules, clock, settings);
 
         var ownNav = OwnNav(0.0, 0.0, cogRad: 0.0, sogMs: 3.0);     // heading north @ ~6 kn
         var vessels = BuildHarbourFleet(200, includeColliders: 5, seed: 0xCA_FE_42);
 
         var sw = Stopwatch.StartNew();
-        mgr.Evaluate(ownNav, vessels, settings);
+        mgr.Evaluate(ownNav, vessels);
         sw.Stop();
 
         await Assert.That(sw.Elapsed.TotalMilliseconds)
@@ -61,12 +61,12 @@ public class AlarmManagerStressTests
         var settings = new FakeSettings();
         await settings.SetHarborModeAsync(true);
         var clock = new MutableClock();
-        var mgr = NewManager(rules, clock);
+        var mgr = NewManager(rules, clock, settings);
 
         var ownNav = OwnNav(0.0, 0.0, cogRad: 0.0, sogMs: 3.0);
         var vessels = BuildHarbourFleet(200, includeColliders: 10, seed: 0xCA_FE_43);
 
-        mgr.Evaluate(ownNav, vessels, settings);
+        mgr.Evaluate(ownNav, vessels);
         await Assert.That(mgr.ActiveAlarm).IsNull();
     }
 
@@ -81,7 +81,7 @@ public class AlarmManagerStressTests
         var rules = BuildRules();
         var settings = new FakeSettings();
         var clock = new MutableClock { Now = TestClock.FixedUtcNow };
-        var mgr = NewManager(rules, clock);
+        var mgr = NewManager(rules, clock, settings);
 
         var ownNav = OwnNav(0.0, 0.0, cogRad: 0.0, sogMs: 3.0);
         var vessels = BuildHarbourFleet(200, includeColliders: 0, seed: 0xCA_FE_44);
@@ -92,7 +92,7 @@ public class AlarmManagerStressTests
             // Manager's internal 1 Hz cadence guard means we need to
             // advance the clock between calls or it short-circuits.
             clock.Now = clock.Now.AddSeconds(2);
-            mgr.Evaluate(ownNav, vessels, settings);
+            mgr.Evaluate(ownNav, vessels);
         }
         sw.Stop();
 
@@ -116,8 +116,8 @@ public class AlarmManagerStressTests
         new WindShiftAlarmRule(),
     ];
 
-    private static AlarmManager NewManager(IAlarmRule[] rules, MutableClock clock) =>
-        new(rules, new DelegateTimeProvider(() => clock.Now));
+    private static AlarmManager NewManager(IAlarmRule[] rules, MutableClock clock, FakeSettings settings) =>
+        AlarmManagerFactory.Create(rules, new DelegateTimeProvider(() => clock.Now), settings);
 
     private static NavigationData OwnNav(double lat, double lon, double cogRad, double sogMs)
     {

@@ -401,18 +401,18 @@ public class CpaAlarmRuleTests
         // threat on the banner instead of silencing every CPA alarm.
         var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
         var clock = TestClock.FixedUtcNow;
-        var mgr = new AlarmManager([rule], new DelegateTimeProvider(() => clock));
         var settings = new FakeSettings();
+        var mgr = AlarmManagerFactory.Create([rule], new DelegateTimeProvider(() => clock), settings);
         var far = ThreatNorthOf(600, name: "Far");
         var near = ThreatNorthOf(200, name: "Near");
 
-        mgr.Evaluate(OwnShipUnderway(), [far, near], settings);
+        mgr.Evaluate(OwnShipUnderway(), [far, near]);
         await Assert.That(mgr.ActiveAlarm!.TargetKey).IsEqualTo(near.Context);
         await Assert.That(mgr.AllActiveAlarms.Count).IsEqualTo(2);
 
         await mgr.DismissAsync(mgr.ActiveAlarm);
         clock = clock.AddSeconds(2);
-        mgr.Evaluate(OwnShipUnderway(), [far, near], settings);
+        mgr.Evaluate(OwnShipUnderway(), [far, near]);
 
         await Assert.That(mgr.AllActiveAlarms.Select(a => a.TargetKey!)).IsEquivalentTo([far.Context]);
     }

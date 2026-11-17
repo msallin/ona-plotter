@@ -94,8 +94,8 @@ public class AlarmPublisherTests
             OnAlarmChanged?.Invoke(ActiveAlarm);
         }
 
-        public void Evaluate(NavigationData data, IReadOnlyCollection<AisVessel> vessels, IAppSettings settings) { }
-        public void Evaluate(NavigationData data, Func<IReadOnlyCollection<AisVessel>> vessels, IAppSettings settings) { }
+        public void Evaluate(NavigationData data, IReadOnlyCollection<AisVessel> vessels) { }
+        public void Evaluate(NavigationData data, Func<IReadOnlyCollection<AisVessel>> vessels) { }
         public Task DismissAsync() { Set([]); return Task.CompletedTask; }
         public Task DismissAsync(AlarmInfo a)
         {

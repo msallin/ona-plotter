@@ -5,7 +5,7 @@ using OnaPlotter.Services.ServerNotifications;
 namespace OnaPlotter.Services.Alarms;
 
 /// <summary>
-/// Drives <see cref="IAlarmManager.Evaluate(NavigationData, Func{IReadOnlyCollection{AisVessel}}, IAppSettings)"/>
+/// Drives <see cref="IAlarmManager.Evaluate(NavigationData, Func{IReadOnlyCollection{AisVessel}})"/>
 /// from two sources:
 /// <list type="bullet">
 /// <item>data changes: every SignalK delta (<see cref="SignalkClient.OnDataChanged"/>)
@@ -35,7 +35,6 @@ public sealed class AlarmEvaluationDriver : IDisposable
     private readonly IAlarmManager _alarms;
     private readonly ISignalkClient _signalk;
     private readonly ServerNotificationStore _notifications;
-    private readonly IAppSettings _settings;
     private readonly ILogger<AlarmEvaluationDriver> _logger;
     private readonly Func<IReadOnlyCollection<AisVessel>> _vessels;
     private readonly ITimer _timer;
@@ -45,14 +44,12 @@ public sealed class AlarmEvaluationDriver : IDisposable
         ISignalkClient signalk,
         AisStore ais,
         ServerNotificationStore notifications,
-        IAppSettings settings,
         TimeProvider time,
         ILogger<AlarmEvaluationDriver> logger)
     {
         _alarms = alarms;
         _signalk = signalk;
         _notifications = notifications;
-        _settings = settings;
         _logger = logger;
         // Cached delegate: the manager invokes it only when an evaluation
         // is actually due.
@@ -72,7 +69,7 @@ public sealed class AlarmEvaluationDriver : IDisposable
     {
         try
         {
-            _alarms.Evaluate(_signalk.Data, _vessels, _settings);
+            _alarms.Evaluate(_signalk.Data, _vessels);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {

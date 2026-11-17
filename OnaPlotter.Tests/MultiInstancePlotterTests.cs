@@ -91,7 +91,7 @@ public class MultiInstancePlotterTests
             // is last so its emissions overlay if a (Title, TargetKey)
             // collides - matches the production rule order.
             var allRules = new List<IAlarmRule>(localRules) { bridgeRule };
-            Manager = new AlarmManager(allRules, new DelegateTimeProvider(() => Clock.Now), kv: null, settings: null);
+            Manager = AlarmManagerFactory.Create(allRules, new DelegateTimeProvider(() => Clock.Now));
             Publisher = new AlarmPublisher(Manager, api, Tracker);
         }
 
@@ -101,7 +101,7 @@ public class MultiInstancePlotterTests
         public void Tick()
         {
             Clock.Now = Clock.Now.AddSeconds(2);
-            Manager.Evaluate(new NavigationData(), [], new FakeSettings());
+            Manager.Evaluate(new NavigationData(), []);
         }
     }
 
