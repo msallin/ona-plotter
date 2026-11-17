@@ -1,5 +1,10 @@
 // Shared helpers for Playwright UI tests.
 
+/** True for errorRelayBoot.js's POST target, `<base>/log`. */
+function isRelayUrl(url) {
+    return new URL(url).pathname.endsWith('/log');
+}
+
 /**
  * Installs console-error and page-error listeners that append to an array.
  * Returns the array plus a function to assert it's empty.
@@ -21,15 +26,14 @@ export function collectErrors(page) {
     page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
     // errorRelayBoot.js POSTs every client error to <base>/log. On a
     // SignalK server the plugin shim serves that route; the bare dev
-    // host does not. Answer it here and fail the test with the relayed
-    // message, so a client error names itself instead of surfacing as
-    // an anonymous failed POST.
-    void page.route('**/log', async (route) => {
-        if (route.request().method() !== 'POST') return route.fallback();
-        let message = route.request().postData() ?? '';
+    // host answers 405. Read the relayed message off the request (no
+    // interception: routing slows WebKit badly on tile-heavy pages) and
+    // fail the test with it, so a client error names itself.
+    page.on('request', (req) => {
+        if (req.method() !== 'POST' || !isRelayUrl(req.url())) return;
+        let message = req.postData() ?? '';
         try { message = JSON.parse(message).message ?? message; } catch { /* keep raw body */ }
         errors.push(`relayed client error: ${String(message).slice(0, 2000)}`);
-        await route.fulfill({ status: 204 });
     });
     page.on('console', (msg) => {
         if (msg.type() !== 'error') return;
@@ -77,6 +81,9 @@ export function collectErrors(page) {
         if (text.includes('Failed to load resource: net::ERR')) return;
         // A failed fetch logs only the status; the location carries the URL.
         const url = msg.location()?.url;
+        // The relay POST itself fails against the dev host; its payload
+        // is already recorded by the request listener above.
+        if (url && isRelayUrl(url) && text.includes('405')) return;
         errors.push(url ? `console.error: ${text} [${url}]` : `console.error: ${text}`);
     });
     // Blazor renders a fixed-id error UI for unhandled exceptions.
