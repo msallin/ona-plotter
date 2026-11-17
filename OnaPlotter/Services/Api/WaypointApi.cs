@@ -33,23 +33,7 @@ public sealed class WaypointApi : IWaypointApi
         var waypoints = new List<SignalkWaypoint>(dict.Count);
         foreach (var (key, wp) in dict)
         {
-            wp.Id = key;
-            var coords = wp.Feature?.Geometry?.Coordinates;
-            if (coords is not null)
-            {
-                var latLon = coords.Value.ToLatLonPoint();
-                if (latLon is not null)
-                {
-                    wp.Latitude = latLon.Value.Latitude;
-                    wp.Longitude = latLon.Value.Longitude;
-                }
-            }
-            // Lift description + MOB metadata onto the flat
-            // SignalkWaypoint projection fields. Helper lives on the
-            // model so the WS-delta path in ResourceStore stays in
-            // lockstep with this REST path.
-            wp.LiftFromFeatureProperties();
-            waypoints.Add(wp);
+            waypoints.Add(ResourceNormalizer.Waypoint(key, wp));
         }
         return waypoints;
     }

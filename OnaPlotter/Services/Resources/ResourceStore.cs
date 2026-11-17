@@ -346,136 +346,42 @@ public sealed class ResourceStore : IAsyncDisposable, IWaypointReader, OnaPlotte
         }
     }
 
-    private void HandleRouteDelta(string id, JsonElement value)
+    private void HandleRouteDelta(string id, JsonElement value) =>
+        ApplyDelta("route", id, value, _routeCache, ResourceNormalizer.Route);
+
+    private void HandleWaypointDelta(string id, JsonElement value) =>
+        ApplyDelta("waypoint", id, value, _waypointCache, ResourceNormalizer.Waypoint);
+
+    private void HandleNoteDelta(string id, JsonElement value) =>
+        ApplyDelta("note", id, value, _noteCache, ResourceNormalizer.Note);
+
+    private void HandleRegionDelta(string id, JsonElement value) =>
+        ApplyDelta("region", id, value, _regionCache, ResourceNormalizer.Region);
+
+    /// <summary>Applies one resource delta: <c>null</c> removes the
+    /// entry, anything else is deserialised and normalised exactly as
+    /// the REST load does (a null from <paramref name="normalize"/>
+    /// means "not renderable", leaving the cache untouched). Any
+    /// failure is logged per id and leaves the cache as it was, so one
+    /// malformed document can't escape into the delta dispatcher.</summary>
+    private void ApplyDelta<T>(string kind, string id, JsonElement value,
+        ResourceTypeCache<T> cache, Func<string, T, T?> normalize) where T : class
     {
         if (value.ValueKind == JsonValueKind.Null)
         {
-            _routeCache.Remove(id);
+            cache.Remove(id);
             return;
         }
         try
         {
-            var route = value.Deserialize<SignalkRoute>();
-            if (route is null) return;
-            route.Id = id;
-            // Server-emitted route docs may carry geometry types other
-            // than LineString; the helm-facing surface only renders
-            // LineStrings (matches RouteApi.GetAllAsync's filter).
-            if (route.Feature?.Geometry?.Type is not "LineString") return;
-            _routeCache.Apply(id, route);
+            var doc = value.Deserialize<T>();
+            if (doc is null) return;
+            if (normalize(id, doc) is { } normalized)
+                cache.Apply(id, normalized);
         }
-        // Catch broadly: JsonException is the typed-deserialise failure,
-        // but a malformed coordinates array can also surface as
-        // InvalidOperationException / FormatException via downstream
-        // GetDouble() in ParseRouteCoords (Map.razor consumes the
-        // JsonElement). Without the broad catch, those propagate up
-        // through DispatchResourceUpdates' own catch with no per-id
-        // log, and the cache stays stale silently.
         catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
         {
-            _logger.LogWarning(ex, "[resources] route delta parse failed for id '{Id}'", id);
-        }
-    }
-
-    private void HandleWaypointDelta(string id, JsonElement value)
-    {
-        if (value.ValueKind == JsonValueKind.Null)
-        {
-            _waypointCache.Remove(id);
-            return;
-        }
-        try
-        {
-            var wp = value.Deserialize<SignalkWaypoint>();
-            if (wp is null) return;
-            wp.Id = id;
-            // Mirror WaypointApi.GetAllAsync's coordinate + description
-            // extraction so consumers see the same shape regardless of
-            // whether this entry came from a delta or a REST fetch.
-            var coords = wp.Feature?.Geometry?.Coordinates;
-            if (coords is not null)
-            {
-                var latLon = coords.Value.ToLatLonPoint();
-                if (latLon is not null)
-                {
-                    wp.Latitude = latLon.Value.Latitude;
-                    wp.Longitude = latLon.Value.Longitude;
-                }
-            }
-            // Lift description + MOB metadata via the shared helper so
-            // delta + REST paths can never drift.
-            wp.LiftFromFeatureProperties();
-            _waypointCache.Apply(id, wp);
-        }
-        catch (JsonException ex)
-        {
-            _logger.LogWarning(ex, "[resources] waypoint delta parse failed for id '{Id}'", id);
-        }
-    }
-
-    private void HandleNoteDelta(string id, JsonElement value)
-    {
-        if (value.ValueKind == JsonValueKind.Null)
-        {
-            _noteCache.Remove(id);
-            return;
-        }
-        try
-        {
-            var note = value.Deserialize<SignalkNote>();
-            if (note is null) return;
-            // Mirror NoteApi.GetAllAsync's filter: notes without a
-            // position are not renderable on the chart and would
-            // confuse marker code that assumes lat/lon.
-            if (note.Position is null) return;
-            note.Id = id;
-            _noteCache.Apply(id, note);
-        }
-        catch (JsonException ex)
-        {
-            _logger.LogWarning(ex, "[resources] note delta parse failed for id '{Id}'", id);
-        }
-    }
-
-    private void HandleRegionDelta(string id, JsonElement value)
-    {
-        if (value.ValueKind == JsonValueKind.Null)
-        {
-            _regionCache.Remove(id);
-            return;
-        }
-        try
-        {
-            var region = value.Deserialize<SignalkRegion>();
-            if (region is null) return;
-            region.Id = id;
-            // Populate OuterRings the same way RegionApi.GetAllAsync does
-            // for REST results - consumers (Map.razor's region layer)
-            // expect Leaflet-ordered [lat, lon] rings, not the GeoJSON
-            // [lon, lat] coords on the wire. Without this hoist a
-            // delta-fed region renders as an empty polygon on the chart.
-            // Drop the region entirely when geometry is missing /
-            // unrenderable, matching REST's filter.
-            var coords = region.Feature?.Geometry?.Coordinates;
-            var type = region.Feature?.Geometry?.Type;
-            if (coords is not null)
-            {
-                region.OuterRings = OnaPlotter.Services.Api.RegionApi
-                    .ExtractOuterRings(coords.Value, type);
-            }
-            if (region.OuterRings.Count == 0) return;
-            _regionCache.Apply(id, region);
-        }
-        // Catch broadly: ExtractOuterRings -> ParseRing calls
-        // coord[0].GetDouble() without first checking JsonValueKind.
-        // Number, so a malformed coord (`[null, 50.0]`) throws
-        // InvalidOperationException, not JsonException. A narrow catch
-        // here would let that propagate up to DispatchResourceUpdates'
-        // generic catch with no per-id log; the helm sees a silently
-        // stale cache.
-        catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
-        {
-            _logger.LogWarning(ex, "[resources] region delta parse failed for id '{Id}'", id);
+            _logger.LogWarning(ex, "[resources] {Kind} delta parse failed for id '{Id}'", kind, id);
         }
     }
 

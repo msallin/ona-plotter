@@ -33,9 +33,8 @@ public sealed class RouteApi : IRouteApi
         var routes = new List<SignalkRoute>(dict.Count);
         foreach (var (key, route) in dict)
         {
-            route.Id = key;
-            if (route.Feature?.Geometry?.Type is "LineString")
-                routes.Add(route);
+            if (ResourceNormalizer.Route(key, route) is { } normalized)
+                routes.Add(normalized);
         }
         return routes;
     }

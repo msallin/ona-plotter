@@ -35,16 +35,17 @@ public sealed class RegionApi : IRegionApi
         var regions = new List<SignalkRegion>(dict.Count);
         foreach (var (key, region) in dict)
         {
-            region.Id = key;
-            var coords = region.Feature?.Geometry?.Coordinates;
-            var type = region.Feature?.Geometry?.Type;
-            if (coords is not null)
-                region.OuterRings = ExtractOuterRings(coords.Value, type);
-
-            // Drop regions with no renderable geometry so the map layer
-            // doesn't have to special-case an empty rings list.
-            if (region.OuterRings.Count == 0) continue;
-            regions.Add(region);
+            try
+            {
+                if (ResourceNormalizer.Region(key, region) is { } normalized)
+                    regions.Add(normalized);
+            }
+            catch (InvalidDataException ex)
+            {
+                // A region with a bad vertex is dropped whole, never drawn
+                // distorted; the rest of the load is unaffected.
+                _logger.LogWarning(ex, "[regions] dropping region '{Id}': {Reason}", key, ex.Message);
+            }
         }
         return regions;
     }
@@ -154,6 +155,10 @@ public sealed class RegionApi : IRegionApi
     /// <c>coordinates</c> element. Output rings are in Leaflet-native
     /// <c>[lat, lon]</c> order and do NOT include holes. Returns an
     /// empty list for geometry types we don't understand.
+    /// Throws <see cref="InvalidDataException"/> when any ring holds a
+    /// coordinate that isn't a <c>[lon, lat]</c> number pair: dropping
+    /// the vertex would distort the polygon (a hazard region would lose
+    /// a corner), so the whole region is rejected instead.
     /// </summary>
     internal static List<double[][]> ExtractOuterRings(JsonElement coords, string? geometryType)
     {
@@ -186,10 +191,9 @@ public sealed class RegionApi : IRegionApi
         var list = new List<double[]>(ring.GetArrayLength());
         foreach (var coord in ring.EnumerateArray())
         {
-            if (coord.ValueKind != JsonValueKind.Array || coord.GetArrayLength() < 2) continue;
-            double lon = coord[0].GetDouble();
-            double lat = coord[1].GetDouble();
-            list.Add([lat, lon]); // swap to Leaflet order
+            if (coord.ToLatLonPoint() is not { } p)
+                throw new InvalidDataException("region ring has a coordinate that is not a [lon, lat] number pair");
+            list.Add([p.Latitude, p.Longitude]); // swap to Leaflet order
         }
         return [.. list];
     }

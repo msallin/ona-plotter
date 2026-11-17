@@ -159,6 +159,57 @@ public class RegionApiTests
     }
 
     [Test]
+    [Arguments("[null, 47.4]")]
+    [Arguments("[\"x\", 47.4]")]
+    [Arguments("[8.6]")]
+    [Arguments("\"nope\"")]
+    public async Task GetAll_RegionWithInvalidVertex_IsDroppedWhole_OthersLoad(string badVertex)
+    {
+        // Dropping just the vertex would distort the polygon (a hazard
+        // region would lose a corner), so the region goes whole; the
+        // other regions in the same response still load.
+        var body = $$"""
+        {
+            "rgn-bad": {
+                "name": "Kelp",
+                "feature": { "type": "Feature", "geometry": { "type": "Polygon",
+                    "coordinates": [[[8.5, 47.4], {{badVertex}}, [8.6, 47.4], [8.6, 47.5], [8.5, 47.4]]] } }
+            },
+            "rgn-ok": {
+                "name": "Fine",
+                "feature": { "type": "Feature", "geometry": { "type": "Polygon",
+                    "coordinates": [[[1.0, 2.0], [1.1, 2.0], [1.1, 2.1], [1.0, 2.0]]] } }
+            }
+        }
+        """;
+        var http = ApiTestHelpers.JsonClient(_ => body);
+        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl(), TimeProvider.System, NullLogger<RegionApi>.Instance);
+
+        var regions = await api.GetAllAsync();
+
+        await Assert.That(regions.Count).IsEqualTo(1);
+        await Assert.That(regions[0].Id).IsEqualTo("rgn-ok");
+    }
+
+    [Test]
+    public async Task GetAll_MultiPolygonWithOneInvalidVertex_IsDroppedWhole()
+    {
+        var body = """
+        {
+            "rgn-1": { "feature": { "type": "Feature", "geometry": { "type": "MultiPolygon",
+                "coordinates": [
+                    [[[1.0, 2.0], [1.1, 2.0], [1.1, 2.1], [1.0, 2.0]]],
+                    [[[3.0, 4.0], [null, 4.0], [3.1, 4.1], [3.0, 4.0]]]
+                ] } } }
+        }
+        """;
+        var http = ApiTestHelpers.JsonClient(_ => body);
+        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl(), TimeProvider.System, NullLogger<RegionApi>.Instance);
+
+        await Assert.That((await api.GetAllAsync()).Count).IsEqualTo(0);
+    }
+
+    [Test]
     public async Task CreatePolygon_Closes_Ring_And_Swaps_To_GeoJson_Order()
     {
         // Freeform polygon: C# side sends [lat, lon] Leaflet order, API

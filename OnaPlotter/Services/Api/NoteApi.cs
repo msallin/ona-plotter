@@ -33,11 +33,8 @@ public sealed class NoteApi : INoteApi
         var notes = new List<SignalkNote>(dict.Count);
         foreach (var (key, note) in dict)
         {
-            // Drop notes without a renderable position (they might use
-            // region or geohash references, which we don't consume yet).
-            if (note.Position is null) continue;
-            note.Id = key;
-            notes.Add(note);
+            if (ResourceNormalizer.Note(key, note) is { } normalized)
+                notes.Add(normalized);
         }
         return notes;
     }

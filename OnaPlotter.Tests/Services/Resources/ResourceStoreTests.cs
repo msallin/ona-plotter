@@ -361,6 +361,87 @@ public class ResourceStoreTests
         await Assert.That(after.Count).IsEqualTo(0);
     }
 
+    private static ResourceStore NewStore() => new(
+        new FakeRouteApi(), new FakeWaypointApi(), new FakeNoteApi(), new FakeRegionApi(),
+        NewStubClient(), NullLogger<ResourceStore>.Instance);
+
+    [Test]
+    public async Task Delta_Apply_Adds_Note_With_Position()
+    {
+        var store = NewStore();
+        var doc = """{"title":"Reef","description":"shallow","position":{"latitude":24.7,"longitude":-81.1}}""";
+        store.HandleResourceDelta("notes", "n1", JsonDocument.Parse(doc).RootElement);
+
+        await Assert.That(store.Notes.Count).IsEqualTo(1);
+        await Assert.That(store.Notes[0].Id).IsEqualTo("n1");
+    }
+
+    [Test]
+    public async Task Delta_Apply_Skips_Note_Without_Position()
+    {
+        var store = NewStore();
+        store.HandleResourceDelta("notes", "n1",
+            JsonDocument.Parse("""{"title":"Region note","region":"r1"}""").RootElement);
+
+        await Assert.That(store.Notes.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Delta_Apply_Region_Fills_LeafletOrdered_OuterRings()
+    {
+        var store = NewStore();
+        var doc = """{"name":"Kelp","feature":{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[8.5,47.4],[8.6,47.4],[8.6,47.5],[8.5,47.4]]]}}}""";
+        store.HandleResourceDelta("regions", "g1", JsonDocument.Parse(doc).RootElement);
+
+        await Assert.That(store.Regions.Count).IsEqualTo(1);
+        await Assert.That(store.Regions[0].OuterRings[0][0][0]).IsEqualTo(47.4);
+        await Assert.That(store.Regions[0].OuterRings[0][0][1]).IsEqualTo(8.5);
+    }
+
+    [Test]
+    public async Task Delta_Region_WithInvalidVertex_IsRejected_PreviousVersionKept()
+    {
+        // A distorted polygon must never replace the last good one.
+        var store = NewStore();
+        var good = """{"name":"Kelp","feature":{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[8.5,47.4],[8.6,47.4],[8.6,47.5],[8.5,47.5],[8.5,47.4]]]}}}""";
+        var bad = """{"name":"Kelp v2","feature":{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[8.5,47.4],[8.6,47.4],[null,47.5],[8.5,47.5],[8.5,47.4]]]}}}""";
+        store.HandleResourceDelta("regions", "g1", JsonDocument.Parse(good).RootElement);
+
+        store.HandleResourceDelta("regions", "g1", JsonDocument.Parse(bad).RootElement);
+
+        await Assert.That(store.Regions.Count).IsEqualTo(1);
+        await Assert.That(store.Regions[0].Name).IsEqualTo("Kelp");
+        await Assert.That(store.Regions[0].OuterRings[0].Length).IsEqualTo(5);
+    }
+
+    [Test]
+    public async Task Delta_Region_WithInvalidVertex_IsNotAdded()
+    {
+        var store = NewStore();
+        var bad = """{"name":"Kelp","feature":{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[8.5,47.4],["x",47.4],[8.6,47.5],[8.5,47.4]]]}}}""";
+
+        store.HandleResourceDelta("regions", "g1", JsonDocument.Parse(bad).RootElement);
+
+        await Assert.That(store.Regions.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    [Arguments("routes")]
+    [Arguments("waypoints")]
+    [Arguments("notes")]
+    [Arguments("regions")]
+    public async Task Delta_NonObjectPayload_IsSkipped_ForEveryType(string type)
+    {
+        // A payload that can't deserialise is logged and dropped for
+        // every type, never thrown into the dispatcher.
+        var store = NewStore();
+
+        store.HandleResourceDelta(type, "x1", JsonDocument.Parse("42").RootElement);
+
+        await Assert.That(store.Routes.Count + store.Waypoints.Count
+            + store.Notes.Count + store.Regions.Count).IsEqualTo(0);
+    }
+
     // --- Helpers ------------------------------------------------------
 
     private static SignalkRoute NewRoute(string id, string name) => new()
