@@ -7,8 +7,8 @@ using OnaPlotter.Services.Api;
 namespace OnaPlotter.Tests;
 
 /// <summary>
-/// Pins the shared GET failure policy in <see cref="ResourceHttp"/>
-/// and the API clients that read through it. Every read must turn a
+/// Pins the shared failure policy in <see cref="ResourceHttp"/>
+/// and the API clients that go through it. Every read and write must turn a
 /// non-2xx, a transport failure, an HttpClient timeout or a malformed
 /// body into a failed result (never an exception into Blazor's
 /// renderer); only a caller-initiated cancel may propagate.
@@ -366,5 +366,123 @@ public class ResourceHttpTests
         await Assert.That(r.Success).IsTrue();
         await Assert.That(method).IsEqualTo(HttpMethod.Post);
         await Assert.That(body).IsEqualTo("""{"urn":"urn:mrn:imo:mmsi:338246284","name":"Morning Star"}""");
+    }
+
+    // --- Write methods share one failure policy ------------------------
+
+    private static Task<ApiResult> Write(string verb, HttpClient http, CancellationToken ct = default) => verb switch
+    {
+        "DELETE" => ResourceHttp.DeleteAsync(http, Url, ct),
+        "POST" => ResourceHttp.PostAsync(http, Url, new { a = 1 }, ct),
+        _ => ResourceHttp.PutAsync(http, Url, new { a = 1 }, ct),
+    };
+
+    [Test]
+    [Arguments("DELETE")]
+    [Arguments("POST")]
+    [Arguments("PUT")]
+    public async Task Write_2xx_IsOk(string verb)
+    {
+        var http = ApiTestHelpers.MockClient(_ => new HttpResponseMessage(HttpStatusCode.NoContent));
+
+        await Assert.That((await Write(verb, http)).Success).IsTrue();
+    }
+
+    [Test]
+    [Arguments("DELETE")]
+    [Arguments("POST")]
+    [Arguments("PUT")]
+    public async Task Write_Non2xx_FailsWithServerErrorAndStatus(string verb)
+    {
+        var http = ApiTestHelpers.JsonClient(
+            _ => """{"error":"nope"}""", HttpStatusCode.Forbidden);
+
+        var r = await Write(verb, http);
+
+        await Assert.That(r.Success).IsFalse();
+        await Assert.That(r.Error).IsEqualTo("nope");
+        await Assert.That(r.StatusCode).IsEqualTo(403);
+    }
+
+    [Test]
+    [Arguments("DELETE")]
+    [Arguments("POST")]
+    [Arguments("PUT")]
+    public async Task Write_NetworkFailureAndTimeout_FailWithoutStatus(string verb)
+    {
+        var down = await Write(verb, NetworkDownClient());
+        var slow = await Write(verb, TimeoutClient());
+
+        await Assert.That(down.Error).IsEqualTo("DNS fail");
+        await Assert.That(down.StatusCode).IsNull();
+        await Assert.That(slow.Error).IsEqualTo("request timed out");
+        await Assert.That(slow.StatusCode).IsNull();
+    }
+
+    [Test]
+    [Arguments("DELETE")]
+    [Arguments("POST")]
+    [Arguments("PUT")]
+    public async Task Write_CallerCancel_Propagates(string verb)
+    {
+        using var cts = new CancellationTokenSource();
+        var http = ApiTestHelpers.MockClient(_ =>
+        {
+            cts.Cancel();
+            throw new TaskCanceledException("caller cancelled", null, cts.Token);
+        });
+
+        await Assert.That(async () => await Write(verb, http, cts.Token)).Throws<OperationCanceledException>();
+    }
+
+    // --- PostCreateAsync -------------------------------------------------
+
+    [Test]
+    public async Task PostCreate_ReturnsTheCreatedId()
+    {
+        var http = ApiTestHelpers.JsonClient(
+            _ => """{"state":"COMPLETED","statusCode":201,"id":"abc"}""", HttpStatusCode.Created);
+
+        var r = await ResourceHttp.PostCreateAsync(http, Url, new { a = 1 });
+
+        await Assert.That(r.Success).IsTrue();
+        await Assert.That(r.Value).IsEqualTo("abc");
+    }
+
+    [Test]
+    public async Task PostCreate_2xxWithoutId_Fails()
+    {
+        var http = ApiTestHelpers.MockClient(_ => new HttpResponseMessage(HttpStatusCode.Created));
+
+        var r = await ResourceHttp.PostCreateAsync(http, Url, new { a = 1 });
+
+        await Assert.That(r.Success).IsFalse();
+        await Assert.That(r.Error).IsEqualTo("server accepted the create but returned no id");
+    }
+
+    [Test]
+    public async Task PostCreate_Non2xx_FailsWithServerErrorAndStatus()
+    {
+        var http = ApiTestHelpers.JsonClient(
+            _ => """{"state":"FAILED","statusCode":401,"message":"login required"}""",
+            HttpStatusCode.Unauthorized);
+
+        var r = await ResourceHttp.PostCreateAsync(http, Url, new { a = 1 });
+
+        await Assert.That(r.Success).IsFalse();
+        await Assert.That(r.Error).IsEqualTo("login required");
+        await Assert.That(r.StatusCode).IsEqualTo(401);
+    }
+
+    [Test]
+    public async Task PostCreate_NetworkFailureAndTimeout_FailWithoutStatus()
+    {
+        var down = await ResourceHttp.PostCreateAsync(NetworkDownClient(), Url, new { a = 1 });
+        var slow = await ResourceHttp.PostCreateAsync(TimeoutClient(), Url, new { a = 1 });
+
+        await Assert.That(down.Error).IsEqualTo("DNS fail");
+        await Assert.That(down.StatusCode).IsNull();
+        await Assert.That(slow.Error).IsEqualTo("request timed out");
+        await Assert.That(slow.StatusCode).IsNull();
     }
 }

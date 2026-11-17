@@ -152,35 +152,49 @@ internal static class ResourceHttp
     }
 
     /// <summary>
+    /// The write-side failure policy shared by DELETE / POST / PUT: a
+    /// 2xx goes to <paramref name="onSuccess"/>; a non-2xx becomes a
+    /// failure carrying the server's error text and status code (so
+    /// retry loops can treat 404 as "already gone"); a transport failure
+    /// or HttpClient timeout becomes a failure without a status.
+    /// Caller-initiated cancellation rethrows so a deliberate cancel
+    /// surfaces as a cancel; HttpClient's internal timeout (ct is never
+    /// user-driven for fire-and-forget callers like AutoAdvanceAsync)
+    /// lands as a failure rather than bubbling up to Blazor's renderer
+    /// error UI.
+    /// </summary>
+    private static async Task<TResult> SendCoreAsync<TResult>(
+        Func<CancellationToken, Task<HttpResponseMessage>> send,
+        Func<HttpResponseMessage, Task<TResult>> onSuccess,
+        Func<string?, int?, TResult> fail,
+        CancellationToken ct)
+    {
+        try
+        {
+            using var response = await send(ct);
+            if (response.IsSuccessStatusCode) return await onSuccess(response);
+            return fail(
+                await ReadErrorAsync(response, ct) ?? $"HTTP {(int)response.StatusCode}",
+                (int)response.StatusCode);
+        }
+        catch (HttpRequestException ex) { return fail(ex.Message, null); }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        { return fail("request timed out", null); }
+    }
+
+    private static Task<ApiResult> SendAsync(
+        Func<CancellationToken, Task<HttpResponseMessage>> send, CancellationToken ct)
+        => SendCoreAsync(send, static _ => Task.FromResult(ApiResult.Ok), ApiResult.Fail, ct);
+
+    /// <summary>
     /// DELETEs a specific resource by URL. Returns an
     /// <see cref="ApiResult"/> so callers can surface the server's
     /// error body on failure; happy path is the singleton
     /// <see cref="ApiResult.Ok"/>.
     /// </summary>
-    public static async Task<ApiResult> DeleteAsync(
+    public static Task<ApiResult> DeleteAsync(
         HttpClient http, string url, CancellationToken ct = default)
-    {
-        try
-        {
-            using var response = await http.DeleteAsync(url, ct);
-            if (response.IsSuccessStatusCode) return ApiResult.Ok;
-            // Pass StatusCode through (matches PutAsync / PostAsync) so
-            // retry loops can treat 404 as "already gone, success" rather
-            // than spinning forever on a notification or waypoint the
-            // server has already cleaned up.
-            return ApiResult.Fail(
-                await ReadErrorAsync(response, ct) ?? $"HTTP {(int)response.StatusCode}",
-                (int)response.StatusCode);
-        }
-        catch (HttpRequestException ex) { return ApiResult.Fail(ex.Message); }
-        // Caller-initiated cancellation rethrows so a deliberate cancel
-        // surfaces as cancel; HttpClient's internal timeout (the
-        // 8-second default; ct is never user-driven for fire-and-forget
-        // callers like AutoAdvanceAsync) lands here as a Fail rather
-        // than bubbling up to Blazor's renderer error UI.
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-        { return ApiResult.Fail("request timed out"); }
-    }
+        => SendAsync(token => http.DeleteAsync(url, token), ct);
 
     /// <summary>
     /// POSTs a JSON body. Used for every resource-create flow that
@@ -188,21 +202,9 @@ internal static class ResourceHttp
     /// is the id-returning variant used by
     /// Waypoint/Note/Region creates.
     /// </summary>
-    public static async Task<ApiResult> PostAsync(
+    public static Task<ApiResult> PostAsync(
         HttpClient http, string url, object body, CancellationToken ct = default)
-    {
-        try
-        {
-            using var response = await http.PostAsJsonAsync(url, body, ct);
-            if (response.IsSuccessStatusCode) return ApiResult.Ok;
-            return ApiResult.Fail(
-                await ReadErrorAsync(response, ct) ?? $"HTTP {(int)response.StatusCode}",
-                (int)response.StatusCode);
-        }
-        catch (HttpRequestException ex) { return ApiResult.Fail(ex.Message); }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-        { return ApiResult.Fail("request timed out"); }
-    }
+        => SendAsync(token => http.PostAsJsonAsync(url, body, token), ct);
 
     /// <summary>
     /// PUTs a JSON body. Used for in-place update flows
@@ -211,24 +213,12 @@ internal static class ResourceHttp
     /// <c>System.Net.Http.Json</c> web defaults for bodies that need
     /// e.g. null-omission.
     /// </summary>
-    public static async Task<ApiResult> PutAsync(
+    public static Task<ApiResult> PutAsync(
         HttpClient http, string url, object body, CancellationToken ct = default,
         JsonSerializerOptions? options = null)
-    {
-        try
-        {
-            using var response = options is null
-                ? await http.PutAsJsonAsync(url, body, ct)
-                : await http.PutAsync(url, JsonContent.Create(body, body.GetType(), options: options), ct);
-            if (response.IsSuccessStatusCode) return ApiResult.Ok;
-            return ApiResult.Fail(
-                await ReadErrorAsync(response, ct) ?? $"HTTP {(int)response.StatusCode}",
-                (int)response.StatusCode);
-        }
-        catch (HttpRequestException ex) { return ApiResult.Fail(ex.Message); }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-        { return ApiResult.Fail("request timed out"); }
-    }
+        => SendAsync(token => options is null
+            ? http.PutAsJsonAsync(url, body, token)
+            : http.PutAsync(url, JsonContent.Create(body, body.GetType(), options: options), token), ct);
 
     /// <summary>
     /// POSTs a resource-create body and returns the new resource id
@@ -237,27 +227,18 @@ internal static class ResourceHttp
     /// unparseable body is a failure because the caller has no id to
     /// do anything with.
     /// </summary>
-    public static async Task<ApiResult<string>> PostCreateAsync(
+    public static Task<ApiResult<string>> PostCreateAsync(
         HttpClient http, string url, object body, CancellationToken ct = default)
-    {
-        try
-        {
-            using var response = await http.PostAsJsonAsync(url, body, ct);
-            if (!response.IsSuccessStatusCode)
+        => SendCoreAsync(
+            token => http.PostAsJsonAsync(url, body, token),
+            async response =>
             {
-                return ApiResult<string>.Fail(await ReadErrorAsync(response, ct)
-                    ?? $"HTTP {(int)response.StatusCode}");
-            }
-            var rawBody = await response.Content.ReadAsStringAsync(ct);
-            var id = ParseCreatedId(rawBody);
-            if (string.IsNullOrEmpty(id))
-                return ApiResult<string>.Fail("server accepted the create but returned no id");
-            return ApiResult<string>.Ok(id);
-        }
-        catch (HttpRequestException ex) { return ApiResult<string>.Fail(ex.Message); }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-        { return ApiResult<string>.Fail("request timed out"); }
-    }
+                var id = ParseCreatedId(await response.Content.ReadAsStringAsync(ct));
+                return string.IsNullOrEmpty(id)
+                    ? ApiResult<string>.Fail("server accepted the create but returned no id")
+                    : ApiResult<string>.Ok(id);
+            },
+            ApiResult<string>.Fail, ct);
 
     /// <summary>
     /// Extracts the server's error string from a non-2xx body. Two
