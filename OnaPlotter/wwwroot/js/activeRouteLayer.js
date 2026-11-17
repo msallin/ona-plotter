@@ -12,6 +12,8 @@
 //   - dashed = "ship-to-waypoint" (bearing line, current-leg overlay)
 //   - dotted = "already passed" (legs of the active route the boat crossed)
 
+import { wireClick } from './popupHelpers.js';
+
 const activeWpIcon = L.divIcon({
     className: 'active-wp-icon',
     html: '<div class="active-wp-pulse"></div>',
@@ -25,8 +27,6 @@ let getDotNetRef = null;
 let getEditModeFlags = null;
 let editModeAddPoint = null;
 let buildActiveRoutePopupHtml = null;
-let wireRouteDeactivate = null;
-let wireRouteEdit = null;
 let wireDeleteConfirm = null;
 let clearCourseLineFn = null;
 let setCoursePulseSuppressedFn = null;
@@ -49,8 +49,6 @@ export function init(map, deps) {
     getEditModeFlags = deps.getEditModeFlags;
     editModeAddPoint = deps.editModeAddPoint;
     buildActiveRoutePopupHtml = deps.buildActiveRoutePopupHtml;
-    wireRouteDeactivate = deps.wireRouteDeactivate;
-    wireRouteEdit = deps.wireRouteEdit;
     wireDeleteConfirm = deps.wireDeleteConfirm;
     clearCourseLineFn = deps.clearCourseLine;
     setCoursePulseSuppressedFn = deps.setCoursePulseSuppressed;
@@ -159,8 +157,10 @@ export function setActiveRoute(coords, wpIdx, routeId, routeName, totalNm) {
         const popupOptions = { className: 'route-popup', maxWidth: 320, autoClose: true };
         hitLine.bindPopup(() => buildActiveRoutePopupHtml(routeId, routeName, coords.length, totalNm), popupOptions);
         hitLine.on('popupopen', (ev) => {
-            wireRouteDeactivate(ev.popup);
-            wireRouteEdit(ev.popup, routeId);
+            // Non-destructive (the route resource stays; only the active
+            // course is cleared), so no confirm.
+            wireClick(ev.popup, '.route-deactivate-btn', getDotNetRef, 'DeactivateActiveRoute', [], { close: 'before' });
+            wireClick(ev.popup, '.route-edit-btn', getDotNetRef, 'EditRouteById', [routeId], { close: 'before' });
             wireDeleteConfirm(ev.popup, '.route-delete-btn', 'DeleteRouteById', routeId);
         });
         // Same edit-mode override as the regular-route popup: while
@@ -318,8 +318,6 @@ export function dispose() {
     getEditModeFlags = null;
     editModeAddPoint = null;
     buildActiveRoutePopupHtml = null;
-    wireRouteDeactivate = null;
-    wireRouteEdit = null;
     wireDeleteConfirm = null;
     clearCourseLineFn = null;
 }

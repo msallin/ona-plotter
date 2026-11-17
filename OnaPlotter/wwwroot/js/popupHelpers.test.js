@@ -35,7 +35,7 @@ if (typeof globalThis.document === 'undefined') {
     };
 }
 
-const { esc } = await import('./popupHelpers.js');
+const { esc, wireClick } = await import('./popupHelpers.js');
 
 describe('esc', () => {
     it('escapes < > & for text-node contexts', () => {
@@ -89,5 +89,91 @@ describe('esc', () => {
         // setter coerces; the test pins that the call doesn't crash
         // and produces something sensible.
         assert.equal(esc(42), '42');
+    });
+});
+
+describe('wireClick', () => {
+    function setup() {
+        const listeners = [];
+        const btn = {
+            addEventListener(ev, fn) { listeners.push({ ev, fn }); },
+            click(e = {}) { return listeners.filter(l => l.ev === 'click').map(l => l.fn(e)); },
+        };
+        const popup = {
+            closed: 0,
+            getElement: () => ({ querySelector: sel => (sel === '.b' ? btn : null) }),
+            _source: { closePopup() { popup.closed++; } },
+        };
+        return { btn, popup, listeners };
+    }
+    const flush = () => new Promise(r => setImmediate(r));
+
+    it('invokes the method with args on click', async () => {
+        const { btn, popup } = setup();
+        const calls = [];
+        const ref = { invokeMethodAsync: (...a) => { calls.push(a); return Promise.resolve(); } };
+        wireClick(popup, '.b', () => ref, 'Go', ['id1', 2]);
+        await Promise.all(btn.click());
+        assert.deepEqual(calls, [['Go', 'id1', 2]]);
+        assert.equal(popup.closed, 0);
+    });
+
+    it('wires a button only once', () => {
+        const { popup, listeners } = setup();
+        wireClick(popup, '.b', () => null, 'Go');
+        wireClick(popup, '.b', () => null, 'Go');
+        assert.equal(listeners.length, 1);
+    });
+
+    it('ignores a missing popup element or button', () => {
+        wireClick({ getElement: () => null }, '.b', () => null, 'Go');
+        const { popup, listeners } = setup();
+        wireClick(popup, '.missing', () => null, 'Go');
+        assert.equal(listeners.length, 0);
+    });
+
+    it('is a no-op when the DotNet ref is gone', async () => {
+        const { btn, popup } = setup();
+        let asked = 0;
+        wireClick(popup, '.b', () => { asked++; return null; }, 'Go', [], { close: 'after' });
+        await Promise.all(btn.click());
+        assert.equal(asked, 1);
+        assert.equal(popup.closed, 1);
+    });
+
+    it('swallows a rejected invoke (disposed ref)', async () => {
+        const { btn, popup } = setup();
+        const ref = { invokeMethodAsync: () => Promise.reject(new Error('disposed')) };
+        wireClick(popup, '.b', () => ref, 'Go', [], { close: 'after' });
+        await Promise.all(btn.click());
+        await flush();
+        assert.equal(popup.closed, 1);
+    });
+
+    it('close: before closes the popup before invoking', async () => {
+        const { btn, popup } = setup();
+        const order = [];
+        const ref = { invokeMethodAsync: () => { order.push(`invoke@closed=${popup.closed}`); return Promise.resolve(); } };
+        wireClick(popup, '.b', () => ref, 'Go', [], { close: 'before' });
+        await Promise.all(btn.click());
+        assert.deepEqual(order, ['invoke@closed=1']);
+    });
+
+    it('close: after closes the popup once the invoke settles', async () => {
+        const { btn, popup } = setup();
+        let closedAtInvoke = -1;
+        const ref = { invokeMethodAsync: () => { closedAtInvoke = popup.closed; return Promise.resolve(); } };
+        wireClick(popup, '.b', () => ref, 'Go', [], { close: 'after' });
+        await Promise.all(btn.click());
+        assert.equal(closedAtInvoke, 0);
+        assert.equal(popup.closed, 1);
+    });
+
+    it('swallow: true stops the click event', async () => {
+        const { btn, popup } = setup();
+        const seen = [];
+        wireClick(popup, '.b', () => null, 'Go', [], { swallow: true });
+        await Promise.all(btn.click({ preventDefault: () => seen.push('pd'), stopPropagation: () => seen.push('sp') }));
+        assert.deepEqual(seen, ['pd', 'sp']);
     });
 });

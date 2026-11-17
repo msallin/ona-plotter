@@ -14,7 +14,7 @@
 // reference it.
 
 import { MarkerLayer } from './markerLayer.js';
-import { esc, wireDeleteConfirm } from './popupHelpers.js';
+import { esc, wireClick, wireDeleteConfirm } from './popupHelpers.js';
 import { latLonDms } from './format.js';
 
 const NOTE_STROKE = '#7a5418';
@@ -122,23 +122,6 @@ function buildNotePopupHtml(_id, title, description, lat, lon, createdAtIso) {
         </div>`;
 }
 
-/** Wire a single-click button in the popup to a [JSInvokable] method.
- *  Mirror of wireDeleteConfirm minus the two-step confirm: Go / Edit
- *  / Share aren't destructive enough to need it, and an extra tap on
- *  every action would wear out fast. _wired flag so re-opening the
- *  popup doesn't double-bind. */
-function wireSimpleClick(popup, selector, dotNetMethod, id) {
-    const el = popup.getElement();
-    if (!el) return;
-    const btn = el.querySelector(selector);
-    if (!btn || btn._wired) return;
-    btn._wired = true;
-    btn.addEventListener('click', () => {
-        const dotNetRef = getDotNetRef();
-        if (dotNetRef) dotNetRef.invokeMethodAsync(dotNetMethod, id).catch(() => {});
-    });
-}
-
 export function addNoteMarker(id, lat, lon, title, description, createdAtIso) {
     if (!mapRef || noteMarkers.has(id)) return;
     const marker = L.marker([lat, lon], { icon: getNoteIcon() }).addTo(mapRef);
@@ -181,9 +164,9 @@ export function addNoteMarker(id, lat, lon, title, description, createdAtIso) {
     // INSIDE the popup DOM (not document-wide) means an id collision
     // with another element can't hijack the click.
     marker.on('popupopen', (ev) => {
-        wireSimpleClick(ev.popup, '.note-go-btn', 'NoteGoTo', id);
-        wireSimpleClick(ev.popup, '.note-edit-btn', 'NoteEdit', id);
-        wireSimpleClick(ev.popup, '.note-share-btn', 'NoteShare', id);
+        wireClick(ev.popup, '.note-go-btn', getDotNetRef, 'NoteGoTo', [id]);
+        wireClick(ev.popup, '.note-edit-btn', getDotNetRef, 'NoteEdit', [id]);
+        wireClick(ev.popup, '.note-share-btn', getDotNetRef, 'NoteShare', [id]);
         wireDeleteConfirm(ev.popup, '.note-delete-btn', 'DeleteNote', id, getDotNetRef);
     });
     noteMarkers.set(id, marker);

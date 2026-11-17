@@ -1272,7 +1272,9 @@
 //               move from MainLayout into hosted services.
 // v121 -> v122: dead-code removal (unused components, zoom badge, tile-error
 //               counter, route-edit undo, duplicate download helper).
-const CACHE_NAME = 'ona-plotter-v122';
+// v122 -> v123: JS module reshuffle (dragGhost.js, wireClick, routeLayer.js;
+//               leafletInterop.js re-exports the layer entry points).
+const CACHE_NAME = 'ona-plotter-v123';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

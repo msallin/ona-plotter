@@ -11,7 +11,7 @@
 // every radius tap.
 
 import { MarkerLayer } from './markerLayer.js';
-import { esc, wireDeleteConfirm } from './popupHelpers.js';
+import { esc, wireClick, wireDeleteConfirm } from './popupHelpers.js';
 import { fitPadding } from './mapRotation.js';
 
 const regionLayers = new MarkerLayer();
@@ -194,7 +194,10 @@ export function addRegion(id, rings, title, description,
         });
         poly.on('popupopen', (ev) => {
             wireDeleteConfirm(ev.popup, '.region-delete-btn', 'DeleteRegion', id, getDotNetRef);
-            wireEditButton(ev.popup, id);
+            // No confirm step: Edit opens the polygon-edit panel, where Save
+            // commits and Cancel discards.
+            wireClick(ev.popup, '.region-edit-btn', getDotNetRef, 'EditRegion', [id],
+                { close: 'before', swallow: true });
         });
         group.addLayer(poly);
     }
@@ -234,24 +237,6 @@ export function addRegion(id, rings, title, description,
     }
     group.addTo(mapRef);
     regionLayers.set(id, group);
-}
-
-// Wire the popup's Edit button to call back into C# with the region id.
-// Same pattern as wireDeleteConfirm but no confirm step - the helm
-// taps Edit, the polygon-edit panel opens populated with the region's
-// vertices, and Save commits the changes (or Cancel discards).
-function wireEditButton(popup, id) {
-    const root = popup.getElement && popup.getElement();
-    if (!root) return;
-    const btn = root.querySelector('.region-edit-btn');
-    if (!btn) return;
-    btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        popup.close && popup.close();
-        const ref = typeof getDotNetRef === 'function' ? getDotNetRef() : null;
-        if (ref) ref.invokeMethodAsync('EditRegion', id);
-    }, { once: true });
 }
 
 export function removeRegion(id) { regionLayers.remove(id); }

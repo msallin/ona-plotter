@@ -6,7 +6,7 @@
 // not an open polyline. When the user saves, Map.razor pulls the
 // coords and POSTs them through RegionApi.CreatePolygonAsync.
 
-import { haversineMeters, NM_PER_METER } from './geoMath.js';
+import { attachDragGhost } from './dragGhost.js';
 
 // Polygon edit uses the same violet as route-edit so "I am editing"
 // reads consistently across both drawing modes. Amber (--ann-region)
@@ -86,56 +86,16 @@ function redrawPolygonShape() {
 // closure over idx captures the current index; removals tear down all
 // markers and rebuild, so idx stays in sync with the coords array.
 function bindPolygonVertex(marker, idx) {
-    let ghostLine = null;
-    let ghostMarker = null;
-    let origLL = null;
-
-    marker.on('dragstart', (e) => {
-        origLL = e.target.getLatLng();
-        ghostMarker = L.marker(origLL, {
-            icon: L.divIcon({
-                className: 'edit-wp-ghost-icon',
-                html: '<div class="edit-wp-ghost-circle"></div>',
-                iconSize: [24, 24],
-                iconAnchor: [12, 12]
-            }),
-            interactive: false, keyboard: false, zIndexOffset: 500
-        }).addTo(polygonEditLayer);
-        ghostLine = L.polyline([origLL, origLL], {
-            color: POLYGON_COLOR, weight: 1.5, opacity: 0.7, dashArray: '3,4',
-            interactive: false
-        }).addTo(polygonEditLayer);
-        // direction:'top' + a > marker-half-height offset keeps the
-        // Δ label above the cursor/finger so the helm can read it
-        // mid-drag instead of staring at a marker that hides its own
-        // delta. -18 clears the 24 px draggable vertex icon (12 px
-        // to top edge + a little air).
-        ghostLine.bindTooltip('Δ 0 m', {
-            permanent: true,
-            direction: 'top',
-            offset: [0, -18],
-            className: 'measure-tooltip'
-        }).openTooltip(origLL);
-    });
-
-    marker.on('drag', (e) => {
-        const ll = e.target.getLatLng();
-        polygonEditCoords[idx] = [ll.lat, ll.lng];
-        scheduleRedrawPolygonShape();
-        if (ghostLine && origLL) {
-            ghostLine.setLatLngs([origLL, ll]);
-            const dm = haversineMeters(origLL.lat, origLL.lng, ll.lat, ll.lng);
-            const label = dm < 1000 ? `Δ ${dm.toFixed(0)} m` : `Δ ${(dm * NM_PER_METER).toFixed(2)} nm`;
-            ghostLine.setTooltipContent(label);
-            const tt = ghostLine.getTooltip();
-            if (tt) tt.setLatLng(ll);
+    attachDragGhost(marker, {
+        container: () => polygonEditLayer,
+        color: () => POLYGON_COLOR,
+        icon: { className: 'edit-wp-ghost-icon', html: '<div class="edit-wp-ghost-circle"></div>', size: 24 },
+        // Clears the 24 px draggable vertex icon (12 px to its top edge + air).
+        tooltipOffset: -18,
+        onDrag: (ll) => {
+            polygonEditCoords[idx] = [ll.lat, ll.lng];
+            scheduleRedrawPolygonShape();
         }
-    });
-
-    marker.on('dragend', () => {
-        if (ghostMarker && polygonEditLayer) polygonEditLayer.removeLayer(ghostMarker);
-        if (ghostLine && polygonEditLayer) polygonEditLayer.removeLayer(ghostLine);
-        ghostMarker = null; ghostLine = null; origLL = null;
     });
 }
 

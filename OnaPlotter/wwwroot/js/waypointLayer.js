@@ -16,7 +16,7 @@
 // JSInvokable trust boundary in C#.
 
 import { MarkerLayer } from './markerLayer.js';
-import { esc, wireDeleteConfirm } from './popupHelpers.js';
+import { esc, wireClick, wireDeleteConfirm } from './popupHelpers.js';
 import { latLonDms, latDms, lonDms, mobElapsed } from './format.js';
 import { haversineMeters, bearingDeg, NM_PER_METER } from './geoMath.js';
 
@@ -95,23 +95,6 @@ function buildWaypointPopupHtml(id, name, lat, lon, createdAtIso) {
                 <button class="waypoint-delete-btn note-delete-btn" type="button">Delete</button>
             </div>
         </div>`;
-}
-
-/** Single-click button wiring - same shape as noteLayer's
- *  wireSimpleClick. Inlined here rather than promoted to popupHelpers
- *  because both note and waypoint layers will gain different
- *  destination methods and a shared helper would force a "method
- *  name + id" tuple convention that's not actually shared yet. */
-function wireSimpleClick(popup, selector, dotNetMethod, id) {
-    const el = popup.getElement();
-    if (!el) return;
-    const btn = el.querySelector(selector);
-    if (!btn || btn._wired) return;
-    btn._wired = true;
-    btn.addEventListener('click', () => {
-        const dotNetRef = getDotNetRef();
-        if (dotNetRef) dotNetRef.invokeMethodAsync(dotNetMethod, id).catch(() => {});
-    });
 }
 
 // MOB icons. Reused across every MOB waypoint (small fixed set):
@@ -502,13 +485,13 @@ function wireWaypointInteractions(target, id, lat, lon, name, createdAtIso, isMo
         // No .waypoint-focus-btn binding - the popup has no Focus
         // button (see buildPopupHtml). The C# WaypointFocus
         // JSInvokable serves the layers-panel path only.
-        wireSimpleClick(ev.popup, '.waypoint-go-btn', 'WaypointGoTo', id);
-        wireSimpleClick(ev.popup, '.waypoint-share-btn', 'WaypointShare', id);
+        wireClick(ev.popup, '.waypoint-go-btn', getDotNetRef, 'WaypointGoTo', [id]);
+        wireClick(ev.popup, '.waypoint-share-btn', getDotNetRef, 'WaypointShare', [id]);
         if (!isMob) {
             // Edit + Delete only on non-MOB waypoints. The C#
             // JSInvokables also refuse on isMob, so this is purely
             // a "don't show an unusable affordance" cue.
-            wireSimpleClick(ev.popup, '.waypoint-edit-btn', 'WaypointEdit', id);
+            wireClick(ev.popup, '.waypoint-edit-btn', getDotNetRef, 'WaypointEdit', [id]);
             wireDeleteConfirm(ev.popup, '.waypoint-delete-btn', 'DeleteWaypoint', id, getDotNetRef);
         }
     });

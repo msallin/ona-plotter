@@ -34,7 +34,7 @@ import { installRotationSupport, attachRotation, detachRotation, setRotation,
 import { isTypingTarget, shortcutKey } from './keyboardShortcuts.js';
 import { buildSelfPopupHtml } from './ownBoatPopup.js';
 import { makeBoatSvg } from './boatIcons.js';
-import { esc as escImported, wireDeleteConfirm as wireDeleteConfirmImported } from './popupHelpers.js';
+import { esc as escImported, wireClick, wireDeleteConfirm as wireDeleteConfirmImported } from './popupHelpers.js';
 
 let map = null;
 // Module-scoped bounds-debounce timer so dispose() can cancel it.
@@ -579,8 +579,6 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient, opt
         getDotNetRef: () => dotNetRef,
         ...editModeDeps,
         buildActiveRoutePopupHtml,
-        wireRouteDeactivate,
-        wireRouteEdit,
         wireDeleteConfirm,
         clearCourseLine: () => courseLineLayerMod.clearCourseLine(),
         // Tell courseLineLayer to hide its own pulsing destination
@@ -1693,8 +1691,11 @@ export function addRoute(id, name, coords, totalNm) {
     line.on('click', (ev) => onLineClick(ev, line));
     hitLine.on('click', (ev) => onLineClick(ev, hitLine));
     const wirePopup = (ev) => {
-        wireRouteActivate(ev.popup, id);
-        wireRouteEdit(ev.popup, id);
+        // Single-tap Activate / Edit, no confirm: neither is destructive.
+        // Edit closes the popup first (the edit toolbar takes over the
+        // viewport); Activate closes it once the server has the course.
+        wireClick(ev.popup, '.route-activate-btn', () => dotNetRef, 'ActivateRouteById', [id], { close: 'after' });
+        wireClick(ev.popup, '.route-edit-btn', () => dotNetRef, 'EditRouteById', [id], { close: 'before' });
         wireDeleteConfirm(ev.popup, '.route-delete-btn', 'DeleteRouteById', id);
     };
     line.on('popupopen', wirePopup);
@@ -1731,44 +1732,6 @@ function buildRoutePopupHtml(id, name, wpCount, nmTotal) {
         </div>`;
 }
 
-// Single-tap Activate - no two-step confirm like delete, because
-// activating a route is non-destructive (the old active course is
-// just replaced on the server side).
-function wireRouteActivate(popup, id) {
-    const el = popup.getElement();
-    if (!el) return;
-    const btn = el.querySelector('.route-activate-btn');
-    if (!btn || btn._wired) return;
-    btn._wired = true;
-    btn.addEventListener('click', async () => {
-        if (dotNetRef) {
-            try { await dotNetRef.invokeMethodAsync('ActivateRouteById', id); }
-            catch (_) { /* disposed or navigation in flight */ }
-        }
-        popup._source?.closePopup();
-    });
-}
-
-// Edit button - matches the Layers-panel Edit action. Hands off to
-// C# which flips routeEditLayerMod.isActive() on and loads the polyline into the
-// edit layer. Closes the popup immediately so a second tap doesn't
-// land on a now-invisible button (the edit toolbar takes over the
-// viewport once routeEditLayerMod.isActive() flips).
-function wireRouteEdit(popup, id) {
-    const el = popup.getElement();
-    if (!el) return;
-    const btn = el.querySelector('.route-edit-btn');
-    if (!btn || btn._wired) return;
-    btn._wired = true;
-    btn.addEventListener('click', async () => {
-        popup._source?.closePopup();
-        if (dotNetRef) {
-            try { await dotNetRef.invokeMethodAsync('EditRouteById', id); }
-            catch (_) { /* disposed or navigation in flight */ }
-        }
-    });
-}
-
 // Active-route popup: same shape as the regular-route popup but the
 // primary action is "Deactivate" (clear the SignalK course) rather
 // than "Activate". Edit + Delete keep working on the route resource
@@ -1788,25 +1751,6 @@ function buildActiveRoutePopupHtml(id, name, wpCount, nmTotal) {
                 <button class="route-delete-btn" type="button">Delete</button>
             </div>
         </div>`;
-}
-
-// Single-tap Deactivate - non-destructive (the route resource stays;
-// only the active SignalK course is cleared), so no two-step confirm.
-// Mirrors the bottom-bar Stop Navigation button via the
-// DeactivateActiveRoute [JSInvokable] on Map.razor.cs.
-function wireRouteDeactivate(popup) {
-    const el = popup.getElement();
-    if (!el) return;
-    const btn = el.querySelector('.route-deactivate-btn');
-    if (!btn || btn._wired) return;
-    btn._wired = true;
-    btn.addEventListener('click', async () => {
-        popup._source?.closePopup();
-        if (dotNetRef) {
-            try { await dotNetRef.invokeMethodAsync('DeactivateActiveRoute'); }
-            catch (_) { /* disposed or navigation in flight */ }
-        }
-    });
 }
 
 export function removeRoute(id) { routeLayers.remove(id); }

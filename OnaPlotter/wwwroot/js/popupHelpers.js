@@ -75,3 +75,36 @@ export function wireDeleteConfirm(popup, selector, dotNetMethod, id, getDotNetRe
     // Closing the popup resets confirm state so re-opening starts fresh.
     popup.once('popupclose', reset);
 }
+
+/**
+ * Wire a popup button to a [JSInvokable] method. Single tap, no
+ * confirm (use wireDeleteConfirm for destructive actions). A rejected
+ * invoke (disposed ref, navigation in flight) is swallowed.
+ *
+ * @param popup        Leaflet popup instance
+ * @param selector     CSS selector for the button inside the popup
+ * @param getDotNetRef Closure returning the current dotNetRef
+ * @param dotNetMethod The [JSInvokable] method name
+ * @param args         Arguments passed to the method
+ * @param opts         { close: 'before' | 'after' } closes the popup's
+ *                     source popup around the invoke;
+ *                     { swallow: true } prevents default and stops
+ *                     propagation of the click.
+ */
+export function wireClick(popup, selector, getDotNetRef, dotNetMethod, args = [], opts = {}) {
+    const el = popup.getElement();
+    if (!el) return;
+    const btn = el.querySelector(selector);
+    if (!btn || btn._wired) return;
+    btn._wired = true;
+    btn.addEventListener('click', async (e) => {
+        if (opts.swallow) { e.preventDefault(); e.stopPropagation(); }
+        if (opts.close === 'before') popup._source?.closePopup();
+        const dotNetRef = getDotNetRef();
+        if (dotNetRef) {
+            try { await dotNetRef.invokeMethodAsync(dotNetMethod, ...args); }
+            catch (_) { /* disposed or navigation in flight */ }
+        }
+        if (opts.close === 'after') popup._source?.closePopup();
+    });
+}

@@ -13,8 +13,9 @@
 //   * Right-click / long-press anywhere clears the ruler without
 //     leaving Measure mode.
 
-import { haversineMeters, bearingDeg, NM_PER_METER } from './geoMath.js';
+import { haversineMeters, bearingDeg } from './geoMath.js';
 import { measureDistance } from './format.js';
+import { attachDragGhost } from './dragGhost.js';
 
 let mapRef = null;
 let colors = null;
@@ -135,70 +136,28 @@ function makeMeasureDotIcon(vessel) {
     });
 }
 
-// Drag handlers that mirror bindEditMarker for routes: an original-
-// position ghost + dashed delta line + tooltip showing how far the
-// point has moved. Reuses .measure-tooltip styling so the look stays
-// consistent with the running-total label on each segment.
+// Drag feedback via attachDragGhost: an original-position ghost + dashed
+// delta line + tooltip showing how far the point has moved. Reuses
+// .measure-tooltip styling so the look stays consistent with the
+// running-total label on each segment.
 function bindMeasureMarker(marker, idx) {
-    let ghostLine = null;
-    let ghostMarker = null;
-    let origLL = null;
-
-    marker.on('dragstart', (e) => {
-        origLL = e.target.getLatLng();
-        ghostMarker = L.marker(origLL, {
-            icon: L.divIcon({
-                className: 'ona-measure-marker',
-                html: '<div class="ona-measure-ghost"></div>',
-                iconSize: [14, 14],
-                iconAnchor: [7, 7]
-            }),
-            interactive: false, keyboard: false, zIndexOffset: 500
-        }).addTo(mapRef);
-        ghostLine = L.polyline([origLL, origLL], {
-            color: colors.measure, weight: 1.5, opacity: 0.7, dashArray: '3,4',
-            interactive: false
-        }).addTo(mapRef);
-        // direction:'top' + a > marker-half-height offset keeps the
-        // Δ label above the cursor/finger so the helm can read it
-        // mid-drag instead of staring at a marker that hides its own
-        // delta. -14 clears the 14 px measure dot (7 px to top edge
-        // + a little air).
-        ghostLine.bindTooltip('Δ 0 m', {
-            permanent: true,
-            direction: 'top',
-            offset: [0, -14],
-            className: 'measure-tooltip'
-        }).openTooltip(origLL);
-    });
-
-    marker.on('drag', (e) => {
-        const ll = e.target.getLatLng();
-        if (idx < 0 || idx >= measurePoints.length) return;
-        measurePoints[idx].lat = ll.lat;
-        measurePoints[idx].lon = ll.lng;
-        // Live update of just the segments adjacent to this marker -
-        // a full redraw would tear down the marker mid-drag and break
-        // Leaflet's drag tracking.
-        updateMeasureSegmentsAround(idx);
-        if (ghostLine && origLL) {
-            ghostLine.setLatLngs([origLL, ll]);
-            const dm = haversineMeters(origLL.lat, origLL.lng, ll.lat, ll.lng);
-            const label = dm < 1000 ? `Δ ${dm.toFixed(0)} m`
-                                    : `Δ ${(dm * NM_PER_METER).toFixed(2)} nm`;
-            ghostLine.setTooltipContent(label);
-            const tt = ghostLine.getTooltip();
-            if (tt) tt.setLatLng(ll);
-        }
-    });
-
-    marker.on('dragend', () => {
-        if (ghostMarker && mapRef) mapRef.removeLayer(ghostMarker);
-        if (ghostLine && mapRef) mapRef.removeLayer(ghostLine);
-        ghostMarker = null; ghostLine = null; origLL = null;
-        // Final canonical redraw so running totals on every tooltip
-        // reflect the new geometry.
-        redrawMeasure();
+    attachDragGhost(marker, {
+        container: () => mapRef,
+        color: () => colors.measure,
+        icon: { className: 'ona-measure-marker', html: '<div class="ona-measure-ghost"></div>', size: 14 },
+        // Clears the 14 px measure dot (7 px to its top edge + air).
+        tooltipOffset: -14,
+        onDrag: (ll) => {
+            if (idx < 0 || idx >= measurePoints.length) return false;
+            measurePoints[idx].lat = ll.lat;
+            measurePoints[idx].lon = ll.lng;
+            // Only the adjacent segments update live: a full redraw
+            // would tear down the marker mid-drag and break Leaflet's
+            // drag tracking.
+            updateMeasureSegmentsAround(idx);
+        },
+        // Canonical redraw so running totals reflect the new geometry.
+        onEnd: redrawMeasure
     });
 }
 

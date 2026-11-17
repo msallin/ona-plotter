@@ -5,6 +5,7 @@
 // always sees "how far from where it was".
 
 import { haversineMeters, NM_PER_METER } from './geoMath.js';
+import { attachDragGhost } from './dragGhost.js';
 
 let mapRef = null;
 let colors = null;
@@ -201,63 +202,16 @@ function rebuildRouteEditMarkers() {
 // helms expect when repositioning a waypoint - the sailor always
 // sees "how far from where it was".
 function bindEditMarker(marker, idx) {
-    let ghostLine = null;
-    let ghostMarker = null;
-    let origLL = null;
-
-    marker.on('dragstart', (e) => {
-        origLL = e.target.getLatLng();
-        ghostMarker = L.marker(origLL, {
-            icon: L.divIcon({
-                className: 'edit-wp-ghost-icon',
-                html: '<div class="edit-wp-ghost-circle"></div>',
-                iconSize: [24, 24],
-                iconAnchor: [12, 12]
-            }),
-            interactive: false,
-            keyboard: false,
-            zIndexOffset: 500
-        }).addTo(routeEditLayer);
-        ghostLine = L.polyline([origLL, origLL], {
-            color: colors.current, weight: 1.5, opacity: 0.7, dashArray: '3,4',
-            interactive: false
-        }).addTo(routeEditLayer);
-        // Bind once; setTooltipContent on each drag event is cheaper
-        // than rebinding a fresh tooltip at ~60 Hz during a long drag.
-        // We reposition explicitly via setLatLng, so no `sticky` needed.
-        // direction:'top' + a > marker-half-height offset keeps the
-        // Δ label above the cursor/finger so the helm can read it
-        // mid-drag instead of staring at a marker that hides its own
-        // delta. -18 clears the 24 px draggable icon (12 px to top
-        // edge + a little air).
-        ghostLine.bindTooltip('Δ 0 m', {
-            permanent: true,
-            direction: 'top',
-            offset: [0, -18],
-            className: 'measure-tooltip'
-        }).openTooltip(origLL);
-    });
-
-    marker.on('drag', (e) => {
-        const ll = e.target.getLatLng();
-        routeEditCoords[idx] = [ll.lat, ll.lng];
-        scheduleRedrawEditLine();
-        if (ghostLine && origLL) {
-            ghostLine.setLatLngs([origLL, ll]);
-            const dm = haversineMeters(origLL.lat, origLL.lng, ll.lat, ll.lng);
-            const label = dm < 1000 ? `Δ ${dm.toFixed(0)} m` : `Δ ${(dm * NM_PER_METER).toFixed(2)} nm`;
-            ghostLine.setTooltipContent(label);
-            const tt = ghostLine.getTooltip();
-            if (tt) tt.setLatLng(ll);
+    attachDragGhost(marker, {
+        container: () => routeEditLayer,
+        color: () => colors.current,
+        icon: { className: 'edit-wp-ghost-icon', html: '<div class="edit-wp-ghost-circle"></div>', size: 24 },
+        // Clears the 24 px draggable icon (12 px to its top edge + air).
+        tooltipOffset: -18,
+        onDrag: (ll) => {
+            routeEditCoords[idx] = [ll.lat, ll.lng];
+            scheduleRedrawEditLine();
         }
-    });
-
-    marker.on('dragend', () => {
-        if (ghostMarker && routeEditLayer) routeEditLayer.removeLayer(ghostMarker);
-        if (ghostLine && routeEditLayer) routeEditLayer.removeLayer(ghostLine);
-        ghostMarker = null;
-        ghostLine = null;
-        origLL = null;
     });
 }
 
