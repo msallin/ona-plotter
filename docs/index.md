@@ -62,6 +62,7 @@ them.
 | [signalk-anchoralarm-plugin](https://github.com/sbender9/signalk-anchoralarm-plugin) v2.0.0+ | Anchor watch, drag detection |
 | [signalk-tides-api](https://github.com/sbender9/signalk-tides-api) | Tide card, anchor-tide grounding alarm |
 | [signalk-buddylist-plugin](https://github.com/sbender9/signalk-buddylist-plugin) | Buddy boats |
+| [signalk-parquet](https://github.com/motamman/signalk-parquet) | History and Stats pages, server-side track, Wind Rose history |
 | [Mayara](https://github.com/MarineYachtRadar/mayara-server) | Radar targets alongside AIS |
 | [signalk-flags](https://github.com/SignalK/signalk-flags) | Country flags in AIS popups |
 

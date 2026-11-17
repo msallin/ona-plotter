@@ -109,6 +109,7 @@ absent.
 | [signalk-anchoralarm-plugin](https://github.com/sbender9/signalk-anchoralarm-plugin) v2.0.0+ | Anchor watch, drag detection, incomplete-anchor alarm |
 | [signalk-tides-api](https://github.com/sbender9/signalk-tides-api) (or any `environment.tide.*` publisher) | Tide card in HUD + Dashboard, anchor-tide grounding alarm |
 | [signalk-buddylist](https://github.com/sbender9/signalk-buddylist-plugin) | Buddies section in Layers + star prefix on AIS labels |
+| [signalk-parquet](https://github.com/motamman/signalk-parquet) (or another History API provider) | History and Stats pages, server-side track on the map, Wind Rose history |
 | [Mayara](https://github.com/MarineYachtRadar/mayara-server) | Radar ARPA targets alongside AIS |
 | [signalk-flags](https://github.com/SignalK/signalk-flags) | Country flag in AIS popups |
 
