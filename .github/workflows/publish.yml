@@ -5,18 +5,10 @@ name: Publish to npm
 # provenance attestation. Two jobs: `release` cuts a GitHub Release from
 # the tag; `publish` stages the SignalK-webapp bundle and pushes to npm.
 #
-# SAFETY GATE (`publish-enabled`): the npm publish step is currently
-# disabled via `if: false` per the repo maintainer's request. The whole
-# packaging pipeline still runs on every tag so a maintainer can
-# inspect the resulting tarball artifact; only the final push is held
-# back. Flip `if: false` to `if: true` (or remove the condition) on the
-# "Publish to npm" step once the maintainer has:
-#   1. Registered the package name on npmjs.com
-#   2. Configured OIDC trusted publishing for this repo
-#      (Package Settings -> Trusted publishers on npmjs.com)
-#
-# Until then CI remains useful - the tarball is attached to the GitHub
-# Release so anyone can `npm install ./signalk-onaplotter-<ver>.tgz`.
+# npm accepts publishes from this workflow through OIDC trusted
+# publishing (npmjs.com package settings -> Trusted publishers), so no
+# npm token is stored in the repo. The tarball is also attached to the
+# GitHub Release so anyone can `npm install ./signalk-onaplotter-<ver>.tgz`.
 
 on:
   push:
@@ -132,14 +124,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # The actual push to npm. DISABLED per repo maintainer's current
-      # policy. Flip `if: false` -> `if: true` once the npm package
-      # name is reserved + OIDC trusted publishing is configured. The
-      # tag-suffix conditional picks the right dist-tag for pre-release
-      # versions; `--provenance` records the CI run in npm's registry
-      # so installers can verify the build.
+      # The tag-suffix conditional picks the right dist-tag for pre-release
+      # versions; `--provenance` records the CI run in npm's registry so
+      # installers can verify the build.
       - name: Publish to npm
-        if: false
         working-directory: ${{ steps.stage.outputs.stage }}
         run: |
           tag="${GITHUB_REF#refs/tags/}"
