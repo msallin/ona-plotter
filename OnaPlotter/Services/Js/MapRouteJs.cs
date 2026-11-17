@@ -11,48 +11,36 @@ namespace OnaPlotter.Services.Js;
 /// </summary>
 public sealed class MapRouteJs : IMapRouteJs
 {
-    private readonly IJSObjectReference _module;
-    private bool _disposed;
+    private readonly SafeJsModule _js;
 
     public MapRouteJs(IJSObjectReference module)
     {
-        _module = module ?? throw new ArgumentNullException(nameof(module));
+        _js = new SafeJsModule(module);
     }
 
-    public void MarkDisposed() => _disposed = true;
+    public void MarkDisposed() => _js.MarkDisposed();
 
     public Task AddRouteAsync(string id, string? name, double[][] coords, double totalNm)
-        => InvokeSafe("addRoute", id, name, coords, totalNm);
+        => _js.InvokeVoidAsync("addRoute", id, name, coords, totalNm);
 
     public Task UpdateRouteAsync(string id, string? name, double[][] coords, double totalNm)
-        => InvokeSafe("updateRoute", id, name, coords, totalNm);
+        => _js.InvokeVoidAsync("updateRoute", id, name, coords, totalNm);
 
     public Task RemoveRouteAsync(string id)
-        => InvokeSafe("removeRoute", id);
+        => _js.InvokeVoidAsync("removeRoute", id);
 
     public Task SetActiveRouteAsync(double[][] coords, int wpIndex, string routeId, string routeName, double totalNm)
-        => InvokeSafe("setActiveRoute", (object)coords, wpIndex, routeId, routeName, totalNm);
+        => _js.InvokeVoidAsync("setActiveRoute", (object)coords, wpIndex, routeId, routeName, totalNm);
 
     public Task ClearActiveRouteAsync()
-        => InvokeSafe("clearActiveRoute");
+        => _js.InvokeVoidAsync("clearActiveRoute");
 
     public Task SetActiveOverlayHiddenAsync(bool hidden)
-        => InvokeSafe("setActiveOverlayHidden", hidden);
+        => _js.InvokeVoidAsync("setActiveOverlayHidden", hidden);
 
     public Task SetActiveRouteStoppingAsync(bool stopping)
-        => InvokeSafe("setActiveRouteStopping", stopping);
+        => _js.InvokeVoidAsync("setActiveRouteStopping", stopping);
 
     public Task ClearCourseLineAsync()
-        => InvokeSafe("clearCourseLine");
-
-    private async Task InvokeSafe(string identifier, params object?[] args)
-    {
-        if (_disposed) return;
-        try
-        {
-            await _module.InvokeVoidAsync(identifier, args);
-        }
-        catch (JSDisconnectedException) { /* page is unmounting */ }
-        catch (ObjectDisposedException) { /* JS module disposed first */ }
-    }
+        => _js.InvokeVoidAsync("clearCourseLine");
 }

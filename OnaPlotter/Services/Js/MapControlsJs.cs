@@ -12,112 +12,85 @@ namespace OnaPlotter.Services.Js;
 /// </summary>
 public sealed class MapControlsJs : IMapControlsJs
 {
-    private readonly IJSObjectReference _module;
-    private bool _disposed;
+    private readonly SafeJsModule _js;
 
     public MapControlsJs(IJSObjectReference module)
     {
-        _module = module ?? throw new ArgumentNullException(nameof(module));
+        _js = new SafeJsModule(module, LogJsException);
     }
 
-    public void MarkDisposed() => _disposed = true;
+    public void MarkDisposed() => _js.MarkDisposed();
 
     public Task SetSignalKBaseUrlAsync(string url)
-        => InvokeSafe("setSignalKBaseUrl", url);
+        => _js.InvokeVoidAsync("setSignalKBaseUrl", url);
 
     public Task SetMapOrientationAsync(string mode)
-        => InvokeSafe("setMapOrientation", mode);
+        => _js.InvokeVoidAsync("setMapOrientation", mode);
 
     public Task SetFollowAsync(bool follow)
-        => InvokeSafe("setFollow", follow);
+        => _js.InvokeVoidAsync("setFollow", follow);
 
     public Task ClearLaylinesAsync()
-        => InvokeSafe("clearLaylines");
+        => _js.InvokeVoidAsync("clearLaylines");
 
     public Task SetShipLinesVisibleAsync(bool enabled)
-        => InvokeSafe("setShipLinesVisible", enabled);
+        => _js.InvokeVoidAsync("setShipLinesVisible", enabled);
 
     public Task SetRadarRangeRingsAsync(bool enabled, int count)
-        => InvokeSafe("setRadarRangeRings", enabled, count);
+        => _js.InvokeVoidAsync("setRadarRangeRings", enabled, count);
 
     public Task SetDistanceRingsAsync(bool enabled, double baseNm, int count)
-        => InvokeSafe("setDistanceRings", enabled, baseNm, count);
+        => _js.InvokeVoidAsync("setDistanceRings", enabled, baseNm, count);
 
     public Task SetRadarUseWireBearingAsync(bool value)
-        => InvokeSafe("setRadarUseWireBearing", value);
+        => _js.InvokeVoidAsync("setRadarUseWireBearing", value);
 
     public Task SetRadarBearingCorrectionAsync(double degrees)
-        => InvokeSafe("setRadarBearingCorrection", degrees);
+        => _js.InvokeVoidAsync("setRadarBearingCorrection", degrees);
 
     // The track palette rides along: night mode recolours the speed
     // tracks from SpeedColor's night ramp instead of filtering each path.
     public Task SetNightModeAsync(bool enabled)
-        => InvokeSafe("setNightMode", enabled, SpeedColor.PaletteFor(enabled));
+        => _js.InvokeVoidAsync("setNightMode", enabled, SpeedColor.PaletteFor(enabled));
 
     public Task SetCogVectorMinutesAsync(double ownMinutes, double aisMinutes)
-        => InvokeSafe("setCogVectorMinutes", ownMinutes, aisMinutes);
+        => _js.InvokeVoidAsync("setCogVectorMinutes", ownMinutes, aisMinutes);
 
     public Task PanToAsync(double lat, double lon)
-        => InvokeSafe("panTo", lat, lon);
+        => _js.InvokeVoidAsync("panTo", lat, lon);
 
     public Task ZoomToTrackAsync()
-        => InvokeSafe("zoomToTrack");
+        => _js.InvokeVoidAsync("zoomToTrack");
 
     public Task FitBoundsAsync(double minLat, double minLon, double maxLat, double maxLon)
-        => InvokeSafe("fitBounds", minLat, minLon, maxLat, maxLon);
+        => _js.InvokeVoidAsync("fitBounds", minLat, minLon, maxLat, maxLon);
 
     public Task EnableKeyboardShortcutsAsync<T>(DotNetObjectReference<T> dotNetRef, string[] keys) where T : class
-        => InvokeSafe("enableKeyboardShortcuts", dotNetRef, keys);
+        => _js.InvokeVoidAsync("enableKeyboardShortcuts", dotNetRef, keys);
 
     public Task DisableKeyboardShortcutsAsync()
-        => InvokeSafe("disableKeyboardShortcuts");
+        => _js.InvokeVoidAsync("disableKeyboardShortcuts");
 
     public Task ApplyFrameAsync(object frame)
-        => InvokeSafe("applyFrame", frame);
+        => _js.InvokeVoidAsync("applyFrame", frame);
 
     public Task ClearCurrentArrowAsync()
-        => InvokeSafe("clearCurrentArrow");
+        => _js.InvokeVoidAsync("clearCurrentArrow");
 
     public async Task<double[]?> GetMapCenterAsync()
     {
-        if (_disposed) return null;
-        try
-        {
-            return await _module.InvokeAsync<double[]>("getMapCenter");
-        }
-        catch (JSDisconnectedException) { return null; }
-        catch (ObjectDisposedException) { return null; }
+        return await _js.InvokeAsync<double[]?>(null, "getMapCenter");
     }
 
     public Task SetRangeScaleHiddenAsync(bool hidden)
-        => InvokeSafe("setRangeScaleHidden", hidden);
+        => _js.InvokeVoidAsync("setRangeScaleHidden", hidden);
 
-    private async Task InvokeSafe(string identifier, params object?[] args)
-    {
-        if (_disposed) return;
-        try
-        {
-            await _module.InvokeVoidAsync(identifier, args);
-        }
-        catch (JSDisconnectedException) { /* page is unmounting */ }
-        catch (ObjectDisposedException) { /* JS module disposed first */ }
-        catch (JSException ex)
-        {
-            // A real JS-side regression. Log via Console.Error
-            // (errorRelayBoot forwards to the SK server log) but DO
-            // NOT propagate - the wrapper is called from
-            // OnAfterRenderAsync + HandleSettingsChanged + per-tick
-            // frame dispatch, and a propagated exception trips
-            // Blazor's renderer error UI which empties the chart for
-            // the rest of the session. The recent helm report:
-            // "I enabled radar HUD ... I dont see infos on the chart
-            // anymore" - root cause was a stale radar-overlay record
-            // pointing at a removed Leaflet map; surfacing the JS
-            // crash through here let it cascade past every subsequent
-            // _controlsJs call. Log + swallow keeps the page alive
-            // while the JS-side fix lands.
-            Console.Error.WriteLine(
-                $"[mapControls] JS '{identifier}' threw {ex.GetType().Name}: {ex.Message}");
-        }
-    }
+    // A real JS-side regression. Logged via Console.Error (errorRelayBoot
+    // forwards it to the SK server log) and swallowed: this wrapper runs
+    // from OnAfterRenderAsync, HandleSettingsChanged and the per-tick frame
+    // dispatch, and a propagated exception trips Blazor's error UI, which
+    // empties the chart for the rest of the session.
+    private static void LogJsException(string identifier, JSException ex)
+        => Console.Error.WriteLine(
+            $"[mapControls] JS '{identifier}' threw {ex.GetType().Name}: {ex.Message}");
 }

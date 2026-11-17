@@ -12,57 +12,45 @@ namespace OnaPlotter.Services.Js;
 /// </summary>
 public sealed class MapOverlaysJs : IMapOverlaysJs
 {
-    private readonly IJSObjectReference _module;
-    private bool _disposed;
+    private readonly SafeJsModule _js;
 
     public MapOverlaysJs(IJSObjectReference module)
     {
-        _module = module ?? throw new ArgumentNullException(nameof(module));
+        _js = new SafeJsModule(module);
     }
 
-    public void MarkDisposed() => _disposed = true;
+    public void MarkDisposed() => _js.MarkDisposed();
 
     public Task AddChartLayerAsync(string id, string tileUrl, int minZoom, int maxZoom, double opacity, double[]? bounds, int upscaleLevels, string attribution, bool overlay)
-        => InvokeSafe("addChartLayer", id, tileUrl, minZoom, maxZoom, opacity, bounds, upscaleLevels, attribution, overlay);
+        => _js.InvokeVoidAsync("addChartLayer", id, tileUrl, minZoom, maxZoom, opacity, bounds, upscaleLevels, attribution, overlay);
 
     public Task RemoveChartLayerAsync(string id)
-        => InvokeSafe("removeChartLayer", id);
+        => _js.InvokeVoidAsync("removeChartLayer", id);
 
     public Task SetChartLayerOrderAsync(string[] orderedIds)
-        => InvokeSafe("setChartLayerOrder", orderedIds);
+        => _js.InvokeVoidAsync("setChartLayerOrder", orderedIds);
 
     public Task SetChartFilterAsync(string cssFilter)
-        => InvokeSafe("setChartFilter", cssFilter);
+        => _js.InvokeVoidAsync("setChartFilter", cssFilter);
 
     public Task SetWeatherOverlayAsync(string tileUrl, double opacity)
-        => InvokeSafe("setWeatherOverlay", tileUrl, opacity);
+        => _js.InvokeVoidAsync("setWeatherOverlay", tileUrl, opacity);
 
     public Task SetWeatherOverlayOpacityAsync(double opacity)
-        => InvokeSafe("setWeatherOverlayOpacity", opacity);
+        => _js.InvokeVoidAsync("setWeatherOverlayOpacity", opacity);
 
     public Task ClearWeatherOverlayAsync()
-        => InvokeSafe("clearWeatherOverlay");
+        => _js.InvokeVoidAsync("clearWeatherOverlay");
 
     public Task SetColoredTrackAsync(TrackPolylineRun[] runs)
-        => InvokeSafe("setColoredTrack", (object)runs);
+        => _js.InvokeVoidAsync("setColoredTrack", (object)runs);
 
     public Task SetServerTrackAsync(double[][] coords, bool clipToBounds)
-        => InvokeSafe("setServerTrack", (object)coords, clipToBounds);
+        => _js.InvokeVoidAsync("setServerTrack", (object)coords, clipToBounds);
 
     public Task SetServerTrackClipToBoundsAsync(bool enabled)
-        => InvokeSafe("setServerTrackClipToBounds", enabled);
+        => _js.InvokeVoidAsync("setServerTrackClipToBounds", enabled);
 
     public Task ClearServerTrackAsync()
-        => InvokeSafe("clearServerTrack");
-
-    private async Task InvokeSafe(string identifier, params object?[] args)
-    {
-        if (_disposed) return;
-        try
-        {
-            await _module.InvokeVoidAsync(identifier, args);
-        }
-        catch (JSDisconnectedException) { /* page is unmounting */ }
-        catch (ObjectDisposedException) { /* JS module disposed first */ }
-    }
+        => _js.InvokeVoidAsync("clearServerTrack");
 }

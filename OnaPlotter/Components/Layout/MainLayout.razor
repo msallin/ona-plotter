@@ -672,38 +672,21 @@
             // Live-apply the wake-lock toggle so a user flipping
             // "Keep screen awake" in Settings sees the lock engage /
             // release immediately, without a page reload.
-            if (wakeLockModule is not null)
-            {
-                try { await wakeLockModule.InvokeVoidAsync("setWakeLock", Settings.KeepScreenAwake); }
-                catch (JSDisconnectedException) { }
-            }
+            await wakeLockModule.InvokeVoidQuietAsync("setWakeLock", Settings.KeepScreenAwake);
             // Re-apply the theme + night-mode classes to <html> on
             // every settings change so preset swaps + auto-night flips
             // + theme picks propagate globally. Both helpers are
             // idempotent - safe to call with identical args.
-            if (themeModule is not null)
-            {
-                try
-                {
-                    await themeModule.InvokeVoidAsync("setTheme",
-                        EffectiveTheme);
-                    await themeModule.InvokeVoidAsync("setNightMode",
-                        Settings.NightMode);
-                }
-                catch (JSDisconnectedException) { }
-            }
+            await themeModule.InvokeVoidQuietAsync("setTheme", EffectiveTheme);
+            await themeModule.InvokeVoidQuietAsync("setNightMode", Settings.NightMode);
             // After the class flip, kick the map's palette cache so
             // construction-time colours (active-route polyline, the
             // course-line bearing dash) pick up the new --map-*
             // tokens. Skipped when the leaflet module hasn't loaded
             // yet (helm is on a non-map page); the next Map page
             // mount reads the palette fresh in initMap anyway.
-            if (leafletModule is not null)
-            {
-                try { await leafletModule.InvokeVoidAsync("refreshPalette"); }
-                catch (JSDisconnectedException) { }
-                catch (JSException) { /* old bundle without the export */ }
-            }
+            try { await leafletModule.InvokeVoidQuietAsync("refreshPalette"); }
+            catch (JSException) { /* old bundle without the export */ }
             await InvokeAsync(StateHasChanged);
         }
         catch (ObjectDisposedException) { }
@@ -744,8 +727,7 @@
                     // escalation within the same target) so the Danger
                     // cadence supersedes the Warn cadence audibly.
                     int cadence = active.Severity == AlarmSeverity.Danger ? 1000 : 3000;
-                    try { await audioModule.InvokeVoidAsync("startAlarm", cadence); }
-                    catch (JSDisconnectedException) { }
+                    await audioModule.InvokeVoidQuietAsync("startAlarm", cadence);
                 }
                 StateHasChanged();
             });
@@ -1329,39 +1311,22 @@
     {
         if (audioModule is null) return;
 
-        try
+        if (!SignalkClient.IsConnected)
         {
-            if (!SignalkClient.IsConnected)
+            if (!wasDisconnected)
             {
-                if (!wasDisconnected)
-                {
-                    wasDisconnected = true;
-                    await audioModule.InvokeVoidAsync("startAlarm", 3000);
-                }
-            }
-            else
-            {
-                if (wasDisconnected)
-                {
-                    wasDisconnected = false;
-                    await StopAlarmAsync();
-                }
+                wasDisconnected = true;
+                await audioModule.InvokeVoidQuietAsync("startAlarm", 3000);
             }
         }
-        catch (JSDisconnectedException) { }
-        catch (ObjectDisposedException) { }
+        else if (wasDisconnected)
+        {
+            wasDisconnected = false;
+            await StopAlarmAsync();
+        }
     }
 
-    private async Task StopAlarmAsync()
-    {
-        if (audioModule is null) return;
-        try
-        {
-            await audioModule.InvokeVoidAsync("stopAlarm");
-        }
-        catch (JSDisconnectedException) { }
-        catch (ObjectDisposedException) { }
-    }
+    private Task StopAlarmAsync() => audioModule.InvokeVoidQuietAsync("stopAlarm").AsTask();
 
     public async ValueTask DisposeAsync()
     {
@@ -1376,64 +1341,24 @@
         Nav.LocationChanged -= HandleLocationChanged;
         if (snoozeCountdownTimer is not null) await snoozeCountdownTimer.DisposeAsync();
         if (firstRunOfflineTimer is not null) await firstRunOfflineTimer.DisposeAsync();
-        if (audioModule is not null)
-        {
-            try
-            {
-                await audioModule.InvokeVoidAsync("stopAlarm");
-                await audioModule.DisposeAsync();
-            }
-            catch (JSDisconnectedException) { }
-        }
-        if (fsModule is not null)
-        {
-            try
-            {
-                await fsModule.InvokeVoidAsync("unsubscribe");
-                await fsModule.DisposeAsync();
-            }
-            catch (JSDisconnectedException) { }
-        }
-        if (leafletModule is not null)
-        {
-            try { await leafletModule.DisposeAsync(); }
-            catch (JSDisconnectedException) { }
-        }
-        if (visibilityModule is not null)
-        {
-            // The document listener inside the module survives module
-            // disposal (it's attached to `document`, not the module
-            // object), but disposeAsync still releases the .NET-side
-            // proxy so the GC can collect this layout. The _attached
-            // guard inside visibility.js means a re-import on a
-            // subsequent navigation is a no-op and we don't double-
-            // fire OnTabVisible.
-            try { await visibilityModule.DisposeAsync(); }
-            catch (JSDisconnectedException) { }
-        }
-        if (themeModule is not null)
-        {
-            try { await themeModule.DisposeAsync(); }
-            catch (JSDisconnectedException) { }
-        }
-        if (viewportModule is not null)
-        {
-            try { await viewportModule.DisposeAsync(); }
-            catch (JSDisconnectedException) { }
-        }
-        if (wakeLockModule is not null)
-        {
-            // Release the lock before dropping the module reference -
-            // some browsers won't garbage-collect a held WakeLockSentinel
-            // when the JS module reference goes away, leaving the screen
-            // pinned awake until the tab is closed.
-            try
-            {
-                await wakeLockModule.InvokeVoidAsync("setWakeLock", false);
-                await wakeLockModule.DisposeAsync();
-            }
-            catch (JSDisconnectedException) { }
-        }
+        await audioModule.InvokeVoidQuietAsync("stopAlarm");
+        await audioModule.DisposeQuietlyAsync();
+        await fsModule.InvokeVoidQuietAsync("unsubscribe");
+        await fsModule.DisposeQuietlyAsync();
+        await leafletModule.DisposeQuietlyAsync();
+        // The document listener inside visibilityModule survives module
+        // disposal (it is attached to `document`); disposing releases the
+        // .NET-side proxy so the GC can collect this layout. The _attached
+        // guard in visibility.js keeps a re-import from double-firing
+        // OnTabVisible.
+        await visibilityModule.DisposeQuietlyAsync();
+        await themeModule.DisposeQuietlyAsync();
+        await viewportModule.DisposeQuietlyAsync();
+        // Release the wake lock before dropping the module reference: some
+        // browsers keep a held WakeLockSentinel alive after the module goes
+        // away, pinning the screen awake until the tab closes.
+        await wakeLockModule.InvokeVoidQuietAsync("setWakeLock", false);
+        await wakeLockModule.DisposeQuietlyAsync();
         fsSelfRef?.Dispose();
     }
 }

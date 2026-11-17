@@ -379,9 +379,7 @@
 
     public async ValueTask DisposeAsync()
     {
-        if (_jsModule is null) return;
-        try { await _jsModule.DisposeAsync(); }
-        catch (JSDisconnectedException) { }
+        await _jsModule.DisposeQuietlyAsync();
     }
 
     /// <summary>The own-data source tags. Used by the SearchBox to

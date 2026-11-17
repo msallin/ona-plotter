@@ -978,12 +978,7 @@
         if (wp.Latitude is not double lat || wp.Longitude is not double lon) return;
         chartPanelOpen = false;
         await DisableFollowAsync();
-        try
-        {
-            await module.InvokeVoidAsync("panTo", lat, lon);
-        }
-        catch (JSDisconnectedException) { }
-        catch (ObjectDisposedException) { }
+        await module.InvokeVoidQuietAsync("panTo", lat, lon);
     }
 
     /// <summary>Layers-panel "Go" button for notes: PUT the note's
@@ -4778,50 +4773,27 @@
         // Detach the deadman listener BEFORE disposing dotNetRef so a
         // queued coalesced upcall doesn't race the dispose and surface
         // as a Blazor invocation error in the browser console.
-        if (deadmanModule is not null)
-        {
-            try
-            {
-                await deadmanModule.InvokeVoidAsync("detachDeadman");
-                await deadmanModule.DisposeAsync();
-            }
-            catch (JSDisconnectedException) { }
-        }
+        await deadmanModule.InvokeVoidQuietAsync("detachDeadman");
+        await deadmanModule.DisposeQuietlyAsync();
         // Same shape as the deadman teardown above: detach the JS-side
         // visibility-edges listener BEFORE the dotNetRef is disposed so
         // a visibilitychange firing mid-dispose doesn't try to invoke
         // OnPageHidden/Visible on a torn-down proxy.
-        if (visibilityEdgesModule is not null)
-        {
-            try
-            {
-                await visibilityEdgesModule.InvokeVoidAsync("detachVisibilityEdges");
-                await visibilityEdgesModule.DisposeAsync();
-            }
-            catch (JSDisconnectedException) { }
-        }
-        if (module is not null)
-        {
-            // Bare interop: MarkDisposed above already gates the typed
-            // wrappers, so calling them here would be silent no-ops.
-            // The teardown sequence has to drive the module reference
-            // directly, then dispose it.
-            try
-            {
-                await module.InvokeVoidAsync("clearActiveRoute");
-                await module.InvokeVoidAsync("clearCourseLine");
-                await module.InvokeVoidAsync("clearLaylines");
-                await module.InvokeVoidAsync("clearCurrentArrow");
-                await module.InvokeVoidAsync("clearWeatherOverlay");
-                await module.InvokeVoidAsync("disableKeyboardShortcuts");
-                // Wake lock is owned by MainLayout; do NOT release
-                // it here, otherwise switching Chart -> Wind would
-                // briefly drop the lock.
-                await module.InvokeVoidAsync("dispose");
-                await module.DisposeAsync();
-            }
-            catch (JSDisconnectedException) { }
-        }
+        await visibilityEdgesModule.InvokeVoidQuietAsync("detachVisibilityEdges");
+        await visibilityEdgesModule.DisposeQuietlyAsync();
+        // Bare interop: MarkDisposed above already gates the typed
+        // wrappers, so calling them here would be silent no-ops. The
+        // teardown sequence has to drive the module reference directly,
+        // then dispose it. The wake lock is owned by MainLayout; releasing
+        // it here would briefly drop it when switching Chart -> Wind.
+        await module.InvokeVoidQuietAsync("clearActiveRoute");
+        await module.InvokeVoidQuietAsync("clearCourseLine");
+        await module.InvokeVoidQuietAsync("clearLaylines");
+        await module.InvokeVoidQuietAsync("clearCurrentArrow");
+        await module.InvokeVoidQuietAsync("clearWeatherOverlay");
+        await module.InvokeVoidQuietAsync("disableKeyboardShortcuts");
+        await module.InvokeVoidQuietAsync("dispose");
+        await module.DisposeQuietlyAsync();
         dotNetRef?.Dispose();
     }
 }

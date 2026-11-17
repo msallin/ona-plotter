@@ -1313,10 +1313,6 @@
             _map.MarkDisposed();
         }
         _historyDotNet?.Dispose();
-        if (module is not null)
-        {
-            try { await module.DisposeAsync(); }
-            catch (JSDisconnectedException) { /* page teardown race */ }
-        }
+        await module.DisposeQuietlyAsync();
     }
 }

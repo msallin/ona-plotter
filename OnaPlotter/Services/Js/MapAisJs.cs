@@ -16,49 +16,42 @@ namespace OnaPlotter.Services.Js;
 /// </summary>
 public sealed class MapAisJs : IMapAisJs
 {
-    private readonly IJSObjectReference _module;
-    private bool _disposed;
+    private readonly SafeJsModule _js;
 
     public MapAisJs(IJSObjectReference module)
     {
-        _module = module ?? throw new ArgumentNullException(nameof(module));
+        _js = new SafeJsModule(module);
     }
 
     /// <summary>Mark the wrapper as disposed so subsequent calls
     /// silently no-op. Called by Map.razor's <c>DisposeAsync</c> path
     /// before it disposes the module reference.</summary>
-    public void MarkDisposed() => _disposed = true;
+    public void MarkDisposed() => _js.MarkDisposed();
 
     /// <summary>A disposed or disconnected page reports "not accepted"
     /// so the next live push, if any, starts from a full snapshot.</summary>
     public async Task<bool> UpdateAisTargetsAsync(OnaPlotter.Services.Map.AisUpdatePayload update)
     {
-        if (_disposed) return false;
-        try
-        {
-            return await _module.InvokeAsync<bool>("updateAisTargets", update);
-        }
-        catch (JSDisconnectedException) { return false; }
-        catch (ObjectDisposedException) { return false; }
+        return await _js.InvokeAsync(false, "updateAisTargets", update);
     }
 
     public Task SetAtonsAsync(OnaPlotter.Services.Map.AtonPayload[] atons)
-        => InvokeSafe("setAtons", (object)atons);
+        => _js.InvokeVoidAsync("setAtons", (object)atons);
 
     public Task SetAtonsVisibleAsync(bool visible)
-        => InvokeSafe("setAtonsVisible", visible);
+        => _js.InvokeVoidAsync("setAtonsVisible", visible);
 
     public Task SetAisLabelsVisibleAsync(bool visible)
-        => InvokeSafe("setAisLabelsVisible", visible);
+        => _js.InvokeVoidAsync("setAisLabelsVisible", visible);
 
     public Task SetOwnMmsiAsync(string mmsi)
-        => InvokeSafe("setOwnMmsi", mmsi);
+        => _js.InvokeVoidAsync("setOwnMmsi", mmsi);
 
     public Task SetOwnCallsignAsync(string callsign)
-        => InvokeSafe("setOwnCallsign", callsign);
+        => _js.InvokeVoidAsync("setOwnCallsign", callsign);
 
     public Task SetHarborModeAsync(bool enabled)
-        => InvokeSafe("setHarborMode", enabled);
+        => _js.InvokeVoidAsync("setHarborMode", enabled);
 
     /// <summary>Returns false during disposal too - the only caller
     /// uses the false branch to surface a "vessel no longer on the
@@ -66,29 +59,6 @@ public sealed class MapAisJs : IMapAisJs
     /// and the toast system has already torn down.</summary>
     public async Task<bool> FocusVesselAsync(string context)
     {
-        if (_disposed) return false;
-        try
-        {
-            return await _module.InvokeAsync<bool>("focusVessel", context);
-        }
-        catch (JSDisconnectedException) { return false; }
-        catch (ObjectDisposedException) { return false; }
-    }
-
-    /// <summary>
-    /// Single safe-call helper. Swallows the two "page is unmounting"
-    /// exceptions that otherwise scatter try/catch blocks across every
-    /// call site; lets <see cref="JSException"/> through so a real
-    /// JS-side regression still surfaces.
-    /// </summary>
-    private async Task InvokeSafe(string identifier, params object?[] args)
-    {
-        if (_disposed) return;
-        try
-        {
-            await _module.InvokeVoidAsync(identifier, args);
-        }
-        catch (JSDisconnectedException) { /* page is unmounting */ }
-        catch (ObjectDisposedException) { /* JS module disposed first */ }
+        return await _js.InvokeAsync(false, "focusVessel", context);
     }
 }

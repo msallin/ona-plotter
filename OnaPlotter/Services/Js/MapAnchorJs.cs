@@ -15,12 +15,11 @@ namespace OnaPlotter.Services.Js;
 /// </summary>
 public sealed class MapAnchorJs : IMapAnchorJs
 {
-    private readonly IJSObjectReference _module;
-    private bool _disposed;
+    private readonly SafeJsModule _js;
 
     public MapAnchorJs(IJSObjectReference module)
     {
-        _module = module ?? throw new ArgumentNullException(nameof(module));
+        _js = new SafeJsModule(module);
     }
 
     /// <summary>Mark the wrapper as disposed so subsequent calls
@@ -28,65 +27,29 @@ public sealed class MapAnchorJs : IMapAnchorJs
     /// path before it disposes the module reference; without this,
     /// in-flight Sync* methods could otherwise still reach the
     /// already-disposed JS reference.</summary>
-    public void MarkDisposed() => _disposed = true;
+    public void MarkDisposed() => _js.MarkDisposed();
 
     public Task SetAnchorAsync(double lat, double lon, double radiusMeters)
-        => InvokeSafe("setAnchor", lat, lon, radiusMeters);
+        => _js.InvokeVoidAsync("setAnchor", lat, lon, radiusMeters);
 
     public Task ClearAnchorAsync()
-        => InvokeSafe("clearAnchor");
+        => _js.InvokeVoidAsync("clearAnchor");
 
     public Task SetAnchorRaisingAsync(bool raising)
-        => InvokeSafe("setAnchorRaising", raising);
+        => _js.InvokeVoidAsync("setAnchorRaising", raising);
 
     public Task UpdateAnchorRadiusAsync(double radiusMeters)
-        => InvokeSafe("updateAnchorRadius", radiusMeters);
+        => _js.InvokeVoidAsync("updateAnchorRadius", radiusMeters);
 
     public Task SetAnchorIncompleteAsync(bool incomplete)
-        => InvokeSafe("setAnchorIncomplete", incomplete);
+        => _js.InvokeVoidAsync("setAnchorIncomplete", incomplete);
 
     public Task SetAnchorMoveModeAsync(bool enable)
-        => InvokeSafe("setAnchorMoveMode", enable);
+        => _js.InvokeVoidAsync("setAnchorMoveMode", enable);
 
     public Task SetAnchorPositionAsync(double lat, double lon)
-        => InvokeSafe("setAnchorPosition", lat, lon);
+        => _js.InvokeVoidAsync("setAnchorPosition", lat, lon);
 
     public Task<AnchorLatLng?> GetAnchorMovedLatLngAsync()
-        => InvokeSafeResult<AnchorLatLng?>(null, "getAnchorMovedLatLng");
-
-    /// <summary>
-    /// Single safe-call helper for every interop in this wrapper.
-    /// Swallows the three "page is unmounting" exceptions that
-    /// otherwise scatter try/catch blocks across every call site.
-    /// JSException is rethrown so a real JS-side regression still
-    /// surfaces (the wrapper is for lifecycle noise only, not for
-    /// hiding bugs).
-    /// </summary>
-    private async Task InvokeSafe(string identifier, params object?[] args)
-    {
-        if (_disposed) return;
-        try
-        {
-            await _module.InvokeVoidAsync(identifier, args);
-        }
-        catch (JSDisconnectedException) { /* page is unmounting */ }
-        catch (ObjectDisposedException) { /* JS module disposed first */ }
-    }
-
-    /// <summary>
-    /// Value-returning sibling of <see cref="InvokeSafe"/>. Returns
-    /// <paramref name="whenDisposed"/> if the wrapper or the JS module
-    /// is gone, so callers reading interop state during teardown get a
-    /// defined fallback instead of an exception.
-    /// </summary>
-    private async Task<T> InvokeSafeResult<T>(T whenDisposed, string identifier, params object?[] args)
-    {
-        if (_disposed) return whenDisposed;
-        try
-        {
-            return await _module.InvokeAsync<T>(identifier, args);
-        }
-        catch (JSDisconnectedException) { return whenDisposed; }
-        catch (ObjectDisposedException) { return whenDisposed; }
-    }
+        => _js.InvokeAsync<AnchorLatLng?>(null, "getAnchorMovedLatLng");
 }

@@ -11,66 +11,54 @@ namespace OnaPlotter.Services.Js;
 /// </summary>
 public sealed class MapResourceJs : IMapResourceJs
 {
-    private readonly IJSObjectReference _module;
-    private bool _disposed;
+    private readonly SafeJsModule _js;
 
     public MapResourceJs(IJSObjectReference module)
     {
-        _module = module ?? throw new ArgumentNullException(nameof(module));
+        _js = new SafeJsModule(module);
     }
 
-    public void MarkDisposed() => _disposed = true;
+    public void MarkDisposed() => _js.MarkDisposed();
 
     public Task AddWaypointMarkerAsync(string id, double? lat, double? lon, string? name,
         string? createdAtIso, bool isMob, bool isActive)
-        => InvokeSafe("addWaypointMarker", id, lat, lon, name, createdAtIso, isMob, isActive);
+        => _js.InvokeVoidAsync("addWaypointMarker", id, lat, lon, name, createdAtIso, isMob, isActive);
 
     public Task RemoveWaypointMarkerAsync(string id)
-        => InvokeSafe("removeWaypointMarker", id);
+        => _js.InvokeVoidAsync("removeWaypointMarker", id);
 
     public Task AddNoteMarkerAsync(string id, double lat, double lon, string? title, string? description, string? createdAtIso)
-        => InvokeSafe("addNoteMarker", id, lat, lon, title, description, createdAtIso);
+        => _js.InvokeVoidAsync("addNoteMarker", id, lat, lon, title, description, createdAtIso);
 
     public Task RemoveNoteMarkerAsync(string id)
-        => InvokeSafe("removeNoteMarker", id);
+        => _js.InvokeVoidAsync("removeNoteMarker", id);
 
     public Task ClearNotesAsync()
-        => InvokeSafe("clearNotes");
+        => _js.InvokeVoidAsync("clearNotes");
 
     public Task OpenNotePopupAsync(string id)
-        => InvokeSafe("openNotePopup", id);
+        => _js.InvokeVoidAsync("openNotePopup", id);
 
     public Task AddRegionAsync(string id, IReadOnlyList<double[][]> rings,
         string? title, string? description, bool isHazard,
         double areaSqM,
         double? centerLat, double? centerLon, double? radiusMeters,
         string? createdAtIso)
-        => InvokeSafe("addRegion", id, rings, title, description,
+        => _js.InvokeVoidAsync("addRegion", id, rings, title, description,
             isHazard, areaSqM, centerLat, centerLon, radiusMeters, createdAtIso);
 
     public Task RemoveRegionAsync(string id)
-        => InvokeSafe("removeRegion", id);
+        => _js.InvokeVoidAsync("removeRegion", id);
 
     public Task ClearRegionsAsync()
-        => InvokeSafe("clearRegions");
+        => _js.InvokeVoidAsync("clearRegions");
 
     public Task FocusRegionAsync(string id, double[][] firstRing)
-        => InvokeSafe("focusRegion", id, firstRing);
+        => _js.InvokeVoidAsync("focusRegion", id, firstRing);
 
     public Task SetCirclePreviewAsync(double lat, double lon, double radiusMeters)
-        => InvokeSafe("setCirclePreview", lat, lon, radiusMeters);
+        => _js.InvokeVoidAsync("setCirclePreview", lat, lon, radiusMeters);
 
     public Task ClearCirclePreviewAsync()
-        => InvokeSafe("clearCirclePreview");
-
-    private async Task InvokeSafe(string identifier, params object?[] args)
-    {
-        if (_disposed) return;
-        try
-        {
-            await _module.InvokeVoidAsync(identifier, args);
-        }
-        catch (JSDisconnectedException) { /* page is unmounting */ }
-        catch (ObjectDisposedException) { /* JS module disposed first */ }
-    }
+        => _js.InvokeVoidAsync("clearCirclePreview");
 }

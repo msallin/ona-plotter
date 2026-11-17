@@ -139,7 +139,13 @@ or `env(safe-area-inset-*)` in new rules.
 - **`async void` only on Blazor event handlers**, body wrapped in
   `try/catch (ObjectDisposedException)`. Page switches tear down the
   SynchronizationContext mid-render.
-- **Every `module.InvokeVoidAsync` catches `JSDisconnectedException`.**
+- **Calls and dispose on an existing module reference go through the
+  quiet helpers.** `SafeJsModule` (composed by every `Services/Js`
+  wrapper) and the `InvokeVoidQuietAsync` / `DisposeQuietlyAsync`
+  extensions swallow `JSDisconnectedException` /
+  `ObjectDisposedException`, so no hand-written catch for those. A site
+  that imports the module and then calls it keeps its own
+  `JSDisconnectedException` catch around the import.
 - **Zero compiler warnings.** `Directory.Build.props` sets
   `TreatWarningsAsErrors` for every project (NuGet audit warnings
   included), so a warning fails the build. Treat the analyzer as

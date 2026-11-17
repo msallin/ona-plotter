@@ -10,33 +10,21 @@ namespace OnaPlotter.Services.Js;
 /// </summary>
 public sealed class MapMarinePoiJs : IMapMarinePoiJs
 {
-    private readonly IJSObjectReference _module;
-    private bool _disposed;
+    private readonly SafeJsModule _js;
 
     public MapMarinePoiJs(IJSObjectReference module)
     {
-        _module = module ?? throw new ArgumentNullException(nameof(module));
+        _js = new SafeJsModule(module);
     }
 
     /// <summary>Mark the wrapper as disposed so subsequent calls
     /// silently no-op. Called by Map.razor's <c>DisposeAsync</c> path
     /// before it disposes the module reference.</summary>
-    public void MarkDisposed() => _disposed = true;
+    public void MarkDisposed() => _js.MarkDisposed();
 
     public Task SetMarinePoisAsync(object[] pois)
-        => InvokeSafe("setMarinePois", (object)pois);
+        => _js.InvokeVoidAsync("setMarinePois", (object)pois);
 
     public Task SetMarinePoisVisibleAsync(bool visible)
-        => InvokeSafe("setMarinePoisVisible", visible);
-
-    private async Task InvokeSafe(string identifier, params object?[] args)
-    {
-        if (_disposed) return;
-        try
-        {
-            await _module.InvokeVoidAsync(identifier, args);
-        }
-        catch (JSDisconnectedException) { /* page is unmounting */ }
-        catch (ObjectDisposedException) { /* JS module disposed first */ }
-    }
+        => _js.InvokeVoidAsync("setMarinePoisVisible", visible);
 }

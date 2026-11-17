@@ -1110,11 +1110,7 @@
         ResourceStore.OnRegionRemoved -= HandleStoreRegionRemoved;
         SignalkClient.OnDataChanged -= HandleNavigationDataChanged;
 
-        if (_fileTransfer is not null)
-        {
-            try { await _fileTransfer.DisposeAsync(); }
-            catch (Microsoft.JSInterop.JSDisconnectedException) { /* page teardown */ }
-        }
+        await _fileTransfer.DisposeQuietlyAsync();
     }
 
     // Navigate to the Map page and deep-link to the given resource.
