@@ -1,10 +1,20 @@
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using OnaPlotter.Components;
+using OnaPlotter.Models;
 using OnaPlotter.Services;
+using OnaPlotter.Services.Alarms;
 using OnaPlotter.Services.Api;
 using OnaPlotter.Services.Auth;
+using OnaPlotter.Services.Mob;
+using OnaPlotter.Services.Places;
+using OnaPlotter.Services.Pois;
+using OnaPlotter.Services.Radar;
+using OnaPlotter.Services.Resources;
+using OnaPlotter.Services.ServerNotifications;
+using OnaPlotter.Services.Settings;
 using OnaPlotter.Services.Startup;
+using OnaPlotter.Services.State;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
@@ -45,31 +55,17 @@ builder.Services.AddSingleton(sp =>
 // Storage + settings.
 builder.Services.AddSingleton<IKeyValueStore, LocalStorageKeyValueStore>();
 builder.Services.AddSingleton<IAppSettings, AppSettingsService>();
-// IAppSettings extends seven narrow ISP-carve-out interfaces from
-// Services/Settings/. Components that only need a slice can inject
-// just that slice (smaller test doubles, narrower change-amplification
-// surface). The DI container doesn't auto-forward sub-interfaces, so
-// register each narrow one as a forwarder to the same singleton.
-// Pattern: every interface IAppSettings inherits from gets one line
-// here. Forwarding ensures both wide and narrow consumers see the
-// SAME instance (settings persist across all of them).
-builder.Services.AddSingleton<OnaPlotter.Services.Settings.IAlarmThresholds>(
+// Narrow settings slices that components inject instead of the whole
+// IAppSettings; each forwards to the same singleton.
+builder.Services.AddSingleton<IMapDisplaySettings>(
     sp => sp.GetRequiredService<IAppSettings>());
-builder.Services.AddSingleton<OnaPlotter.Services.Settings.IThemeSettings>(
+builder.Services.AddSingleton<INavPreferences>(
     sp => sp.GetRequiredService<IAppSettings>());
-builder.Services.AddSingleton<OnaPlotter.Services.Settings.IMapDisplaySettings>(
+builder.Services.AddSingleton<IChartSettings>(
     sp => sp.GetRequiredService<IAppSettings>());
-builder.Services.AddSingleton<OnaPlotter.Services.Settings.INavPreferences>(
+builder.Services.AddSingleton<IMarinePoiSettings>(
     sp => sp.GetRequiredService<IAppSettings>());
-builder.Services.AddSingleton<OnaPlotter.Services.Settings.IChartSettings>(
-    sp => sp.GetRequiredService<IAppSettings>());
-builder.Services.AddSingleton<OnaPlotter.Services.Settings.IPersistedView>(
-    sp => sp.GetRequiredService<IAppSettings>());
-builder.Services.AddSingleton<OnaPlotter.Services.Settings.IWindPageSettings>(
-    sp => sp.GetRequiredService<IAppSettings>());
-builder.Services.AddSingleton<OnaPlotter.Services.Settings.IMarinePoiSettings>(
-    sp => sp.GetRequiredService<IAppSettings>());
-builder.Services.AddSingleton<OnaPlotter.Services.Settings.IServerSettings>(
+builder.Services.AddSingleton<IServerSettings>(
     sp => sp.GetRequiredService<IAppSettings>());
 // In-progress route-edit snapshots survive a page reload via
 // localStorage. The store is consulted on app start so a save that
@@ -86,83 +82,46 @@ builder.Services.AddSingleton<AisStore>();
 
 // UI services.
 builder.Services.AddSingleton<IToastService, ToastService>();
-// Wraps the platform fileTransfer.js shareOrCopy helper + outcome
-// toast handling so popup-side "Share" buttons (waypoint, note, MOB)
-// reuse a single failure / success path.
-builder.Services.AddSingleton<OnaPlotter.Services.ShareService>();
+builder.Services.AddSingleton<ShareService>();
 builder.Services.AddSingleton<IConfirmationService, ConfirmationService>();
 builder.Services.AddSingleton<IPolarService, PolarService>();
-// Polls the server's version.g.js every 5 min and surfaces a
-// "Reload to update" chip when the published bundle hash changes.
-// The check fires fire-and-forget; a 404 / offline / timeout is
-// swallowed and retried on the next tick.
-builder.Services.AddSingleton<OnaPlotter.Services.UpdateChecker>();
-// Page-state caches: keep the helm's last range / loaded data on
-// History + Stats so navigating to /map and back doesn't reset
-// the view. Singleton-scoped (one per circuit); cleared on a
-// hard reload.
-builder.Services.AddSingleton<OnaPlotter.Services.State.StatsPageState>();
-builder.Services.AddSingleton<OnaPlotter.Services.State.HistoryPageState>();
-// Server-side SignalK notifications store. SignalkClient pushes
-// notifications.* deltas here; the rule below reads the active set
-// every Evaluate tick and surfaces each as an alarm-banner entry.
-builder.Services.AddSingleton<OnaPlotter.Services.ServerNotifications.ServerNotificationStore>();
-// AIS Aids to Navigation. atons.* deltas land here; the map
-// renderer subscribes to OnAtonsUpdated and pushes the snapshot
-// to Leaflet. Static enough to live on a 60s subscription tier.
-builder.Services.AddSingleton<OnaPlotter.Services.AtonStore>();
+builder.Services.AddSingleton<UpdateChecker>();
+// Page-state caches so History / Stats keep their range and data across navigation.
+builder.Services.AddSingleton<StatsPageState>();
+builder.Services.AddSingleton<HistoryPageState>();
+builder.Services.AddSingleton<ServerNotificationStore>();
+builder.Services.AddSingleton<AtonStore>();
 // Alarm rules are DI-registered; AlarmManager picks them up via
 // IEnumerable<IAlarmRule>. Adding a new rule is a one-line registration.
-builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.AisSartAlarmRule>();
-builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.ShallowAlarmRule>();
-builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.AnchorTideAlarmRule>();
-builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.AnchorDragAlarmRule>();
-// Shared moored-vessel classifier. Singleton so CpaAlarmRule and the
-// Harbor-mode filter in Map.razor.PushAisTargets see the same dwell
-// state and the same SK navigation.state interpretation.
-builder.Services.AddSingleton<OnaPlotter.Services.IMooredVesselTracker, OnaPlotter.Services.MooredVesselTracker>();
-builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.CpaAlarmRule>();
-// Region store is a thin singleton AisStore-shaped: Map.razor pushes
-// regions in on every resource refresh; HazardousRegionAlarmRule reads
-// the snapshot per tick. Threaded as a separate dependency rather than
-// added to AlarmEvaluationContext so the context shape stays minimal
-// for every other rule that doesn't care about regions.
-// RegionStore subscribes to ResourceStore region events on construction
-// so HazardousRegionAlarmRule sees fresh regions even when Map.razor
-// is unmounted. Concrete first (ctor takes ResourceStore), then
-// register the IRegionStore facade as a forwarder to the same instance.
-builder.Services.AddSingleton<OnaPlotter.Services.RegionStore>(sp =>
-    new OnaPlotter.Services.RegionStore(
-        sp.GetRequiredService<OnaPlotter.Services.Resources.ResourceStore>()));
-builder.Services.AddSingleton<OnaPlotter.Services.IRegionStore>(
-    sp => sp.GetRequiredService<OnaPlotter.Services.RegionStore>());
-builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.HazardousRegionAlarmRule>();
-builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.WindShiftAlarmRule>();
-builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.WaypointApproachAlarmRule>();
-// Bridge rule needs the v2 notifications API (to attach an
-// IAlarmAcknowledger to each AlarmInfo it emits) and the published-
-// alarms tracker (to skip our own publication echoes).
-builder.Services.AddSingleton<IAlarmRule>(sp =>
-    new OnaPlotter.Services.Alarms.ServerNotificationsAlarmRule(
-        sp.GetRequiredService<OnaPlotter.Services.ServerNotifications.ServerNotificationStore>(),
-        sp.GetRequiredService<OnaPlotter.Services.Api.INotificationsApi>(),
-        sp.GetRequiredService<OnaPlotter.Services.Alarms.IPublishedAlarmTracker>()));
+builder.Services.AddSingleton<IAlarmRule, AisSartAlarmRule>();
+builder.Services.AddSingleton<IAlarmRule, ShallowAlarmRule>();
+builder.Services.AddSingleton<IAlarmRule, AnchorTideAlarmRule>();
+builder.Services.AddSingleton<IAlarmRule, AnchorDragAlarmRule>();
+// One moored-vessel classifier shared by CpaAlarmRule and the Harbor-mode filter.
+builder.Services.AddSingleton<IMooredVesselTracker, MooredVesselTracker>();
+builder.Services.AddSingleton<IAlarmRule, CpaAlarmRule>();
+// RegionStore subscribes to ResourceStore on construction, so
+// HazardousRegionAlarmRule sees fresh regions with Map unmounted.
+builder.Services.AddSingleton<RegionStore>();
+builder.Services.AddSingleton<IRegionStore>(
+    sp => sp.GetRequiredService<RegionStore>());
+builder.Services.AddSingleton<IAlarmRule, HazardousRegionAlarmRule>();
+builder.Services.AddSingleton<IAlarmRule, WindShiftAlarmRule>();
+builder.Services.AddSingleton<IAlarmRule, WaypointApproachAlarmRule>();
+builder.Services.AddSingleton<IAlarmRule, ServerNotificationsAlarmRule>();
 builder.Services.AddSingleton<DeadmanTracker>();
-builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.DeadmanAlarmRule>();
+builder.Services.AddSingleton<IAlarmRule, DeadmanAlarmRule>();
 builder.Services.AddSingleton<IAlarmManager, AlarmManager>();
-// Phase B: cross-plotter publish. Tracker is the read-side that the
-// bridge rule queries to avoid echoing our own publications back into
-// the banner; AlarmPublisher is the writer that POSTs raises/clears
-// to the SK server when the local alarm stack changes. SafetyBootstrap
-// resolves it so its subscription wiring happens once at startup.
-builder.Services.AddSingleton<OnaPlotter.Services.Alarms.PublishedAlarmTracker>();
-builder.Services.AddSingleton<OnaPlotter.Services.Alarms.IPublishedAlarmTracker>(
-    sp => sp.GetRequiredService<OnaPlotter.Services.Alarms.PublishedAlarmTracker>());
-builder.Services.AddSingleton<OnaPlotter.Services.Alarms.AlarmPublisher>();
+// Cross-plotter publish: the tracker lets ServerNotificationsAlarmRule skip our
+// own publications; AlarmPublisher POSTs raises / clears to the SK server.
+builder.Services.AddSingleton<PublishedAlarmTracker>();
+builder.Services.AddSingleton<IPublishedAlarmTracker>(
+    sp => sp.GetRequiredService<PublishedAlarmTracker>());
+builder.Services.AddSingleton<AlarmPublisher>();
 // Alarm evaluation (data changes + 1 Hz timer) and waypoint auto-advance
 // run as services, independent of any mounted component. SafetyBootstrap
 // resolves them so their subscriptions exist from startup.
-builder.Services.AddSingleton<OnaPlotter.Services.Alarms.AlarmEvaluationDriver>();
+builder.Services.AddSingleton<AlarmEvaluationDriver>();
 builder.Services.AddSingleton<AutoAdvanceService>();
 
 // SignalK REST API clients (one per concern).
@@ -173,33 +132,14 @@ builder.Services.AddSingleton<IWaypointApi, WaypointApi>();
 builder.Services.AddSingleton<INoteApi, NoteApi>();
 builder.Services.AddSingleton<IRegionApi, RegionApi>();
 builder.Services.AddSingleton<ICourseApi, CourseApi>();
-// SignalK v2 notifications client. Drives cross-plotter alarm sync
-// via Acknowledge / Silence and (Phase B) lets client-side rules
-// publish their alarms back to SK so other plotters can see them.
 builder.Services.AddSingleton<INotificationsApi, NotificationsApi>();
 
-// Persistable cache of resolved MOB positions (serverId -> lat/lon).
-// signalk-server discards the position from the /mob POST body so
-// this client-side cache is what survives a reload and lets the
-// chart marker reappear on the next session.
-builder.Services.AddSingleton<OnaPlotter.Services.Mob.ResolvedPositionStore>();
+// Survives a reload so the MOB chart marker reappears (signalk-server drops the POSTed position).
+builder.Services.AddSingleton<ResolvedPositionStore>();
 
-// Local-first MOB pipeline. Synthesises a notification into the
-// ServerNotificationStore + queues a background POST that retries
-// until the server confirms. The alarm pipeline wakes up via
-// AlarmEvaluationDriver's subscription to ServerNotificationStore.OnPathChanged
-// (no separate callback needed - the store fires synchronously
-// from inside Apply / Clear).
-// Every collaborator is required: notifications API for the alarm
-// side, resource APIs for the paired MOB waypoint, the resolved-
-// position cache for reload recovery, the toast service for the
-// helm-visible "chart pin failed" surface (the helm's only cue while
-// the audible alarm fires), and the SignalK connection so reconnect
-// reconcile (cross-plotter MOB raised during a disconnect window)
-// runs whichever page the helm is on.
-builder.Services.AddSingleton<OnaPlotter.Services.Resources.IWaypointReader>(
-    sp => sp.GetRequiredService<OnaPlotter.Services.Resources.ResourceStore>());
-builder.Services.AddSingleton<OnaPlotter.Services.Mob.IMobService, OnaPlotter.Services.Mob.MobService>();
+builder.Services.AddSingleton<IWaypointReader>(
+    sp => sp.GetRequiredService<ResourceStore>());
+builder.Services.AddSingleton<IMobService, MobService>();
 
 builder.Services.AddSingleton<IAutopilotApi, AutopilotApi>();
 // Optional: signalk-anchoralarm-plugin. Endpoint 404s when the plugin
@@ -207,27 +147,16 @@ builder.Services.AddSingleton<IAutopilotApi, AutopilotApi>();
 // the app startup.
 builder.Services.AddSingleton<IAnchorAlarmApi, AnchorAlarmApi>();
 builder.Services.AddSingleton<IPathApi, PathApi>();
-// Auth probe for the not-logged-in banner. signalk-server's
-// /skServer/loginStatus is the de-facto source of truth for "can
-// this session write?"; banner reads from it and hides when the
-// server has security disabled (open homelab / dev installs).
 builder.Services.AddSingleton<IAuthApi, AuthApi>();
-// Login orchestration on top of IAuthApi + ITokenStore + the
-// credential settings. Used by the standalone-mode login dialog and
-// ConnectionBootstrap's auto-login.
-builder.Services.AddSingleton<OnaPlotter.Services.Auth.AuthSession>();
+builder.Services.AddSingleton<AuthSession>();
 builder.Services.AddSingleton<ITrackApi, TrackApi>();
 // Signal K Radar API v3.1. Optional; empty list when no provider plugin.
 builder.Services.AddSingleton<IRadarApi, RadarApi>();
-// Radar overlay: host wraps the JS module; manager owns session
-// state (capabilities cache, sticky-off prefs, last-range cache,
-// auto-toggle decisions). The page injects the manager and calls
-// into it; the host's module ref is wired by the page after the
-// JS module loads.
-builder.Services.AddSingleton<OnaPlotter.Services.Radar.JsRadarOverlayHost>();
-builder.Services.AddSingleton<OnaPlotter.Services.Radar.IRadarOverlayHost>(
-    sp => sp.GetRequiredService<OnaPlotter.Services.Radar.JsRadarOverlayHost>());
-builder.Services.AddSingleton<OnaPlotter.Services.Radar.RadarOverlayManager>();
+// The host's module ref is wired by the page once the JS module loads.
+builder.Services.AddSingleton<JsRadarOverlayHost>();
+builder.Services.AddSingleton<IRadarOverlayHost>(
+    sp => sp.GetRequiredService<JsRadarOverlayHost>());
+builder.Services.AddSingleton<RadarOverlayManager>();
 // Optional: detects sbender9/signalk-buddylist-plugin at runtime.
 builder.Services.AddSingleton<IBuddyListApi, BuddyListApi>();
 
@@ -240,103 +169,60 @@ builder.Services.AddSingleton(TimeProvider.System);
 // SignalK WebSocket delta stream. NavigationData is the own-boat
 // store the stream writes into; services that only observe the
 // connection take ISignalkClient (same instance).
-builder.Services.AddSingleton<OnaPlotter.Models.NavigationData>();
+builder.Services.AddSingleton<NavigationData>();
 builder.Services.AddSingleton<SignalkClient>();
 builder.Services.AddSingleton<ISignalkClient>(sp => sp.GetRequiredService<SignalkClient>());
 
-// Time-windowed averages over the nav channels (TWS / AWS / SOG /
-// VMG / COG / TWD). Singleton so the buffers fill across page
-// navigations and every consumer (chart HUD, WindRose, future trend
-// chips) reads from the same series. Subscribes to OnDataChanged in
-// its ctor; resolving once at startup wires the sampler.
-builder.Services.AddSingleton<OnaPlotter.Services.INavigationAverages, OnaPlotter.Services.NavigationAverages>();
+// Resolved once at startup so the sampler subscribes before any page renders.
+builder.Services.AddSingleton<INavigationAverages, NavigationAverages>();
 
-// Client-error relay to the SignalK plugin's /log endpoint. Makes
-// iPad Safari exceptions visible in the SignalK server log for
-// SSH-based debugging at the helm. The actual install happens in
-// wwwroot/js/errorRelayBoot.js (loaded synchronously from index.html
-// BEFORE the Blazor runtime, so it catches boot-time exceptions);
-// this DI singleton is the C# entry-point for code that wants to
-// relay a caught exception explicitly. See Services/ClientErrorRelay.cs.
+// Entry point for explicitly relaying a caught exception to the SignalK plugin's /log
+// (the global handler is installed by wwwroot/js/errorRelayBoot.js).
 builder.Services.AddSingleton<ClientErrorRelay>();
 
-// Single source of truth for resources.{routes,waypoints,notes,regions}.
-// Composes over SignalkClient.OnResourceDelta (WS push) and the four
-// *Api REST clients (initial load + reconcile-on-reconnect). Map.razor
-// and Resources.razor read from here and subscribe to typed change
-// events, so a route edited on plotter A appears on plotter B without
-// a manual reload.
-builder.Services.AddSingleton<OnaPlotter.Services.Resources.ResourceStore>();
+// Single source of truth for resources.{routes,waypoints,notes,regions}: WS deltas plus REST load.
+builder.Services.AddSingleton<ResourceStore>();
 
-// Place search (topbar geocoder). The helm-facing IPlaceSearchService
-// is a Merged(Own + Caching(Fallback(Photon -> Nominatim))) composition:
-//
-//   helm types -> SearchBox calls IPlaceSearchService
-//   IPlaceSearchService = MergedPlaceSearchService
-//     own-data branch: OwnPlacesIndex (in-mem substring match
-//                       over waypoints + notes + regions, lazy-loaded
-//                       via the *Api singletons, 5-minute TTL)
-//     online branch:   CachingPlaceSearchService(
-//                          FallbackPlaceSearchService(
-//                              primary   = PhotonPlaceSearchService,
-//                              secondary = NominatimPlaceSearchService))
-//                       cache hit  -> immediate; miss -> Photon HTTP;
-//                       Photon empty / down -> Nominatim HTTP (rate-
-//                       limited to <= 1 rps per OSMF policy).
-//
-// Own-data + online run in parallel; the helm sees own-data hits even
-// when both geocoders are slow / offline. All transient failures
-// return an empty list per the IPlaceSearchService contract.
+// Place search: Merged(own places, Caching(Fallback(Photon, Nominatim))).
 // Photon takes a position-provider thunk so each search call can
 // add &lat=&lon= to bias results by proximity to the helm's current
 // fix. The thunk reads NavigationData live each call - if the SK
 // feed hasn't yielded a position yet, returns null and Photon skips
 // the bias params (global ranking).
-builder.Services.AddSingleton<OnaPlotter.Services.Places.PhotonPlaceSearchService>(sp =>
-    new OnaPlotter.Services.Places.PhotonPlaceSearchService(
+builder.Services.AddSingleton<PhotonPlaceSearchService>(sp =>
+    new PhotonPlaceSearchService(
         sp.GetRequiredService<HttpClient>(),
-        sp.GetRequiredService<ILogger<OnaPlotter.Services.Places.PhotonPlaceSearchService>>(),
+        sp.GetRequiredService<ILogger<PhotonPlaceSearchService>>(),
         () =>
         {
-            var nav = sp.GetRequiredService<OnaPlotter.Models.NavigationData>();
+            var nav = sp.GetRequiredService<NavigationData>();
             return nav.Latitude is double lat && nav.Longitude is double lon
                 ? (lat, lon)
                 : null;
         }));
-builder.Services.AddSingleton<OnaPlotter.Services.Places.NominatimPlaceSearchService>();
-builder.Services.AddSingleton<OnaPlotter.Services.Places.PlaceSearchCache>();
-builder.Services.AddSingleton<OnaPlotter.Services.Places.OwnPlacesIndex>();
-builder.Services.AddSingleton<OnaPlotter.Services.Places.IPlaceSearchService>(sp =>
+builder.Services.AddSingleton<NominatimPlaceSearchService>();
+builder.Services.AddSingleton<PlaceSearchCache>();
+builder.Services.AddSingleton<OwnPlacesIndex>();
+builder.Services.AddSingleton<IPlaceSearchService>(sp =>
 {
-    var fallback = new OnaPlotter.Services.Places.FallbackPlaceSearchService(
-        primary:   sp.GetRequiredService<OnaPlotter.Services.Places.PhotonPlaceSearchService>(),
-        secondary: sp.GetRequiredService<OnaPlotter.Services.Places.NominatimPlaceSearchService>());
-    var caching = new OnaPlotter.Services.Places.CachingPlaceSearchService(
+    var fallback = new FallbackPlaceSearchService(
+        primary:   sp.GetRequiredService<PhotonPlaceSearchService>(),
+        secondary: sp.GetRequiredService<NominatimPlaceSearchService>());
+    var caching = new CachingPlaceSearchService(
         fallback,
-        sp.GetRequiredService<OnaPlotter.Services.Places.PlaceSearchCache>());
-    return new OnaPlotter.Services.Places.MergedPlaceSearchService(
-        sp.GetRequiredService<OnaPlotter.Services.Places.OwnPlacesIndex>(),
+        sp.GetRequiredService<PlaceSearchCache>());
+    return new MergedPlaceSearchService(
+        sp.GetRequiredService<OwnPlacesIndex>(),
         caching);
 });
 
-// OSM marine-POI overlay (Layers > Marine services). Three pieces:
-//   * OverpassPoiService: HTTP client for the public Overpass API.
-//   * MarinePoiCache: localStorage-backed id-keyed cache with FIFO
-//     eviction; survives offline so visited regions render their
-//     services without a fresh fetch.
-//   * MarinePoiController is constructed by Map.razor when the JS
-//     module ref lands - not registered here because it carries the
-//     module-bound MapMarinePoiJs wrapper.
-builder.Services.AddSingleton<OnaPlotter.Services.Pois.OverpassPoiService>();
-builder.Services.AddSingleton<OnaPlotter.Services.Pois.IMarinePoiService>(
-    sp => sp.GetRequiredService<OnaPlotter.Services.Pois.OverpassPoiService>());
-builder.Services.AddSingleton<OnaPlotter.Services.Pois.MarinePoiCache>();
+// MarinePoiController is built by Map.razor once the JS module ref lands.
+builder.Services.AddSingleton<OverpassPoiService>();
+builder.Services.AddSingleton<IMarinePoiService>(
+    sp => sp.GetRequiredService<OverpassPoiService>());
+builder.Services.AddSingleton<MarinePoiCache>();
 
-// Startup work (settings load, WebSocket + auto-login, MOB recovery,
-// alarm subscribers, update polling) runs as hosted services. Hosted
-// services start sequentially in this order before first render;
-// StartAsync must not block on network or throw. See
-// Services/Startup/StartupServiceCollectionExtensions.cs.
+// Startup work runs as hosted services; see StartupServiceCollectionExtensions.
 builder.Services.AddOnaStartup();
 
 await builder.Build().RunAsync();

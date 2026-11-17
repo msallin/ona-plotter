@@ -28,7 +28,7 @@ public sealed class RegionStore : IRegionStore, IAsyncDisposable
 
     public IReadOnlyList<SignalkRegion> Regions => _regions;
 
-    public RegionStore() { }
+    internal RegionStore() { }
 
     public RegionStore(ResourceStore resources)
     {
