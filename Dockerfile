@@ -3,9 +3,10 @@
 # Multi-stage build for OnaPlotter as a standalone web server. Two
 # AOTs in play - WASM AOT compiles the Blazor client to WebAssembly
 # (slow), NativeAOT compiles the Kestrel host to a self-contained
-# native binary. Final image lands around 35 to 50 MB depending on
-# arch and WASM payload size, on top of the ~10 MB Alpine
-# runtime-deps base.
+# native binary. Both stages use Ubuntu (glibc): emscripten's wasm-opt
+# crashes under musl, and the NativeAOT host must link against the same
+# libc it runs on. The runtime stage is the chiseled runtime-deps image
+# (no shell, no package manager, non-root).
 #
 # Image layout: /app/OnaPlotter.Server (the native binary) and
 # /app/wwwroot (the Blazor static bundle). The host reads SK_SERVER_URL
@@ -21,17 +22,14 @@
 ARG DOTNET_VERSION=11.0
 
 # -------- Build stage --------
-FROM mcr.microsoft.com/dotnet/sdk:${DOTNET_VERSION}-alpine AS build
+FROM mcr.microsoft.com/dotnet/sdk:${DOTNET_VERSION}-resolute AS build
 
-# NativeAOT toolchain prerequisites on Alpine. The .NET SDK image
-# ships without a native C toolchain so we install it here once.
-# build-base pulls gcc + binutils + libc-dev; clang + lld give
-# NativeAOT a usable linker; zlib-dev is the one runtime dep the
-# linker actually wants. nodejs + npm satisfy the esbuild step
-# (the MinifyPublishedJs MSBuild target in OnaPlotter.csproj runs
-# `npx esbuild` against the JS interop layer before the bundle is
-# copied to /app/publish).
-RUN apk add --no-cache build-base clang lld zlib-dev nodejs npm
+# NativeAOT needs clang + zlib1g-dev; nodejs + npm run the esbuild
+# minify/bundle targets in OnaPlotter.csproj; python3 is required by
+# the emscripten toolchain that WASM AOT drives.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends clang zlib1g-dev nodejs npm python3 \
+ && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
 
@@ -68,7 +66,7 @@ RUN dotnet publish OnaPlotter.Server/OnaPlotter.Server.csproj \
     -o /app/publish
 
 # -------- Runtime stage --------
-FROM mcr.microsoft.com/dotnet/runtime-deps:${DOTNET_VERSION}-alpine
+FROM mcr.microsoft.com/dotnet/runtime-deps:${DOTNET_VERSION}-resolute-chiseled
 
 WORKDIR /app
 
@@ -82,7 +80,7 @@ ENV ASPNETCORE_URLS=http://+:8080 \
 
 EXPOSE 8080
 
-# runtime-deps:alpine sets APP_UID=1654 as a non-root user. Reuse
+# runtime-deps sets APP_UID=1654 as a non-root user. Reuse
 # it rather than running as root.
 USER $APP_UID
 
