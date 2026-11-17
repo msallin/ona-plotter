@@ -9,13 +9,9 @@ namespace OnaPlotter.Utilities;
 /// the HUD's fixed 30s SOG mean and a future "stats over a helm-
 /// picked 1/2/10 min window" page draw from the same data.
 ///
-/// <para>Storage: <see cref="List{T}"/> + a logical <c>_head</c>
-/// index. Eviction advances the head pointer (O(1) per drop) and
-/// physically compacts only when more than half the list is dead
-/// (amortised O(1) per evict). Indexed access lets queries walk
-/// newest -&gt; oldest and break as soon as a sample falls outside
-/// the requested window: a 30s mean on a 180-min retention buffer
-/// touches ~30 entries, not 10,800.</para>
+/// <para>Storage and eviction live in <see cref="TimeWindowBuffer{T}"/>;
+/// queries walk newest -&gt; oldest and break as soon as a sample falls
+/// outside the requested window.</para>
 ///
 /// <para>For compass angles use <see cref="RollingDirectionSeries"/>;
 /// linear averaging here would produce 180° at the 350°/10° wrap.</para>
@@ -29,35 +25,26 @@ public sealed class RollingScalarSeries
     /// 1-2 samples sit in a 60s window.</summary>
     public const double DefaultWarmupRatio = 0.5;
 
-    private readonly TimeProvider _time;
-    private readonly List<(DateTime ts, double value)> _samples = [];
-    /// <summary>Logical start of the live range. Items in
-    /// <c>_samples[0.._head)</c> are evicted but not yet shifted out;
-    /// <see cref="EvictOlderThan"/> compacts when the dead-prefix
-    /// reaches half the list size, amortising the shift cost.</summary>
-    private int _head;
+    private readonly TimeWindowBuffer<Sample> _buffer;
+
+    private readonly record struct Sample(DateTime Ts, double Value) : ITimedSample;
 
     /// <summary>Longest sub-window any consumer is expected to ask
     /// about. Samples older than this are evicted automatically;
     /// queries with a window past this return null.</summary>
-    public TimeSpan MaxRetention { get; }
+    public TimeSpan MaxRetention => _buffer.MaxRetention;
 
     /// <summary>Increments whenever the retained sample set changes
     /// (append, seed, eviction). Lets renderers cache a projection of
     /// the buffer and skip rebuilding it while nothing changed.</summary>
-    public long Version { get; private set; }
+    public long Version => _buffer.Version;
 
     /// <param name="maxRetention">Longest window any consumer
     /// queries - e.g. 60 min for wind (covers WindRose's helm-picked
     /// 60 min chip) or 30 s for SOG (HUD's fixed window).</param>
     /// <param name="time">Time provider; tests inject FakeTimeProvider.</param>
     public RollingScalarSeries(TimeSpan maxRetention, TimeProvider? time = null)
-    {
-        if (maxRetention <= TimeSpan.Zero)
-            throw new ArgumentOutOfRangeException(nameof(maxRetention), "must be positive");
-        MaxRetention = maxRetention;
-        _time = time ?? TimeProvider.System;
-    }
+        => _buffer = new TimeWindowBuffer<Sample>(maxRetention, time);
 
     /// <summary>Append a sample stamped at "now". Non-finite values
     /// (NaN, infinity) are silently dropped - a corrupt sensor read
@@ -65,10 +52,7 @@ public sealed class RollingScalarSeries
     public void Add(double value)
     {
         if (!double.IsFinite(value)) return;
-        var now = _time.GetUtcNow().UtcDateTime;
-        _samples.Add((now, value));
-        Version++;
-        EvictOlderThan(now - MaxRetention);
+        _buffer.Add(new Sample(_buffer.Now, value));
     }
 
     /// <summary>
@@ -76,88 +60,20 @@ public sealed class RollingScalarSeries
     /// e.g. from a SignalK history fetch. Used to warm the buffer at
     /// page mount so consumers see a populated trend straight away
     /// instead of waiting minutes for live deltas to fill the window.
-    ///
-    /// <para>Seed fills the gap BEFORE the oldest existing sample.
-    /// Buffers in this codebase are singletons that ingest live deltas
-    /// from app startup, so by the time a page mounts and calls Seed
-    /// there are already live samples in the buffer that are newer
-    /// than every historical sample the server returns. Inserting at
-    /// the front preserves the global monotonic-ascending order the
-    /// newest-to-oldest scan in <see cref="Mean"/> / <see cref="Stats"/>
-    /// depends on.</para>
-    ///
-    /// <para>Constraints (enforced by silent drop):
-    /// <list type="bullet">
-    ///   <item>Non-finite values dropped (same rule as <see cref="Add"/>).</item>
-    ///   <item>Future timestamps dropped - a seed must never insert
-    ///   past the present.</item>
-    ///   <item>Samples at-or-after the oldest existing buffer sample
-    ///   skipped - that region is owned by live ingest; a historical
-    ///   sample there would either duplicate live data or land
-    ///   out-of-order.</item>
-    ///   <item>Out-of-order samples within the seed source skipped -
-    ///   the source is expected to be ascending; entries that violate
-    ///   that are defensive drops, not errors.</item>
-    ///   <item>Samples older than <see cref="MaxRetention"/> dropped -
-    ///   the eviction sweep would discard them anyway.</item>
-    /// </list></para>
-    ///
-    /// <para>Idempotent on overlapping ranges: a repeat call sees the
-    /// already-seeded data as "existing oldest" and skips it. Widening
-    /// the seed window on a later call extends the buffer further back.</para>
+    /// Non-finite values are dropped (same rule as <see cref="Add"/>);
+    /// the merge contract is <see cref="TimeWindowBuffer{T}.Seed"/>'s.
     /// </summary>
     public void Seed(IEnumerable<(DateTime Ts, double Value)> samples)
     {
         ArgumentNullException.ThrowIfNull(samples);
-        var now = _time.GetUtcNow().UtcDateTime;
-        var cutoff = now - MaxRetention;
-        EvictOlderThan(cutoff);
-
-        // Anchor for "where the live region starts". Empty buffer ->
-        // MaxValue so every in-range historical sample qualifies.
-        DateTime oldestLive = _samples.Count > _head
-            ? _samples[_head].ts
-            : DateTime.MaxValue;
-
-        // Collect the in-range, in-order, before-live historical samples
-        // into a contiguous list so we can InsertRange once at the front.
-        var fresh = new List<(DateTime ts, double value)>();
-        DateTime prev = DateTime.MinValue;
-        foreach (var (ts, value) in samples)
-        {
-            if (!double.IsFinite(value)) continue;
-            if (ts > now) continue;
-            if (ts < cutoff) continue;
-            if (ts >= oldestLive) continue;
-            if (ts <= prev) continue;
-            fresh.Add((ts, value));
-            prev = ts;
-        }
-
-        if (fresh.Count == 0) return;
-
-        // Compact the dead prefix so InsertRange's index 0 lands at the
-        // actual oldest live sample, not at a stale evicted slot.
-        if (_head > 0)
-        {
-            _samples.RemoveRange(0, _head);
-            _head = 0;
-        }
-        _samples.InsertRange(0, fresh);
-        Version++;
+        _buffer.Seed(samples
+            .Where(s => double.IsFinite(s.Value))
+            .Select(s => new Sample(s.Ts, s.Value)));
     }
 
     /// <summary>Number of samples retained. Useful for tests and
     /// the warmup-ratio gate at the call site.</summary>
-    public int Count
-    {
-        get
-        {
-            var now = _time.GetUtcNow().UtcDateTime;
-            EvictOlderThan(now - MaxRetention);
-            return _samples.Count - _head;
-        }
-    }
+    public int Count => _buffer.Count;
 
     /// <summary>
     /// Snapshot of every sample within the trailing
@@ -171,25 +87,15 @@ public sealed class RollingScalarSeries
     public IReadOnlyList<TimeSeriesSample> SnapshotIn(TimeSpan window)
     {
         if (window <= TimeSpan.Zero || window > MaxRetention) return [];
-        var now = _time.GetUtcNow().UtcDateTime;
-        EvictOlderThan(now - MaxRetention);
-        if (_samples.Count - _head == 0) return [];
-        var cutoff = now - window;
-        // Walk newest -> oldest to find the lowest in-window index
-        // (break early); then materialise oldest -> newest for the
-        // chart polyline.
-        int firstIdx = _samples.Count;
-        for (int i = _samples.Count - 1; i >= _head; i--)
+        var now = _buffer.Now;
+        _buffer.EvictOlderThan(now - MaxRetention);
+        int firstIdx = _buffer.FirstIndexSince(now - window);
+        if (firstIdx == _buffer.End) return [];
+        var result = new List<TimeSeriesSample>(_buffer.End - firstIdx);
+        for (int i = firstIdx; i < _buffer.End; i++)
         {
-            if (_samples[i].ts < cutoff) break;
-            firstIdx = i;
-        }
-        if (firstIdx == _samples.Count) return [];
-        var result = new List<TimeSeriesSample>(_samples.Count - firstIdx);
-        for (int i = firstIdx; i < _samples.Count; i++)
-        {
-            var s = _samples[i];
-            result.Add(new TimeSeriesSample(s.ts, s.value));
+            var s = _buffer[i];
+            result.Add(new TimeSeriesSample(s.Ts, s.Value));
         }
         return result;
     }
@@ -208,19 +114,13 @@ public sealed class RollingScalarSeries
         if (maxVertices < 2)
             throw new ArgumentOutOfRangeException(nameof(maxVertices), maxVertices, "Need at least two vertices.");
         if (window <= TimeSpan.Zero || window > MaxRetention) return ChartSeries.Empty;
-        var now = _time.GetUtcNow().UtcDateTime;
-        EvictOlderThan(now - MaxRetention);
-        var cutoff = now - window;
-        int firstIdx = _samples.Count;
-        for (int i = _samples.Count - 1; i >= _head; i--)
+        var now = _buffer.Now;
+        _buffer.EvictOlderThan(now - MaxRetention);
+        int firstIdx = _buffer.FirstIndexSince(now - window);
+        var builder = new ChartSeriesBuilder(_buffer.End - firstIdx, maxVertices);
+        for (int i = firstIdx; i < _buffer.End; i++)
         {
-            if (_samples[i].ts < cutoff) break;
-            firstIdx = i;
-        }
-        var builder = new ChartSeriesBuilder(_samples.Count - firstIdx, maxVertices);
-        for (int i = firstIdx; i < _samples.Count; i++)
-        {
-            var (ts, value) = _samples[i];
+            var (ts, value) = _buffer[i];
             builder.Add(ts, project is null ? value : project(value));
         }
         return builder.Build();
@@ -238,16 +138,16 @@ public sealed class RollingScalarSeries
     /// </list></summary>
     public double? Mean(TimeSpan window, double warmupRatio = DefaultWarmupRatio)
     {
-        if (!TryPrepareQuery(window, warmupRatio, out var cutoff)) return null;
+        if (!_buffer.TryPrepareQuery(window, warmupRatio, out var cutoff)) return null;
         // Walk newest -> oldest, break on out-of-window. Since ts is
         // monotonic ascending in the list (each Add stamps with the
         // current clock), a single < cutoff hit terminates the loop.
         double sum = 0;
         int n = 0;
-        for (int i = _samples.Count - 1; i >= _head; i--)
+        for (int i = _buffer.End - 1; i >= _buffer.Head; i--)
         {
-            if (_samples[i].ts < cutoff) break;
-            sum += _samples[i].value;
+            if (_buffer[i].Ts < cutoff) break;
+            sum += _buffer[i].Value;
             n++;
         }
         return n == 0 ? null : sum / n;
@@ -261,17 +161,17 @@ public sealed class RollingScalarSeries
     /// </summary>
     public WindowStats? Stats(TimeSpan window, double warmupRatio = DefaultWarmupRatio)
     {
-        if (!TryPrepareQuery(window, warmupRatio, out var cutoff)) return null;
+        if (!_buffer.TryPrepareQuery(window, warmupRatio, out var cutoff)) return null;
         // First pass (newest -> oldest with break): mean + min + max
         // and the index of the oldest in-window sample.
         double sum = 0, min = double.MaxValue, max = double.MinValue;
-        int firstIdx = _samples.Count;
+        int firstIdx = _buffer.End;
         int n = 0;
-        for (int i = _samples.Count - 1; i >= _head; i--)
+        for (int i = _buffer.End - 1; i >= _buffer.Head; i--)
         {
-            if (_samples[i].ts < cutoff) break;
+            if (_buffer[i].Ts < cutoff) break;
             firstIdx = i;
-            var v = _samples[i].value;
+            var v = _buffer[i].Value;
             sum += v;
             if (v < min) min = v;
             if (v > max) max = v;
@@ -282,9 +182,9 @@ public sealed class RollingScalarSeries
         // Second pass (oldest -> newest over the in-window range):
         // population variance.
         double sumSq = 0;
-        for (int i = firstIdx; i < _samples.Count; i++)
+        for (int i = firstIdx; i < _buffer.End; i++)
         {
-            double d = _samples[i].value - mean;
+            double d = _buffer[i].Value - mean;
             sumSq += d * d;
         }
         // Population sigma: the helm cares about the spread of THIS
@@ -295,43 +195,6 @@ public sealed class RollingScalarSeries
         double gust = Math.Max(0, max - mean);
         double lull = Math.Max(0, mean - min);
         return new WindowStats(mean, min, max, sigma, gust, lull);
-    }
-
-    /// <summary>Validates the query, evicts, gates on warmup, and
-    /// returns the cutoff timestamp for the in-window scan. False
-    /// -> the caller returns null.</summary>
-    private bool TryPrepareQuery(TimeSpan window, double warmupRatio, out DateTime cutoff)
-    {
-        cutoff = default;
-        if (window <= TimeSpan.Zero || window > MaxRetention) return false;
-        if (warmupRatio < 0 || warmupRatio > 1) return false;
-        var now = _time.GetUtcNow().UtcDateTime;
-        EvictOlderThan(now - MaxRetention);
-        if (_samples.Count - _head == 0) return false;
-        var oldest = _samples[_head].ts;
-        var coverage = now - oldest;
-        if (coverage < window * warmupRatio) return false;
-        cutoff = now - window;
-        return true;
-    }
-
-    private void EvictOlderThan(DateTime cutoff)
-    {
-        // Advance head past dead samples - O(k) per call where k is
-        // the number falling off the front (usually 0 or 1).
-        int before = _head;
-        while (_head < _samples.Count && _samples[_head].ts < cutoff)
-        {
-            _head++;
-        }
-        if (_head != before) Version++;
-        // Compact when the dead prefix reaches half the list size -
-        // amortises the O(N) shift to O(1) per eviction.
-        if (_head > 0 && _head >= _samples.Count / 2)
-        {
-            _samples.RemoveRange(0, _head);
-            _head = 0;
-        }
     }
 }
 

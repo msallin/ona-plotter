@@ -32,28 +32,19 @@ public sealed class RollingDirectionSeries
 {
     private const double RadToDeg = 180.0 / Math.PI;
 
-    private readonly TimeProvider _time;
-    private readonly List<Sample> _samples = [];
-    /// <summary>Logical start of the live range. Items in
-    /// <c>_samples[0.._head)</c> are evicted but not yet shifted out;
-    /// <see cref="EvictOlderThan"/> compacts when the dead-prefix
-    /// reaches half the list size.</summary>
-    private int _head;
+    private readonly TimeWindowBuffer<Sample> _buffer;
 
-    public TimeSpan MaxRetention { get; }
+    private readonly record struct Sample(DateTime Ts, double AngleRad, double Weight) : ITimedSample;
+
+    public TimeSpan MaxRetention => _buffer.MaxRetention;
 
     /// <summary>Increments whenever the retained sample set changes
     /// (append, seed, eviction). Lets renderers cache a projection of
     /// the buffer and skip rebuilding it while nothing changed.</summary>
-    public long Version { get; private set; }
+    public long Version => _buffer.Version;
 
     public RollingDirectionSeries(TimeSpan maxRetention, TimeProvider? time = null)
-    {
-        if (maxRetention <= TimeSpan.Zero)
-            throw new ArgumentOutOfRangeException(nameof(maxRetention), "must be positive");
-        MaxRetention = maxRetention;
-        _time = time ?? TimeProvider.System;
-    }
+        => _buffer = new TimeWindowBuffer<Sample>(maxRetention, time);
 
     /// <summary>Append a sample. Non-finite or negative-weight
     /// samples are silently dropped.</summary>
@@ -65,10 +56,7 @@ public sealed class RollingDirectionSeries
     public void Add(double angleRadians, double weight = 1.0)
     {
         if (!double.IsFinite(angleRadians) || !double.IsFinite(weight) || weight < 0) return;
-        var now = _time.GetUtcNow().UtcDateTime;
-        _samples.Add(new Sample(now, angleRadians, weight));
-        Version++;
-        EvictOlderThan(now - MaxRetention);
+        _buffer.Add(new Sample(_buffer.Now, angleRadians, weight));
     }
 
     /// <summary>
@@ -85,47 +73,12 @@ public sealed class RollingDirectionSeries
     public void Seed(IEnumerable<(DateTime Ts, double AngleRad)> samples)
     {
         ArgumentNullException.ThrowIfNull(samples);
-        var now = _time.GetUtcNow().UtcDateTime;
-        var cutoff = now - MaxRetention;
-        EvictOlderThan(cutoff);
-
-        DateTime oldestLive = _samples.Count > _head
-            ? _samples[_head].Ts
-            : DateTime.MaxValue;
-
-        var fresh = new List<Sample>();
-        DateTime prev = DateTime.MinValue;
-        foreach (var (ts, angle) in samples)
-        {
-            if (!double.IsFinite(angle)) continue;
-            if (ts > now) continue;
-            if (ts < cutoff) continue;
-            if (ts >= oldestLive) continue;
-            if (ts <= prev) continue;
-            fresh.Add(new Sample(ts, angle, 1.0));
-            prev = ts;
-        }
-
-        if (fresh.Count == 0) return;
-
-        if (_head > 0)
-        {
-            _samples.RemoveRange(0, _head);
-            _head = 0;
-        }
-        _samples.InsertRange(0, fresh);
-        Version++;
+        _buffer.Seed(samples
+            .Where(s => double.IsFinite(s.AngleRad))
+            .Select(s => new Sample(s.Ts, s.AngleRad, 1.0)));
     }
 
-    public int Count
-    {
-        get
-        {
-            var now = _time.GetUtcNow().UtcDateTime;
-            EvictOlderThan(now - MaxRetention);
-            return _samples.Count - _head;
-        }
-    }
+    public int Count => _buffer.Count;
 
     /// <summary>
     /// Snapshot of every sample within the trailing
@@ -138,23 +91,14 @@ public sealed class RollingDirectionSeries
     public IReadOnlyList<TimeSeriesSample> SnapshotIn(TimeSpan window, bool includeZeroWeight = false)
     {
         if (window <= TimeSpan.Zero || window > MaxRetention) return [];
-        var now = _time.GetUtcNow().UtcDateTime;
-        EvictOlderThan(now - MaxRetention);
-        if (_samples.Count - _head == 0) return [];
-        var cutoff = now - window;
-        // Find the lowest in-window index by walking newest -> oldest
-        // with early break.
-        int firstIdx = _samples.Count;
-        for (int i = _samples.Count - 1; i >= _head; i--)
+        var now = _buffer.Now;
+        _buffer.EvictOlderThan(now - MaxRetention);
+        int firstIdx = _buffer.FirstIndexSince(now - window);
+        if (firstIdx == _buffer.End) return [];
+        var result = new List<TimeSeriesSample>(_buffer.End - firstIdx);
+        for (int i = firstIdx; i < _buffer.End; i++)
         {
-            if (_samples[i].Ts < cutoff) break;
-            firstIdx = i;
-        }
-        if (firstIdx == _samples.Count) return [];
-        var result = new List<TimeSeriesSample>(_samples.Count - firstIdx);
-        for (int i = firstIdx; i < _samples.Count; i++)
-        {
-            var s = _samples[i];
+            var s = _buffer[i];
             if (!includeZeroWeight && s.Weight <= 0) continue;
             result.Add(new TimeSeriesSample(s.Ts, s.AngleRad));
         }
@@ -177,21 +121,16 @@ public sealed class RollingDirectionSeries
         if (maxVertices < 2)
             throw new ArgumentOutOfRangeException(nameof(maxVertices), maxVertices, "Need at least two vertices.");
         if (window <= TimeSpan.Zero || window > MaxRetention) return ChartSeries.Empty;
-        var now = _time.GetUtcNow().UtcDateTime;
-        EvictOlderThan(now - MaxRetention);
-        var cutoff = now - window;
-        int firstIdx = _samples.Count;
+        var now = _buffer.Now;
+        _buffer.EvictOlderThan(now - MaxRetention);
+        int firstIdx = _buffer.FirstIndexSince(now - window);
         int count = 0;
-        for (int i = _samples.Count - 1; i >= _head; i--)
-        {
-            if (_samples[i].Ts < cutoff) break;
-            firstIdx = i;
-            if (_samples[i].Weight > 0) count++;
-        }
+        for (int i = firstIdx; i < _buffer.End; i++)
+            if (_buffer[i].Weight > 0) count++;
         var builder = new ChartSeriesBuilder(count, maxVertices);
-        for (int i = firstIdx; i < _samples.Count; i++)
+        for (int i = firstIdx; i < _buffer.End; i++)
         {
-            var s = _samples[i];
+            var s = _buffer[i];
             if (s.Weight <= 0) continue;
             builder.Add(s.Ts, project is null ? s.AngleRad : project(s.AngleRad));
         }
@@ -203,13 +142,13 @@ public sealed class RollingDirectionSeries
     /// warmup not satisfied / window past <see cref="MaxRetention"/>.</summary>
     public double? Mean(TimeSpan window, double warmupRatio = RollingScalarSeries.DefaultWarmupRatio)
     {
-        if (!TryPrepareQuery(window, warmupRatio, out var cutoff)) return null;
+        if (!_buffer.TryPrepareQuery(window, warmupRatio, out var cutoff)) return null;
         // Walk newest -> oldest with early break; compute weighted
         // sin/cos sums over the in-window samples.
         double sumSin = 0, sumCos = 0, sumW = 0;
-        for (int i = _samples.Count - 1; i >= _head; i--)
+        for (int i = _buffer.End - 1; i >= _buffer.Head; i--)
         {
-            var s = _samples[i];
+            var s = _buffer[i];
             if (s.Ts < cutoff) break;
             sumSin += Math.Sin(s.AngleRad) * s.Weight;
             sumCos += Math.Cos(s.AngleRad) * s.Weight;
@@ -230,18 +169,13 @@ public sealed class RollingDirectionSeries
     /// </summary>
     public double? ShiftRateDegPerMin(TimeSpan window, double warmupRatio = RollingScalarSeries.DefaultWarmupRatio)
     {
-        if (!TryPrepareQuery(window, warmupRatio, out var cutoff)) return null;
+        if (!_buffer.TryPrepareQuery(window, warmupRatio, out var cutoff)) return null;
         // First pass (newest -> oldest with break): find the in-window
         // range. Then unwrap forward (oldest -> newest) and fit the
         // regression - two passes total, both bounded by the in-window
         // count, not the full retention.
-        int firstIdx = _samples.Count;
-        for (int i = _samples.Count - 1; i >= _head; i--)
-        {
-            if (_samples[i].Ts < cutoff) break;
-            firstIdx = i;
-        }
-        int n = _samples.Count - firstIdx;
+        int firstIdx = _buffer.FirstIndexSince(cutoff);
+        int n = _buffer.End - firstIdx;
         if (n < 5) return null;
 
         // Unwrap around the first sample so 359 -> 1 reads as +2°,
@@ -249,21 +183,21 @@ public sealed class RollingDirectionSeries
         // anything bigger must have wrapped.
         var times = new double[n];
         var values = new double[n];
-        double prev = _samples[firstIdx].AngleRad * RadToDeg;
+        double prev = _buffer[firstIdx].AngleRad * RadToDeg;
         double baseline = prev;
         double running = prev;
-        var t0 = _samples[firstIdx].Ts;
+        var t0 = _buffer[firstIdx].Ts;
         times[0] = 0;
         values[0] = 0;
         for (int k = 1; k < n; k++)
         {
             int i = firstIdx + k;
-            double d = _samples[i].AngleRad * RadToDeg;
+            double d = _buffer[i].AngleRad * RadToDeg;
             double delta = d - prev;
             if (delta > 180) delta -= 360;
             else if (delta < -180) delta += 360;
             running += delta;
-            times[k] = (_samples[i].Ts - t0).TotalMinutes;
+            times[k] = (_buffer[i].Ts - t0).TotalMinutes;
             values[k] = running - baseline;
             prev = d;
         }
@@ -283,36 +217,4 @@ public sealed class RollingDirectionSeries
         if (den <= 0) return null;
         return num / den;   // °/min
     }
-
-    private bool TryPrepareQuery(TimeSpan window, double warmupRatio, out DateTime cutoff)
-    {
-        cutoff = default;
-        if (window <= TimeSpan.Zero || window > MaxRetention) return false;
-        if (warmupRatio < 0 || warmupRatio > 1) return false;
-        var now = _time.GetUtcNow().UtcDateTime;
-        EvictOlderThan(now - MaxRetention);
-        if (_samples.Count - _head == 0) return false;
-        var oldest = _samples[_head].Ts;
-        var coverage = now - oldest;
-        if (coverage < window * warmupRatio) return false;
-        cutoff = now - window;
-        return true;
-    }
-
-    private void EvictOlderThan(DateTime cutoff)
-    {
-        int before = _head;
-        while (_head < _samples.Count && _samples[_head].Ts < cutoff)
-        {
-            _head++;
-        }
-        if (_head != before) Version++;
-        if (_head > 0 && _head >= _samples.Count / 2)
-        {
-            _samples.RemoveRange(0, _head);
-            _head = 0;
-        }
-    }
-
-    private readonly record struct Sample(DateTime Ts, double AngleRad, double Weight);
 }
