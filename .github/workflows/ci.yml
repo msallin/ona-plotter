@@ -67,7 +67,8 @@ jobs:
   # Separate job so a pure-unit failure still reports quickly, and so
   # docker setup doesn't slow down the C# build's feedback loop.
   e2e:
-    runs-on: ubuntu-latest
+    # Playwright ships no Chromium build for Ubuntu 26.04 (ubuntu-latest).
+    runs-on: ubuntu-24.04
     needs: build
     steps:
       - uses: actions/checkout@v6
@@ -205,6 +206,14 @@ jobs:
       - name: Install workloads
         run: dotnet workload install wasm-tools
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+
+      # esbuild is required by the Release minify and bundle targets.
+      - name: Install JS toolchain (esbuild)
+        run: npm ci
+
       - name: Publish OnaPlotter (Release + AOT)
         run: dotnet publish OnaPlotter/OnaPlotter.csproj -c Release -o publish
 
@@ -226,6 +235,12 @@ jobs:
           { "SignalK": { "ServerUrl": "auto" } }
           EOF
 
+      # The SDK precompressed index.html and appsettings.json before the
+      # two patches above. SignalK server serves .br/.gz siblings of webapp
+      # files, so stale siblings would boot the app with base href "/".
+      - name: Drop stale precompressed siblings of patched files
+        run: rm -f publish/wwwroot/{index.html,appsettings.json}.{br,gz}
+
       # Stage the SignalK-webapp layout:
       #   signalk-onaplotter/
       #     package.json   (from deploy/package.json.template)
@@ -241,6 +256,8 @@ jobs:
           version="0.0.0-ci.${{ github.run_number }}"
           sed "s|__VERSION__|$version|" deploy/package.json.template > "$stage/package.json"
           cp deploy/index.js "$stage/index.js"
+          cp deploy/README.npm.md "$stage/README.md"
+          cp LICENSE "$stage/LICENSE"
           cp -r publish/wwwroot "$stage/public"
           echo "--- package.json ---"
           cat "$stage/package.json"
