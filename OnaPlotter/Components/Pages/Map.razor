@@ -943,28 +943,8 @@
     // callback signature matches what RoutesSection fires.
     private Task DeleteRouteFromLayers(SignalkRoute r) => DeleteRouteById(r.Id);
 
-    private async Task DeleteWaypointFromLayers(SignalkWaypoint wp)
-    {
-        if (string.IsNullOrEmpty(wp.Id)) return;
-        string label = wp.Name ?? wp.Id;
-        // MOB waypoints are persistent history per the safety contract.
-        // WaypointsSection hides Delete on MOB rows; this refusal (same
-        // guard as DeleteWaypoint in Map.razor.cs) is the trust boundary.
-        if (wp.IsMob)
-        {
-            Toasts.Warning($"MOB waypoint '{label}' cannot be deleted (persistent history)");
-            return;
-        }
-        ApiResult r;
-        try { r = await WaypointApi.DeleteAsync(wp.Id); }
-        catch (Exception ex) { Toasts.LogException(ex, $"Delete waypoint '{label}'"); return; }
-        if (!r.Success) { Toasts.Error($"Delete waypoint '{label}' failed: {r.Error ?? "server rejected"}"); return; }
-
-        if (_resources is not null)
-            await _resources.DropWaypointAsync(wp.Id);
-        loadedWaypoints.RemoveAll(w => w.Id == wp.Id);
-        Toasts.Info($"Waypoint '{label}' deleted");
-    }
+    private Task DeleteWaypointFromLayers(SignalkWaypoint wp)
+        => string.IsNullOrEmpty(wp.Id) ? Task.CompletedTask : DeleteWaypointCore(wp.Id, wp);
 
     /// <summary>Center the map on a waypoint and dismiss the layers
     /// panel so the helm can see what they just picked. Mirrors
@@ -974,11 +954,11 @@
     /// own (helm can tap the marker if they want the popup).</summary>
     private async Task FocusWaypoint(SignalkWaypoint wp)
     {
-        if (module is null) return;
+        if (_controlsJs is null) return;
         if (wp.Latitude is not double lat || wp.Longitude is not double lon) return;
         chartPanelOpen = false;
         await DisableFollowAsync();
-        await module.InvokeVoidQuietAsync("panTo", lat, lon);
+        await _controlsJs.PanToAsync(lat, lon);
     }
 
     /// <summary>Layers-panel "Go" button for notes: PUT the note's
@@ -3637,25 +3617,11 @@
     // ServerTrackController owns the server-track state + interop;
     // wired in OnAfterRenderAsync.
 
-    /// <summary>Toggle night mode on/off. A four-step cycle (dusk ->
-    /// soft -> amber -> red) confuses the helm; one tap on, one tap off
-    /// is the binary mental model. Helms who
-    /// want a non-red-shifted dark intermediate use Theme = "dark"
-    /// instead. The Night button in the More menu and the keyboard
-    /// "n" shortcut both call this.
-    ///
-    /// MarkManualNightToggleAsync records the env.sun cluster at
-    /// toggle time so CheckAutoNightAsync suppresses until the next
-    /// day/night transition - a deliberate toggle counts as a
-    /// manual override.</summary>
-    private async Task ToggleNightMode()
-    {
-        await Settings.MarkManualNightToggleAsync(SunClusterFromState(Data.SunState));
-        nightMode = !nightMode;
-        await Settings.SetNightModeAsync(nightMode);
-        if (_controlsJs is not null)
-            await _controlsJs.SetNightModeAsync(nightMode);
-    }
+    // The Night button in the More menu and the keyboard "n" shortcut
+    // both land here. The settings change raises OnSettingsChanged, whose
+    // handler resyncs the local `nightMode` mirror and pushes the tile
+    // filter to JS.
+    private Task ToggleNightMode() => NightToggle.ToggleAsync(Settings, Data.SunState);
 
     // Deadman refresh. Invoked from wwwroot/js/deadman.js's document-
     // level pointerdown / keydown listener, coalesced to one upcall per
@@ -3708,7 +3674,7 @@
         // X, leave the override in place. When env.sun transitions
         // to the other cluster, clear the override - helm's choice
         // applied to "this cycle"; the next cycle starts fresh.
-        var currentCluster = SunClusterFromState(Data.SunState);
+        var currentCluster = NightToggle.SunCluster(Data.SunState);
         if (Settings.LastManualNightOverrideSunCluster is string overrideCluster)
         {
             if (overrideCluster == currentCluster) return;
@@ -3723,17 +3689,6 @@
             await _controlsJs.SetNightModeAsync(nightMode);
         await InvokeAsync(StateHasChanged);
     }
-
-    /// <summary>Map the Signal K <c>environment.sun</c> string to a
-    /// two-state cluster (day / night). Used by both the manual-
-    /// toggle override capture and the auto-night transition check
-    /// so the two surfaces speak the same vocabulary.</summary>
-    private static string? SunClusterFromState(string? sunState) => sunState switch
-    {
-        "day" or "dawn" => "day",
-        "dusk" or "night" => "night",
-        _ => null,
-    };
 
     // MOB clear confirmation lives on MapControls (OnMobClicked) as a
     // two-tap pattern matching Stop-Navigation; ToggleMob is called

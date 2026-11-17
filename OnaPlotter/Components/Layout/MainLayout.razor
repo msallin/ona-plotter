@@ -628,16 +628,21 @@
         // AlarmEvaluationDriver / AutoAdvanceService; the layout only
         // renders. StaleDataMonitor and LoginStatusPoller own their
         // timers; the layout re-renders on their change events.
-        StaleMonitor.OnChanged += HandleStaleChanged;
-        LoginPoller.OnChanged += HandleLoginStatusChanged;
-        Toasts.OnChanged += HandleToastsChanged;
+        StaleMonitor.OnChanged += Rerender;
+        LoginPoller.OnChanged += Rerender;
+        Toasts.OnChanged += Rerender;
         Settings.OnSettingsChanged += HandleSettingsChanged;
         Alarms.OnAlarmChanged += HandleAlarmChanged;
-        Alarms.OnAlarmsChanged += HandleAlarmsChanged;
+        // Any alarm-state change (stack, snooze list, history) redraws the
+        // UI. Audio is handled by HandleAlarmChanged, which only fires when
+        // the TOP alarm transitions.
+        Alarms.OnAlarmsChanged += Rerender;
         // UpdateChecker fires when the server's bundle hash diverges
         // from ours. The chip in the topbar above gates on
         // Updates.IsUpdateAvailable - this re-render unhides it.
-        Updates.OnChanged += HandleUpdatesChanged;
+        // Sticky: once the chip shows, a later poll that matches keeps it
+        // up because the helm has already SEEN the prompt.
+        Updates.OnChanged += Rerender;
         // Re-render when the route changes so the topbar zoom
         // buttons appear/disappear based on IsMapRoute.
         Nav.LocationChanged += HandleLocationChanged;
@@ -649,14 +654,16 @@
         // minute. Display only; expiry itself is swept by AlarmManager
         // on each evaluation tick.
         snoozeCountdownTimer = new System.Threading.Timer(
-            _ => _ = RefreshSnoozeCountdownAsync(), null, 60_000, 60_000);
+            _ => RefreshSnoozeCountdown(), null, 60_000, 60_000);
     }
 
-    /// <summary>UpdateChecker fires this when the server's bundle
-    /// hash diverges. Re-render so the new chip is visible. Sticky:
-    /// once shown, even a later poll that matches stays the chip
-    /// up because the helm has already SEEN the prompt.</summary>
-    private void HandleUpdatesChanged() => InvokeAsync(StateHasChanged);
+    /// <summary>Re-render from any thread. The store events that call
+    /// this can land while the layout is being torn down.</summary>
+    private async void Rerender()
+    {
+        try { await InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
 
     /// <summary>Force-reload the page so the browser fetches the
     /// fresh index.html + WASM bundle. NavigationManager.NavigateTo
@@ -692,21 +699,6 @@
         catch (ObjectDisposedException) { }
     }
 
-    private async void HandleToastsChanged()
-    {
-        try { await InvokeAsync(StateHasChanged); }
-        catch (ObjectDisposedException) { }
-    }
-
-    private async void HandleAlarmsChanged()
-    {
-        // Any alarm-state change (stack, snooze list, history) redraws
-        // the UI. Audio is handled by HandleAlarmChanged which only fires
-        // when the TOP alarm transitions.
-        try { await InvokeAsync(StateHasChanged); }
-        catch (ObjectDisposedException) { }
-    }
-
     private async void HandleAlarmChanged(AlarmInfo? active)
     {
         // `active` is a snapshot captured at the moment the event fired, so
@@ -735,25 +727,7 @@
         catch (ObjectDisposedException) { }
     }
 
-    /// <summary>Toggle night mode on/off (binary, one click each way).
-    /// Records the env.sun cluster at toggle time so auto-night
-    /// suppresses until the next day/night transition.</summary>
-    private async Task ToggleNightMode()
-    {
-        await Settings.MarkManualNightToggleAsync(SunClusterFromState(SignalkClient.Data.SunState));
-        await Settings.SetNightModeAsync(!Settings.NightMode);
-    }
-
-    /// <summary>Same env.sun cluster mapping as Map.SunClusterFromState
-    /// - duplicated rather than shared because IThemeSettings
-    /// shouldn't have to know about NavigationData and a tiny
-    /// helper isn't worth a dedicated utility class.</summary>
-    private static string? SunClusterFromState(string? sunState) => sunState switch
-    {
-        "day" or "dawn" => "day",
-        "dusk" or "night" => "night",
-        _ => null,
-    };
+    private Task ToggleNightMode() => NightToggle.ToggleAsync(Settings, SignalkClient.Data.SunState);
 
     // The fullscreen button dispatches through a native click listener
     // wired from fullscreen.js::attachTrigger (synchronous with the user
@@ -829,15 +803,18 @@
     // that follows it.
     private const string LeafletModulePath = "./js/leafletInterop.js";
 
-    private async Task ZoomInAsync()
+    /// <summary>Imports the module on first use; null when the page has
+    /// disconnected.</summary>
+    private async Task<IJSObjectReference?> EnsureLeafletAsync()
     {
-        try
-        {
-            leafletModule ??= await JS.InvokeAsync<IJSObjectReference>("import", LeafletModulePath);
-            await leafletModule.InvokeVoidAsync("zoomIn", 1);
-        }
-        catch (JSDisconnectedException) { }
+        try { return leafletModule ??= await JS.InvokeAsync<IJSObjectReference>("import", LeafletModulePath); }
+        catch (JSDisconnectedException) { return null; }
     }
+
+    private async Task InvokeLeafletAsync(string identifier, params object?[] args)
+        => await (await EnsureLeafletAsync()).InvokeVoidQuietAsync(identifier, args);
+
+    private Task ZoomInAsync() => InvokeLeafletAsync("zoomIn", 1);
 
     /// <summary>
     /// Topbar SearchBox -> picked PlaceResult. Flies the map and
@@ -851,14 +828,11 @@
     {
         try
         {
-            leafletModule ??= await JS.InvokeAsync<IJSObjectReference>("import", LeafletModulePath);
             // null zoom -> JS keeps current zoom but lifts to a
             // sensible minimum (12) so a world-zoom helm searching
             // a city doesn't end up looking at a continent.
-            await leafletModule.InvokeVoidAsync(
-                "flyToSearchResult", result.Lat, result.Lon, null);
+            await InvokeLeafletAsync("flyToSearchResult", result.Lat, result.Lon, null);
         }
-        catch (JSDisconnectedException) { }
         catch (JSException ex)
         {
             // A non-disconnected JS error (Leaflet flyTo throwing on a
@@ -882,27 +856,14 @@
     /// </summary>
     private async Task HandlePlaceCleared()
     {
-        try
-        {
-            leafletModule ??= await JS.InvokeAsync<IJSObjectReference>("import", LeafletModulePath);
-            await leafletModule.InvokeVoidAsync("clearSearchPin");
-        }
-        catch (JSDisconnectedException) { }
+        try { await InvokeLeafletAsync("clearSearchPin"); }
         catch (JSException ex)
         {
             Logger.LogWarning(ex, "[place] clearSearchPin failed");
         }
     }
 
-    private async Task ZoomOutAsync()
-    {
-        try
-        {
-            leafletModule ??= await JS.InvokeAsync<IJSObjectReference>("import", LeafletModulePath);
-            await leafletModule.InvokeVoidAsync("zoomOut", 1);
-        }
-        catch (JSDisconnectedException) { }
-    }
+    private Task ZoomOutAsync() => InvokeLeafletAsync("zoomOut", 1);
 
     /// <summary>Phone-width place search is expanded over the topbar's
     /// secondary icon buttons. Only honoured on the Map route, where the
@@ -945,7 +906,7 @@
         Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
     {
         RefreshIsMapRoute();
-        _ = InvokeAsync(StateHasChanged);
+        Rerender();
     }
 
     private void ReconnectNow()
@@ -1142,18 +1103,6 @@
         catch (ObjectDisposedException) { }
     }
 
-    private void HandleStaleChanged()
-    {
-        try { _ = InvokeAsync(StateHasChanged); }
-        catch (ObjectDisposedException) { }
-    }
-
-    private void HandleLoginStatusChanged()
-    {
-        try { _ = InvokeAsync(StateHasChanged); }
-        catch (ObjectDisposedException) { }
-    }
-
     private async Task DismissOne(AlarmInfo alarm) => await Alarms.DismissAsync(alarm);
     private async Task SnoozeOne(AlarmInfo alarm) => await Alarms.SnoozeAsync(alarm);
     private async Task UnsnoozeOne(string targetKey) => await Alarms.UnsnoozeAsync(targetKey);
@@ -1189,7 +1138,7 @@
         // frame. Blazor auto-renders after event handlers, but on some
         // touch devices the subsequent pointerup fires before the render
         // tick and the user sees no sweep animation.
-        _ = InvokeAsync(StateHasChanged);
+        Rerender();
         _ = RunAlarmHoldAsync(a, _alarmHoldCts.Token);
     }
 
@@ -1217,7 +1166,7 @@
         if (HoldingAlarmKey is not null)
         {
             HoldingAlarmKey = null;
-            _ = InvokeAsync(StateHasChanged);
+            Rerender();
         }
     }
 
@@ -1244,11 +1193,10 @@
         catch (Exception ex) { Toasts.LogException(ex, "Undo"); }
     }
 
-    private async Task RefreshSnoozeCountdownAsync()
+    private void RefreshSnoozeCountdown()
     {
         if (Alarms.SnoozedTargets.Count == 0) return;
-        try { await InvokeAsync(StateHasChanged); }
-        catch (ObjectDisposedException) { }
+        Rerender();
     }
 
     private static string FormatRemaining(DateTime expiresAt)
@@ -1331,13 +1279,13 @@
     public async ValueTask DisposeAsync()
     {
         SignalkClient.OnConnectionChanged -= HandleConnectionChanged;
-        StaleMonitor.OnChanged -= HandleStaleChanged;
-        LoginPoller.OnChanged -= HandleLoginStatusChanged;
-        Toasts.OnChanged -= HandleToastsChanged;
+        StaleMonitor.OnChanged -= Rerender;
+        LoginPoller.OnChanged -= Rerender;
+        Toasts.OnChanged -= Rerender;
         Settings.OnSettingsChanged -= HandleSettingsChanged;
         Alarms.OnAlarmChanged -= HandleAlarmChanged;
-        Alarms.OnAlarmsChanged -= HandleAlarmsChanged;
-        Updates.OnChanged -= HandleUpdatesChanged;
+        Alarms.OnAlarmsChanged -= Rerender;
+        Updates.OnChanged -= Rerender;
         Nav.LocationChanged -= HandleLocationChanged;
         if (snoozeCountdownTimer is not null) await snoozeCountdownTimer.DisposeAsync();
         if (firstRunOfflineTimer is not null) await firstRunOfflineTimer.DisposeAsync();

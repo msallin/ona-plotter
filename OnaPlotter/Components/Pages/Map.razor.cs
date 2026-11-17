@@ -139,12 +139,16 @@ public partial class Map
     /// the waypoint from the loaded list. Parallels <see cref="DeleteNote"/>
     /// / <see cref="DeleteRegion"/> for consistency.</summary>
     [JSInvokable]
-    public async Task DeleteWaypoint(string id)
+    public Task DeleteWaypoint(string id)
+        => DeleteWaypointCore(id, loadedWaypoints.FirstOrDefault(w => w.Id == id));
+
+    /// <param name="wp">The waypoint when the caller has it; null when the
+    /// id is not in the loaded list.</param>
+    private async Task DeleteWaypointCore(string id, SignalkWaypoint? wp)
     {
         // Resolve a helm-readable label up front so the failure toasts
         // can name the waypoint that didn't delete; helm bulk-deleting
         // shouldn't have to guess which one threw.
-        var wp = loadedWaypoints.FirstOrDefault(w => w.Id == id);
         string label = wp?.Name ?? id;
 
         // MOB waypoints are persistent history per the safety contract
