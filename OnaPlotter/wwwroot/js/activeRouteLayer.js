@@ -12,7 +12,8 @@
 //   - dashed = "ship-to-waypoint" (bearing line, current-leg overlay)
 //   - dotted = "already passed" (legs of the active route the boat crossed)
 
-import { wireClick } from './popupHelpers.js';
+import { esc, wireClick, wireDeleteConfirm } from './popupHelpers.js';
+import * as courseLineLayerMod from './courseLineLayer.js';
 
 const activeWpIcon = L.divIcon({
     className: 'active-wp-icon',
@@ -26,10 +27,6 @@ let colors = null;
 let getDotNetRef = null;
 let getEditModeFlags = null;
 let editModeAddPoint = null;
-let buildActiveRoutePopupHtml = null;
-let wireDeleteConfirm = null;
-let clearCourseLineFn = null;
-let setCoursePulseSuppressedFn = null;
 
 let activeRouteLayer = null;
 let nextWpMarker = null;
@@ -42,16 +39,33 @@ let activeOverlayHidden = false;
 // hue until the next SK course delta lands.
 let lastSetArgs = null;
 
+// Active-route popup: same shape as the regular-route popup but the
+// primary action is "Deactivate" (clear the SignalK course) rather
+// than "Activate". Edit + Delete keep working on the route resource
+// via the same JSInvokables the regular-route popup wires up.
+// No ETA row: the HudRouteCard already shows ETA + TTG continuously,
+// so a popup duplicate would be redundant chrome taking too much
+// space.
+function buildActiveRoutePopupHtml(id, name, wpCount, nmTotal) {
+    const safeName = esc(name || `Route ${id.substring(0, 6)}`);
+    return `
+        <div class="route-popup-body">
+            <div class="route-popup-title">${safeName}</div>
+            <div class="route-popup-meta">${wpCount} WP &middot; ${nmTotal.toFixed(1)} nm &middot; active</div>
+            <div class="route-popup-actions">
+                <button class="route-deactivate-btn" type="button">Deactivate</button>
+                <button class="route-edit-btn" type="button">Edit</button>
+                <button class="route-delete-btn" type="button">Delete</button>
+            </div>
+        </div>`;
+}
+
 export function init(map, deps) {
     mapRef = map;
     colors = deps.colors;
     getDotNetRef = deps.getDotNetRef;
     getEditModeFlags = deps.getEditModeFlags;
     editModeAddPoint = deps.editModeAddPoint;
-    buildActiveRoutePopupHtml = deps.buildActiveRoutePopupHtml;
-    wireDeleteConfirm = deps.wireDeleteConfirm;
-    clearCourseLineFn = deps.clearCourseLine;
-    setCoursePulseSuppressedFn = deps.setCoursePulseSuppressed;
 }
 
 // applyFrame consults this to decide whether to redraw the course
@@ -113,7 +127,7 @@ export function setActiveRoute(coords, wpIdx, routeId, routeName, totalNm) {
     // for the duration of this route - our nextWpMarker (drawn
     // below) covers the same coord with a higher zIndex + a "WP N"
     // tooltip, so two pulses would stack visibly.
-    if (setCoursePulseSuppressedFn) setCoursePulseSuppressedFn(true);
+    courseLineLayerMod.setCoursePulseSuppressed(true);
     const dotNetRef = getDotNetRef();
     const tappable = !!(routeId && dotNetRef);
 
@@ -161,7 +175,7 @@ export function setActiveRoute(coords, wpIdx, routeId, routeName, totalNm) {
             // course is cleared), so no confirm.
             wireClick(ev.popup, '.route-deactivate-btn', getDotNetRef, 'DeactivateActiveRoute', [], { close: 'before' });
             wireClick(ev.popup, '.route-edit-btn', getDotNetRef, 'EditRouteById', [routeId], { close: 'before' });
-            wireDeleteConfirm(ev.popup, '.route-delete-btn', 'DeleteRouteById', routeId);
+            wireDeleteConfirm(ev.popup, '.route-delete-btn', 'DeleteRouteById', routeId, getDotNetRef);
         });
         // Same edit-mode override as the regular-route popup: while
         // the helm is in route-edit / polygon-edit / measure mode, a
@@ -247,7 +261,7 @@ export function clearActiveRoute() {
     // Hand the destination pulse back to courseLineLayer so a
     // Navigate-Here destination (without an active route) still
     // gets a visible marker.
-    if (setCoursePulseSuppressedFn) setCoursePulseSuppressedFn(false);
+    courseLineLayerMod.setCoursePulseSuppressed(false);
 }
 
 // Re-issue the last setActiveRoute call so the freshly-updated
@@ -283,7 +297,7 @@ export function refreshActiveRoute() {
 export function setActiveOverlayHidden(hidden) {
     activeOverlayHidden = !!hidden;
     if (hidden) {
-        clearCourseLineFn();
+        courseLineLayerMod.clearCourseLine();
         clearActiveRoute();
     }
 }
@@ -317,7 +331,4 @@ export function dispose() {
     getDotNetRef = null;
     getEditModeFlags = null;
     editModeAddPoint = null;
-    buildActiveRoutePopupHtml = null;
-    wireDeleteConfirm = null;
-    clearCourseLineFn = null;
 }

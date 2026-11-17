@@ -5,11 +5,8 @@ import { DEG, NM_PER_METER, destPoint, vectorEnd, chartBoundsBoxes } from './geo
 import { pickRangeScale } from './rangeScale.js';
 import { TrackRuns, splitTrackRuns } from './trackRuns.js';
 import { MarkerLayer } from './markerLayer.js';
-import { enableRadarOverlay, disableRadarOverlay,
-         setRadarRange, setBoatState as setRadarBoatState,
-         setRangeRingsConfig as setRadarRangeRingsConfig,
+import { enableRadarOverlay, setBoatState as setRadarBoatState,
          setRadarUseWireBearing as setRadarUseWireBearingMod,
-         setRadarBearingCorrection as setRadarBearingCorrectionMod,
          setRadarPaused, tearDownAllRadarOverlays } from './radarLayer.js';
 import * as weatherLayerMod from './weatherLayer.js';
 import * as anchorLayerMod from './anchorLayer.js';
@@ -34,7 +31,7 @@ import { installRotationSupport, attachRotation, detachRotation, setRotation,
 import { isTypingTarget, shortcutKey } from './keyboardShortcuts.js';
 import { buildSelfPopupHtml } from './ownBoatPopup.js';
 import { makeBoatSvg } from './boatIcons.js';
-import { esc as escImported, wireClick, wireDeleteConfirm as wireDeleteConfirmImported } from './popupHelpers.js';
+import * as routeLayerMod from './routeLayer.js';
 
 let map = null;
 // Module-scoped bounds-debounce timer so dispose() can cancel it.
@@ -120,8 +117,6 @@ let _alarmBannerPointerDown = null;
 // Pauses the radar spoke sockets while the page is hidden.
 let _visibilityChange = null;
 
-// AIS state lives in aisLayer.js.
-
 // SignalK server base URL (scheme+host+port, no trailing slash).
 // Pushed in from Blazor via setSignalKBaseUrl() during init so all
 // origin-bound URLs (flag images, future direct API hits) target
@@ -129,6 +124,25 @@ let _visibilityChange = null;
 // which only works when the SK server lives on the same origin
 // (e.g. the app served by SK itself on localhost:3000).
 let signalKBaseUrl = '';
+
+// Entry points C# calls on this module that live wholly in a layer module.
+export { updateAisTargets, focusVessel, setDistanceRings, setHarborMode, setAisLabelsVisible } from './aisLayer.js';
+export { setMeasureMode, clearMeasure, measureFromVesselTo, measureFromPoint } from './measureLayer.js';
+export { setAnchor, clearAnchor, setAnchorRaising, updateAnchorRadius, setAnchorIncomplete, setAnchorMoveMode, setAnchorPosition, getAnchorMovedLatLng } from './anchorLayer.js';
+export { setActiveRoute, clearActiveRoute, setActiveOverlayHidden } from './activeRouteLayer.js';
+export { setCourseLine, clearCourseLine } from './courseLineLayer.js';
+export { startRouteEdit, stopRouteEdit, getEditRouteCoords, reverseEditRoute, removeRouteEditWaypoint, loadRouteForEdit } from './routeEditLayer.js';
+export { startPolygonEdit, stopPolygonEdit, getPolygonEditCoords, undoLastPolygonVertex, removePolygonEditVertex, loadPolygonForEdit } from './polygonEditLayer.js';
+export { addWaypointMarker, removeWaypointMarker } from './waypointLayer.js';
+export { addNoteMarker, removeNoteMarker, clearNotes, openNotePopup } from './noteLayer.js';
+export { addRegion, removeRegion, clearRegions, focusRegion, setCirclePreview, clearCirclePreview } from './regionLayer.js';
+export { setWeatherOverlay, setWeatherOverlayOpacity, clearWeatherOverlay } from './weatherLayer.js';
+export { setLaylines, clearLaylines } from './laylineLayer.js';
+export { setAtons, setAtonsVisible } from './atonLayer.js';
+export { setMarinePois, setMarinePoisVisible } from './marinePoiLayer.js';
+export { addRoute, removeRoute, updateRoute } from './routeLayer.js';
+export { disableRadarOverlay as stopRadarOverlay, setRadarRange as updateRadarRange,
+         setRangeRingsConfig as setRadarRangeRings, setRadarBearingCorrection } from './radarLayer.js';
 
 export function setSignalKBaseUrl(url) {
     signalKBaseUrl = (url || '').replace(/\/+$/, '');
@@ -280,37 +294,7 @@ export function setRangeScaleHidden(hidden) {
     _rangeScaleEl.classList.toggle('ona-range-scale-hidden', !!hidden);
 }
 
-// Routes and server track.
-const routeLayers = new MarkerLayer();  // keyed by route ID
 let serverTrackLayer = null;
-
-// Active route + course line state lives in activeRouteLayer.js +
-// courseLineLayer.js. The mux still consults
-// activeRouteLayerMod.isOverlayHidden() inside applyFrame because the
-// frame batcher decides whether to redraw the course line on each tick.
-
-// Layline state lives in laylineLayer.js.
-
-// Anchor watch state lives in anchorLayer.js.
-
-// MOB rendering: no separate layer; MOBs are waypoints
-// with isMob=true / isActive flags carried via the resource API. The
-// pulsing-red icon variant lives in waypointLayer.js so the chart
-// surface for any user-placed point sits in one module.
-
-// Own-vessel state lives in the layer modules (aisLayer for CPA,
-// anchorLayer / measureLayer for their own geometry).
-// boatMarker still stashes its data on _onaSelfData for popup rendering.
-
-// HTML-escape untrusted strings for popup content. Module-level
-// alias so the in-file template literals don't have to drag the
-// 'Imported' suffix through every interpolation.
-const esc = escImported;
-// Mux-side wireDeleteConfirm passes the cached dotNetRef through;
-// modules that own their own popups call the imported helper directly
-// with their own getDotNetRef.
-const wireDeleteConfirm = (popup, selector, method, id) =>
-    wireDeleteConfirmImported(popup, selector, method, id, () => dotNetRef);
 
 // --- Icons ---
 
@@ -508,12 +492,9 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient, opt
     // remove() / clear() can pull layers off the map. Done here rather
     // than in the ctor because module-scope `new MarkerLayer()` runs
     // before initMap, when `map` is still null.
-    // chartLayers + routeLayers MarkerLayers stay in the mux; waypoint /
-    // note / region / aton layers each own their own MarkerLayer inside
-    // their dedicated module and call setMap on it from their init().
-    for (const ml of [chartLayers, routeLayers]) {
-        ml.setMap(map);
-    }
+    // The other layers own their MarkerLayer and call setMap on it from
+    // their init().
+    chartLayers.setMap(map);
 
     // Per-feature module init. Each module receives the freshly-built
     // Leaflet map plus any cross-module deps it needs to read at update
@@ -528,6 +509,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient, opt
     marinePoiLayerMod.init(map);
     measureLayerMod.init(map, { colors: MapColors, pointToSegmentPixels });
     routeEditLayerMod.init(map, { colors: MapColors, pointToSegmentPixels });
+    routeLayerMod.init(map, { colors: MapColors, getDotNetRef: () => dotNetRef });
     polygonEditLayerMod.init(map);
     // Edit-mode flags + the mode-specific "add point" dispatcher are
     // shared by waypoint / note / region / aisLayer / activeRouteLayer
@@ -549,8 +531,8 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient, opt
             measure: measureLayerMod.isActive(),
         }),
         editModeAddPoint: (mode, lat, lon) => {
-            if (mode === 'route') addEditWaypoint(lat, lon);
-            else if (mode === 'polygon') addPolygonVertexInternal(lat, lon);
+            if (mode === 'route') routeEditLayerMod.addEditWaypoint(lat, lon);
+            else if (mode === 'polygon') polygonEditLayerMod.addPolygonVertexInternal(lat, lon);
             else measureLayerMod.addMeasurePoint(lat, lon);
         },
     };
@@ -578,13 +560,6 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient, opt
         colors: MapColors,
         getDotNetRef: () => dotNetRef,
         ...editModeDeps,
-        buildActiveRoutePopupHtml,
-        wireDeleteConfirm,
-        clearCourseLine: () => courseLineLayerMod.clearCourseLine(),
-        // Tell courseLineLayer to hide its own pulsing destination
-        // marker while we own one - otherwise both render at the
-        // same coord and read as "one waypoint two symbols".
-        setCoursePulseSuppressed: (s) => courseLineLayerMod.setCoursePulseSuppressed(s),
     });
 
     // Leaflet's native +/- zoom control is turned off above
@@ -680,11 +655,11 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient, opt
             // handler sets a short-lived suppression flag; we honour
             // it here.
             if (routeEditLayerMod.consumeSuppressNextMapClick()) return;
-            addEditWaypoint(e.latlng.lat, e.latlng.lng);
+            routeEditLayerMod.addEditWaypoint(e.latlng.lat, e.latlng.lng);
             return;
         }
         if (polygonEditLayerMod.isActive()) {
-            addPolygonVertexInternal(e.latlng.lat, e.latlng.lng);
+            polygonEditLayerMod.addPolygonVertexInternal(e.latlng.lat, e.latlng.lng);
             return;
         }
         if (dotNetRef) dotNetRef.invokeMethodAsync('OnDismissContextMenu').catch(() => {});
@@ -699,7 +674,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient, opt
         // helm can immediately start a fresh measurement; opening the
         // context menu over a half-built ruler would just be in the way.
         if (measureLayerMod.isActive()) {
-            clearMeasure();
+            measureLayerMod.clearMeasure();
             return;
         }
         // The menu is placed on screen, outside the rotated container.
@@ -978,10 +953,10 @@ export function applyFrame(frame) {
         // setActiveOverlayHidden(true). Re-emerges when the C# side
         // calls setActiveOverlayHidden(false) on edit cancel / save.
         if (selfLat != null && selfLon != null && !activeRouteLayerMod.isOverlayHidden()) {
-            setCourseLine(selfLat, selfLon, c.wpLat, c.wpLon, c.arrivalRadiusMeters);
+            courseLineLayerMod.setCourseLine(selfLat, selfLon, c.wpLat, c.wpLon, c.arrivalRadiusMeters);
         }
     } else if (frame.clearCourse) {
-        clearCourseLine();
+        courseLineLayerMod.clearCourseLine();
     }
     if (frame.current) {
         const cu = frame.current;
@@ -989,7 +964,7 @@ export function applyFrame(frame) {
     }
     if (frame.laylines) {
         const l = frame.laylines;
-        setLaylines(l.lat, l.lon, l.twdRad, l.twaRad, l.wpLat, l.wpLon);
+        laylineLayerMod.setLaylines(l.lat, l.lon, l.twdRad, l.twaRad, l.wpLat, l.wpLon);
     }
 }
 
@@ -1197,38 +1172,9 @@ export function addColoredTrackPoint(lat, lon, bucket, prevLat, prevLon) {
     ownTrack.append(lat, lon, bucket, prevLat, prevLon);
 }
 
-// --- AIS targets / guard zone / harbor mode ---
-// Implementation in aisLayer.js; mux re-exports the C# entries.
-export const updateAisTargets = (update) => aisLayerMod.updateAisTargets(update);
-export const focusVessel = (context) => aisLayerMod.focusVessel(context);
-export const setDistanceRings = (enabled, baseNm, count) =>
-    aisLayerMod.setDistanceRings(enabled, baseNm, count);
-export const setHarborMode = (enabled) => aisLayerMod.setHarborMode(enabled);
-export const setAisLabelsVisible = (enabled) =>
-    aisLayerMod.setAisLabelsVisible(enabled);
-
-// --- Persistent measurement tool ---
-// Implementation in measureLayer.js; mux re-exports the C# entries.
-export const setMeasureMode = (active) => measureLayerMod.setMeasureMode(active);
-export function clearMeasure() { return measureLayerMod.clearMeasure(); }
-export const measureFromVesselTo = (lat, lon) => measureLayerMod.measureFromVesselTo(lat, lon);
-export const measureFromPoint = (lat, lon) => measureLayerMod.measureFromPoint(lat, lon);
-
-// --- Anchor Watch ---
-// Implementation in anchorLayer.js; mux re-exports the C# entries.
-export const setAnchor = (lat, lon, radiusM) => anchorLayerMod.setAnchor(lat, lon, radiusM);
-export const clearAnchor = () => anchorLayerMod.clearAnchor();
-export const setAnchorRaising = (raising) => anchorLayerMod.setAnchorRaising(raising);
-export const updateAnchorRadius = (radiusM) => anchorLayerMod.updateAnchorRadius(radiusM);
-export const setAnchorIncomplete = (incomplete) => anchorLayerMod.setAnchorIncomplete(incomplete);
-export const setAnchorMoveMode = (enable) => anchorLayerMod.setAnchorMoveMode(enable);
-export const setAnchorPosition = (lat, lon) => anchorLayerMod.setAnchorPosition(lat, lon);
-export const getAnchorMovedLatLng = () => anchorLayerMod.getAnchorMovedLatLng();
 
 // --- Radar spoke overlay ---
-// Thin re-exports so Blazor's JSObjectReference can call the
-// enable/disable functions on this module (its existing handle).
-// setRadarBoatState is called from inside updateBoatPosition below.
+// setRadarBoatState is called from updatePosition.
 
 /**
  * @param {object} cfg  { radarId, spokeDataUrl, spokesPerRevolution,
@@ -1239,48 +1185,9 @@ export function startRadarOverlay(cfg) {
     enableRadarOverlay({ map }, cfg);
 }
 
-/**
- * Helm flipped the "Trust wire bearing" radar opt-in. Forwarded to
- * the radar overlay so the next sweep picks up the new policy without
- * needing to disable + re-enable the overlay. The setting is read by
- * every active overlay; the next paint applies the new index path.
- */
+/** Helm flipped the "Trust wire bearing" radar opt-in. */
 export function setRadarUseWireBearing(value) {
     setRadarUseWireBearingMod(!!value);
-}
-
-/**
- * Helm dialled the radar bearing-trim slider in Settings. Degrees
- * (-180..180); forwarded as-is to the radar layer which clamps + walks
- * active overlays so the picture re-rotates immediately. Use case:
- * residual misalignment when the radar provider hasn't yet shipped a
- * fix for a known compensation gap - the helm tunes visually here
- * without touching the radar's installation calibration.
- */
-export function setRadarBearingCorrection(deg) {
-    setRadarBearingCorrectionMod(deg);
-}
-
-export function stopRadarOverlay(radarId) {
-    disableRadarOverlay(radarId);
-}
-
-export function updateRadarRange(radarId, range) {
-    setRadarRange(radarId, range);
-}
-
-/**
- * Push the helm-set range-rings config to every active radar
- * overlay. C# calls this on init (with persisted settings) and on
- * every settings change so the rings appear / disappear / re-count
- * immediately. The radar layer's setRangeRingsConfig refreshes
- * each active overlay internally.
- *
- * @param {boolean} enabled  Master visibility flag.
- * @param {number}  count    Number of concentric rings (1..8).
- */
-export function setRadarRangeRings(enabled, count) {
-    setRadarRangeRingsConfig(enabled, count);
 }
 
 // --- COG vector look-ahead ---
@@ -1618,207 +1525,6 @@ function applyChartFilter(layer) {
     el.style.filter = currentChartFilter;
 }
 
-// --- Routes ---
-
-// Route polyline colour lives in MapColors.route (read from
-// --ann-route at init). Call-sites use MapColors.route directly so
-// a palette edit propagates without a module reload.
-//
-// Line-style convention used across the chartplotter:
-//   - solid  = "planned" (a saved route, or future legs of an active route)
-//   - dashed = "ship-to-waypoint" (bearing line, current-leg overlay)
-//   - dotted = "already passed" (legs of the active route the boat crossed)
-// Keep this consistent when adding new route-like overlays.
-
-// Add a route as a polyline. coords is [[lat, lon], ...].
-//
-// Clicking the line opens a popup with Activate + Delete so the helm
-// doesn't have to burrow into the Layers panel to do the two most
-// common actions on a saved route. During route-edit / polygon-edit /
-// measure the click is absorbed as a new waypoint instead (same guard
-// as AIS markers) so the user can't accidentally fire Activate/Delete
-// while trying to extend a route.
-export function addRoute(id, name, coords, totalNm) {
-    if (!map || routeLayers.has(id)) return;
-    const line = L.polyline(coords, {
-        color: MapColors.route, weight: 2.5, opacity: 0.8
-    }).addTo(map);
-
-    // Invisible wider polyline acts as the tap hitbox. The visible
-    // route is only 2.5 px wide, which is a miserable target on a
-    // touch screen (users end up dropping waypoints on the map while
-    // trying to activate a route). Same pattern used by the
-    // route-edit flow below for live-edit vertices; do it on all
-    // saved routes too so the Activate / Edit / Delete popup is
-    // actually reachable from the polyline.
-    const hitLine = L.polyline(coords, {
-        color: MapColors.route, weight: 36, opacity: 0, interactive: true
-    }).addTo(map);
-
-    // totalNm is precomputed in C# (see Map.razor's AddRouteToMap
-    // call site - RouteProgress.TotalDistanceMeters / 1852); JS does
-    // not redo the haversine sum, per the project rule (decisions/math
-    // in C#). Defensive
-    // fallback if a future caller forgets the arg: 0 reads as
-    // "missing" and the popup just shows "N WP" without the distance,
-    // which is honest rather than wrong.
-    const nmTotal = (typeof totalNm === 'number' && isFinite(totalNm)) ? totalNm : 0;
-    const popupOptions = { className: 'route-popup', maxWidth: 320, autoClose: true };
-    const popupHtml = () => buildRoutePopupHtml(id, name, coords.length, nmTotal);
-    line.bindPopup(popupHtml(), popupOptions);
-    hitLine.bindPopup(popupHtml(), popupOptions);
-
-    const onLineClick = (ev, sourceLine) => {
-        if (routeEditLayerMod.isActive() || polygonEditLayerMod.isActive() || measureLayerMod.isActive()) {
-            L.DomEvent.stopPropagation(ev);
-            const ll = ev.latlng;
-            if (!ll) return;
-            // Measure beats route / polygon edit on a route-polyline
-            // click. Mirrors the same priority on the map-level click
-            // handler above; otherwise measuring AROUND an existing
-            // route is impossible because the polyline eats every
-            // click. Marker / region / active-route polyline clicks
-            // deliberately use route-first order - those targets are
-            // unambiguous (the helm tapped a specific item) so the
-            // measure-first override is scoped to the empty-map and
-            // stale-route polyline cases only.
-            if (measureLayerMod.isActive())            measureLayerMod.addMeasurePoint(ll.lat, ll.lng);
-            else if (routeEditLayerMod.isActive())     addEditWaypoint(ll.lat, ll.lng);
-            else if (polygonEditLayerMod.isActive())   addPolygonVertexInternal(ll.lat, ll.lng);
-            sourceLine.closePopup();
-        }
-    };
-    line.on('click', (ev) => onLineClick(ev, line));
-    hitLine.on('click', (ev) => onLineClick(ev, hitLine));
-    const wirePopup = (ev) => {
-        // Single-tap Activate / Edit, no confirm: neither is destructive.
-        // Edit closes the popup first (the edit toolbar takes over the
-        // viewport); Activate closes it once the server has the course.
-        wireClick(ev.popup, '.route-activate-btn', () => dotNetRef, 'ActivateRouteById', [id], { close: 'after' });
-        wireClick(ev.popup, '.route-edit-btn', () => dotNetRef, 'EditRouteById', [id], { close: 'before' });
-        wireDeleteConfirm(ev.popup, '.route-delete-btn', 'DeleteRouteById', id);
-    };
-    line.on('popupopen', wirePopup);
-    hitLine.on('popupopen', wirePopup);
-
-    // Waypoint dots at each coordinate.
-    // bindTooltip writes its string argument to innerHTML, so the
-    // server-supplied route name has to be HTML-escaped or a name
-    // like '<img src=x onerror=...>' would execute. esc() once outside
-    // the loop - name doesn't change per vertex.
-    const group = L.layerGroup([line, hitLine]).addTo(map);
-    const safeTipName = name ? esc(name) : '';
-    for (let i = 0; i < coords.length; i++) {
-        const dot = L.circleMarker(coords[i], {
-            radius: 4, color: MapColors.route, fillColor: MapColors.route, fillOpacity: 1, weight: 1
-        });
-        dot.bindTooltip(safeTipName ? `${safeTipName} [${i + 1}]` : `WPT ${i + 1}`, { className: 'bearing-tooltip' });
-        dot.addTo(group);
-    }
-    routeLayers.set(id, group);
-}
-
-function buildRoutePopupHtml(id, name, wpCount, nmTotal) {
-    const safeName = esc(name || `Route ${id.substring(0, 6)}`);
-    return `
-        <div class="route-popup-body">
-            <div class="route-popup-title">${safeName}</div>
-            <div class="route-popup-meta">${wpCount} WP &middot; ${nmTotal.toFixed(1)} nm</div>
-            <div class="route-popup-actions">
-                <button class="route-activate-btn" type="button">Activate</button>
-                <button class="route-edit-btn" type="button">Edit</button>
-                <button class="route-delete-btn" type="button">Delete</button>
-            </div>
-        </div>`;
-}
-
-// Active-route popup: same shape as the regular-route popup but the
-// primary action is "Deactivate" (clear the SignalK course) rather
-// than "Activate". Edit + Delete keep working on the route resource
-// via the same JSInvokables the regular-route popup wires up.
-// No ETA row: the HudRouteCard already shows ETA + TTG continuously,
-// so a popup duplicate would be redundant chrome taking too much
-// space.
-function buildActiveRoutePopupHtml(id, name, wpCount, nmTotal) {
-    const safeName = esc(name || `Route ${id.substring(0, 6)}`);
-    return `
-        <div class="route-popup-body">
-            <div class="route-popup-title">${safeName}</div>
-            <div class="route-popup-meta">${wpCount} WP &middot; ${nmTotal.toFixed(1)} nm &middot; active</div>
-            <div class="route-popup-actions">
-                <button class="route-deactivate-btn" type="button">Deactivate</button>
-                <button class="route-edit-btn" type="button">Edit</button>
-                <button class="route-delete-btn" type="button">Delete</button>
-            </div>
-        </div>`;
-}
-
-export function removeRoute(id) { routeLayers.remove(id); }
-
-// Updates the geometry + popup metadata of an existing route layer
-// in place. Mirrors REST PUT semantics on /resources/routes/<id>:
-// same id, possibly different waypoint count + total nm + name.
-//
-// Falls through to addRoute when the id isn't yet known (upsert
-// behaviour) so callers don't need to branch on whether this is the
-// first delta the helm has seen for this id.
-//
-// Why in-place vs remove+add: a remove+add cycle has a flicker
-// window where the polyline disappears, and forces the helm to
-// re-locate the dashed-leg overlay (active-route layer) which
-// hooks into the route's coords. setLatLngs is the leaflet-native
-// "the geometry changed; keep everything else" path - click
-// handlers + popupopen wiring + the layer's identity in the
-// activeRouteLayer's diff stay valid. Vertex DOTS are the one
-// piece that has to rebuild because their count is geometry-
-// dependent (route-edit can add or remove waypoints).
-export function updateRoute(id, name, coords, totalNm) {
-    if (!map) return;
-    const group = routeLayers.get(id);
-    if (!group) {
-        // Upsert: first time we hear about this route. Defer to addRoute
-        // which builds the full layer stack from scratch.
-        return addRoute(id, name, coords, totalNm);
-    }
-
-    const layers = group.getLayers();
-    if (layers.length < 2) {
-        // Defensive: layer group somehow lost its line + hitLine. Rebuild.
-        routeLayers.remove(id);
-        return addRoute(id, name, coords, totalNm);
-    }
-
-    // Layer order from addRoute(): [line, hitLine, ...vertex_dots].
-    const [line, hitLine, ...dots] = layers;
-
-    // Update visible polyline + invisible touch hitbox geometry.
-    line.setLatLngs(coords);
-    hitLine.setLatLngs(coords);
-
-    // Refresh popup labels (waypoint count + total nm + name may all
-    // have changed). buildRoutePopupHtml is referenced by addRoute as
-    // well; same call site keeps the two paths in lockstep.
-    const nmTotal = (typeof totalNm === 'number' && isFinite(totalNm)) ? totalNm : 0;
-    const html = buildRoutePopupHtml(id, name, coords.length, nmTotal);
-    line.setPopupContent(html);
-    hitLine.setPopupContent(html);
-
-    // Vertex dots: count is geometry-dependent (route-edit adds /
-    // removes waypoints), so rebuild rather than try to setLatLng
-    // each surviving one. Escape the route name once - bindTooltip
-    // writes its argument to innerHTML, so a remote-edited name must
-    // not be interpolated raw.
-    for (const d of dots) group.removeLayer(d);
-    const safeTipName = name ? esc(name) : '';
-    for (let i = 0; i < coords.length; i++) {
-        const dot = L.circleMarker(coords[i], {
-            radius: 4, color: MapColors.route, fillColor: MapColors.route, fillOpacity: 1, weight: 1
-        });
-        dot.bindTooltip(safeTipName ? `${safeTipName} [${i + 1}]` : `WPT ${i + 1}`, { className: 'bearing-tooltip' });
-        dot.addTo(group);
-    }
-}
-
 // --- Server Track ---
 //
 // Shows the server-side historical track. Two modes:
@@ -1909,17 +1615,6 @@ export function clearServerTrack() {
     _serverTrackClipBounds = null;
 }
 
-// --- Active Route Navigation + course line ---
-// Implementations in activeRouteLayer.js + courseLineLayer.js; mux
-// re-exports the C# entries.
-export const setActiveRoute = (coords, wpIdx, routeId, routeName, totalNm) =>
-    activeRouteLayerMod.setActiveRoute(coords, wpIdx, routeId, routeName, totalNm);
-export const clearActiveRoute = () => activeRouteLayerMod.clearActiveRoute();
-export const setActiveOverlayHidden = (hidden) => activeRouteLayerMod.setActiveOverlayHidden(hidden);
-export function setCourseLine(selfLat, selfLon, wpLat, wpLon, arrivalRadiusMeters) {
-    return courseLineLayerMod.setCourseLine(selfLat, selfLon, wpLat, wpLon, arrivalRadiusMeters);
-}
-export function clearCourseLine() { return courseLineLayerMod.clearCourseLine(); }
 
 // Stopping-state visual feedback spans both modules: dim the route
 // polyline AND the course-line elements together so the helm sees
@@ -1930,35 +1625,6 @@ export function setActiveRouteStopping(stopping) {
     courseLineLayerMod.setStoppingDim(stopping);
 }
 
-// --- Route + Polygon editing ---
-// Implementations in routeEditLayer.js + polygonEditLayer.js. The
-// route-edit module exports addEditWaypoint as a public function so
-// the mux's map-click handler can forward taps into it; the polygon
-// module mirrors that with addPolygonVertexInternal.
-export const startRouteEdit = () => routeEditLayerMod.startRouteEdit();
-export const stopRouteEdit = () => routeEditLayerMod.stopRouteEdit();
-export const getEditRouteCoords = () => routeEditLayerMod.getEditRouteCoords();
-export const reverseEditRoute = () => routeEditLayerMod.reverseEditRoute();
-export const removeRouteEditWaypoint = (index) => routeEditLayerMod.removeRouteEditWaypoint(index);
-// No getEditRouteStats: C# polls getEditRouteCoords and computes
-// (count + total NM) via RouteProgress.TotalDistanceMeters.
-export const loadRouteForEdit = (coords) => routeEditLayerMod.loadRouteForEdit(coords);
-// `function` declarations rather than `const` arrows so they hoist
-// to the top of the module: the call sites (line click handlers,
-// drop-on-canvas dispatchers near 498/690/1344) are inside callback
-// bodies that would still resolve at runtime, but ESLint's
-// no-use-before-define can't see through the closure - function
-// declarations side-step the rule cleanly without disable comments
-// at every call site.
-function addEditWaypoint(lat, lon) { return routeEditLayerMod.addEditWaypoint(lat, lon); }
-
-export const startPolygonEdit = () => polygonEditLayerMod.startPolygonEdit();
-export const stopPolygonEdit = () => polygonEditLayerMod.stopPolygonEdit();
-export const getPolygonEditCoords = () => polygonEditLayerMod.getPolygonEditCoords();
-export const undoLastPolygonVertex = () => polygonEditLayerMod.undoLastPolygonVertex();
-export const removePolygonEditVertex = (index) => polygonEditLayerMod.removePolygonEditVertex(index);
-export const loadPolygonForEdit = (coords) => polygonEditLayerMod.loadPolygonForEdit(coords);
-function addPolygonVertexInternal(lat, lon) { return polygonEditLayerMod.addPolygonVertexInternal(lat, lon); }
 
 // pointToSegmentPixels lives in ./geomPixels.js so it can be
 // unit-tested without a Leaflet map. The dep-injection wiring below
@@ -2054,32 +1720,6 @@ export function getMapCenter() {
     return [c.lat, c.lng];
 }
 
-// --- Waypoint / Note / Region markers ---
-// Implementations in waypointLayer.js, noteLayer.js, regionLayer.js.
-export const addWaypointMarker = (id, lat, lon, name, createdAtIso, isMob, isActive) =>
-    waypointLayerMod.addWaypointMarker(id, lat, lon, name, createdAtIso, isMob, isActive);
-export const removeWaypointMarker = (id) => waypointLayerMod.removeWaypointMarker(id);
-
-export const addNoteMarker = (id, lat, lon, title, description, createdAtIso) =>
-    noteLayerMod.addNoteMarker(id, lat, lon, title, description, createdAtIso);
-export const removeNoteMarker = (id) => noteLayerMod.removeNoteMarker(id);
-export const clearNotes = () => noteLayerMod.clearNotes();
-export const openNotePopup = (id) => noteLayerMod.openNotePopup(id);
-
-export const addRegion = (id, rings, title, description,
-                          isHazard, areaSqM,
-                          centerLat, centerLon, radiusMeters,
-                          createdAtIso) =>
-    regionLayerMod.addRegion(id, rings, title, description,
-                             isHazard, areaSqM,
-                             centerLat, centerLon, radiusMeters,
-                             createdAtIso);
-export const removeRegion = (id) => regionLayerMod.removeRegion(id);
-export const clearRegions = () => regionLayerMod.clearRegions();
-export const focusRegion = (id, firstRing) => regionLayerMod.focusRegion(id, firstRing);
-export const setCirclePreview = (lat, lon, radiusMeters) =>
-    regionLayerMod.setCirclePreview(lat, lon, radiusMeters);
-export const clearCirclePreview = () => regionLayerMod.clearCirclePreview();
 
 /** Set the own-boat MMSI. C# calls this once SignalkClient has
  *  resolved self-context from the hello message. Idempotent; calling
@@ -2094,12 +1734,6 @@ export function setOwnCallsign(callsign) {
     ownCallsign = callsign || null;
 }
 
-
-// --- Weather Overlay ---
-// Implementation in weatherLayer.js; mux re-exports the C# entries.
-export const setWeatherOverlay = (tileUrl, opacity) => weatherLayerMod.setWeatherOverlay(tileUrl, opacity);
-export const setWeatherOverlayOpacity = (opacity) => weatherLayerMod.setWeatherOverlayOpacity(opacity);
-export const clearWeatherOverlay = () => weatherLayerMod.clearWeatherOverlay();
 
 // --- Tidal Current Arrow ---
 // State (`currentArrow`) is declared at the top of the module so
@@ -2147,12 +1781,6 @@ export function clearCurrentArrow() {
     if (currentArrow && map) { map.removeLayer(currentArrow); currentArrow = null; }
 }
 
-// --- Laylines ---
-// Implementation in laylineLayer.js; mux re-exports the C# entries.
-export function setLaylines(selfLat, selfLon, twdRad, twaRad, wpLat, wpLon) {
-    return laylineLayerMod.setLaylines(selfLat, selfLon, twdRad, twaRad, wpLat, wpLon);
-}
-export const clearLaylines = () => laylineLayerMod.clearLaylines();
 
 // --- Keyboard shortcuts ---
 
@@ -2312,16 +1940,6 @@ function applyMapRotation(deg) {
     setRotation(deg, 1);
 }
 
-// --- AtoN (Aids to Navigation) ---
-// Implementation in atonLayer.js; mux re-exports the C# entries.
-export const setAtons = (atons) => atonLayerMod.setAtons(atons);
-export const setAtonsVisible = (visible) => atonLayerMod.setAtonsVisible(visible);
-
-// --- OSM Marine POIs (fuel, marina, harbour, mooring, ...) ---
-// Implementation in marinePoiLayer.js; mux re-exports for the C#
-// MapMarinePoiJs wrapper.
-export const setMarinePois = (pois) => marinePoiLayerMod.setMarinePois(pois);
-export const setMarinePoisVisible = (visible) => marinePoiLayerMod.setMarinePoisVisible(visible);
 
 export function zoomToTrack() {
     if (!trackLayer || !map) return;
@@ -2375,7 +1993,7 @@ export function dispose() {
     _serverTrackClipToBounds = false;
     _serverTrackClipBounds = null;
     chartLayers.clear();
-    routeLayers.clear();
+    routeLayerMod.dispose();
     aisLayerMod.dispose();
     anchorLayerMod.dispose();
     measureLayerMod.dispose();
