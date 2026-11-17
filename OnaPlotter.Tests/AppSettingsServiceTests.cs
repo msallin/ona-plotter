@@ -597,6 +597,92 @@ public class AppSettingsServiceTests
         await Assert.That(fires).IsEqualTo(1);
     }
 
+    // --- Stored values are held to the same range as the setters ------------
+
+    [Test]
+    [Arguments("999", 60.0)]
+    [Arguments("0", 1.0)]
+    [Arguments("-5", 1.0)]
+    [Arguments("NaN", 10.0)]
+    [Arguments("25", 25.0)]
+    public async Task CogVectorMinutes_StoredOutOfRange_LoadClamped(string stored, double expected)
+    {
+        var kv = new InMemoryKv();
+        await kv.SetAsync(SettingKeys.OwnCogVectorMinutes, stored);
+        await kv.SetAsync(SettingKeys.AisCogVectorMinutes, stored);
+        var svc = new AppSettingsService(kv);
+
+        await svc.InitializeAsync();
+
+        await Assert.That(svc.OwnCogVectorMinutes).IsEqualTo(expected);
+        await Assert.That(svc.AisCogVectorMinutes).IsEqualTo(expected);
+    }
+
+    [Test]
+    [Arguments("500", 120)]
+    [Arguments("0", 1)]
+    [Arguments("-3", 1)]
+    [Arguments("15", 15)]
+    [Arguments("2.9", 2)]
+    public async Task SnoozeDuration_StoredOutOfRange_LoadClamped(string stored, int expected)
+    {
+        var kv = new InMemoryKv();
+        await kv.SetAsync(SettingKeys.SnoozeDurationMinutes, stored);
+        var svc = new AppSettingsService(kv);
+
+        await svc.InitializeAsync();
+
+        await Assert.That(svc.SnoozeDurationMinutes).IsEqualTo(expected);
+    }
+
+    [Test]
+    public async Task NonNegativeSettings_StoredNegative_LoadAsZero()
+    {
+        var kv = new InMemoryKv();
+        await kv.SetAsync(SettingKeys.WindShiftMinTrueWindSpeed, "-4");
+        await kv.SetAsync(SettingKeys.AnchorAutoRadiusSafetyMargin, "-1");
+        await kv.SetAsync(SettingKeys.AnchorChainLengthMeters, "-20");
+        var svc = new AppSettingsService(kv);
+
+        await svc.InitializeAsync();
+
+        await Assert.That(svc.WindShiftMinTrueWindSpeed).IsEqualTo(0.0);
+        await Assert.That(svc.AnchorAutoRadiusSafetyMargin).IsEqualTo(0.0);
+        await Assert.That(svc.AnchorChainLengthMeters).IsEqualTo(0.0);
+    }
+
+    [Test]
+    public async Task WeatherOverlayOpacity_StoredOutOfRange_LoadClampedToTheSliderRange()
+    {
+        var kv = new InMemoryKv();
+        await kv.SetAsync(SettingKeys.WeatherOverlayOpacity, "12.5");
+        var high = new AppSettingsService(kv);
+        await high.InitializeAsync();
+
+        await kv.SetAsync(SettingKeys.WeatherOverlayOpacity, "-1");
+        var low = new AppSettingsService(kv);
+        await low.InitializeAsync();
+
+        await Assert.That(high.WeatherOverlayOpacity).IsEqualTo(OnaPlotter.Utilities.WeatherOpacity.MaxFraction);
+        await Assert.That(low.WeatherOverlayOpacity).IsEqualTo(OnaPlotter.Utilities.WeatherOpacity.MinFraction);
+    }
+
+    [Test]
+    public async Task DistanceAndRangeRings_StoredNonFinite_LoadAsUsableValues()
+    {
+        var kv = new InMemoryKv();
+        await kv.SetAsync(SettingKeys.DistanceRingsBaseNm, "NaN");
+        await kv.SetAsync(SettingKeys.DistanceRingsCount, "NaN");
+        await kv.SetAsync(SettingKeys.RadarRangeRingsCount, "NaN");
+        var svc = new AppSettingsService(kv);
+
+        await svc.InitializeAsync();
+
+        await Assert.That(svc.DistanceRingsBaseNm).IsEqualTo(0.5);
+        await Assert.That(svc.DistanceRingsCount).IsEqualTo(1);
+        await Assert.That(svc.RadarRangeRingsCount).IsEqualTo(1);
+    }
+
     private sealed class InMemoryKv : IKeyValueStore
     {
         private readonly Dictionary<string, string> _d = [];

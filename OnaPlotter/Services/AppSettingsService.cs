@@ -24,37 +24,226 @@ public sealed class AppSettingsService : IAppSettings
     // doesn't fight an intentional desktop -> phone resize.
     private bool _sidebarCollapsedExplicit;
 
-    public bool NightMode { get; private set; }
-    public bool NightModeAuto { get; private set; } = false;
+    /// <summary>One persisted preference: its key, how stored text becomes
+    /// a value, and how a value is stored. <c>normalize</c> runs on load
+    /// AND on every set, so a corrupt stored value is pinned into range
+    /// exactly like a bad caller.</summary>
+    private sealed class Setting<T> : IPersisted
+    {
+        private readonly Func<string?, T> _parse;
+        private readonly Func<T, string> _format;
+        private readonly Func<T, T> _normalize;
+
+        public Setting(string key, T initial, Func<string?, T> parse, Func<T, string> format, Func<T, T>? normalize)
+        {
+            Key = key;
+            _parse = parse;
+            _format = format;
+            _normalize = normalize ?? (v => v);
+            Value = _normalize(initial);
+        }
+
+        public string Key { get; }
+        public T Value { get; private set; }
+        public string Stored => _format(Value);
+        public void Assign(T value) => Value = _normalize(value);
+        public void Load(string? stored) => Assign(_parse(stored));
+    }
+
+    private interface IPersisted
+    {
+        string Key { get; }
+        void Load(string? stored);
+    }
+
+    /// <summary>Descriptor factories, one per storage shape. Missing or
+    /// unparseable stored text yields the default.</summary>
+    private static class Setting
+    {
+        /// <summary>Stored as "true" / "false"; any other stored text reads
+        /// as false rather than the default.</summary>
+        public static Setting<bool> Bool(string key, bool @default) => new(key, @default,
+            s => s is null ? @default : s == "true",
+            v => v ? "true" : "false", null);
+
+        /// <summary><paramref name="format"/> is a numeric format string
+        /// ("F1", "F2"); null stores the shortest round-trip text.</summary>
+        public static Setting<double> Number(string key, double @default,
+            Func<double, double>? normalize = null, string? format = null) => new(key, @default,
+            s => ParseNumber(s, @default),
+            v => v.ToString(format, CultureInfo.InvariantCulture), normalize);
+
+        /// <summary>Stored as an integer but read through the double parser
+        /// (truncating), so a hand-edited "2.7" still loads.</summary>
+        public static Setting<int> Whole(string key, int @default,
+            Func<int, int>? normalize = null) => new(key, @default,
+            s => (int)ParseNumber(s, @default),
+            v => v.ToString(CultureInfo.InvariantCulture), normalize);
+
+        public static Setting<string> Text(string key, string @default,
+            Func<string, string>? normalize = null) => new(key, @default,
+            s => s ?? @default,
+            v => v, normalize);
+
+        private static double ParseNumber(string? stored, double fallback)
+            => stored is not null
+                && double.TryParse(stored, NumberStyles.Float, CultureInfo.InvariantCulture, out double d)
+                ? d : fallback;
+    }
+
+    /// <summary>Every descriptor Initialize loads generically. Settings with
+    /// their own load rules (legacy fallbacks, cross-field invariants) are
+    /// loaded explicitly in <see cref="InitializeAsync"/>.</summary>
+    private IPersisted[] Persisted() =>
+    [
+        _nightMode,
+        _nightModeAuto,
+        _chartsSeeded,
+        _theme,
+        _windHeroMode,
+        _mapOrientation,
+        _shipOrientationSource,
+        _followBoat,
+        _laylinesVisible,
+        _shipLinesVisible,
+        _serverTrackVisible,
+        _serverTrackDuration,
+        _serverTrackResolution,
+        _serverTrackWithinBounds,
+        _atonsVisible,
+        _aisLabelsVisible,
+        _weatherOverlayOpacity,
+        _chartContrastPercent,
+        _chartSaturationPercent,
+        _chartBrightnessPercent,
+        _chartUpscaleEnabled,
+        _chartUpscaleLevels,
+        _depthAlarmThreshold,
+        _cpaDebounceSeconds,
+        _windShiftAlarmThreshold,
+        _windShiftLookbackMinutes,
+        _windShiftMinTrueWindSpeed,
+        _anchorTideSafetyMargin,
+        _anchorAutoRadiusSafetyMargin,
+        _manualAnchorRadiusMeters,
+        _anchorChainLengthMeters,
+        _deadmanTimeoutMinutes,
+        _deadmanNightMinutes,
+        _snoozeDurationMinutes,
+        _bigType,
+        _expandAllHud,
+        _sailingMode,
+        _ownVesselType,
+        _keepScreenAwake,
+        _serverSideApproachAlarms,
+        _showKeyboardHints,
+        _showAutopilotHud,
+        _showRadarHud,
+        _showDefaultHud,
+        _ownCogVectorMinutes,
+        _aisCogVectorMinutes,
+        _tideVisible,
+        _distanceRingsEnabled,
+        _distanceRingsBaseNm,
+        _distanceRingsCount,
+        _radarRangeRingsEnabled,
+        _radarRangeRingsCount,
+        _radarUseWireBearing,
+        _radarBearingCorrectionDeg,
+        _preferMagneticHeading,
+        _autoAdvanceWaypoints,
+        _arrivalCircleMeters,
+        _marinePoiFuelEnabled,
+        _marinePoiMarinaEnabled,
+        _marinePoiHarbourEnabled,
+        _marinePoiMooringEnabled,
+        _marinePoiSlipwayEnabled,
+        _marinePoiPierEnabled,
+        _marinePoiChandleryEnabled,
+        _marinePoiDrinkingWaterEnabled,
+        _marinePoiPumpOutEnabled,
+        _standaloneMode,
+        _standaloneServerUrl,
+        _rememberSession,
+        _rememberPassword,
+        _storedUsername,
+        _storedPassword
+    ];
+
+    private Task Persist<T>(Setting<T> setting) => Save(setting.Key, setting.Stored);
+
+    /// <summary>Normalise, store and fan out <see cref="OnSettingsChanged"/>.</summary>
+    private async Task SetAsync<T>(Setting<T> setting, T value)
+    {
+        setting.Assign(value);
+        await Persist(setting);
+        OnSettingsChanged?.Invoke();
+    }
+
+    /// <summary>Normalise and store without raising
+    /// <see cref="OnSettingsChanged"/>. For values no other subscriber
+    /// reads live.</summary>
+    private async Task SetQuietAsync<T>(Setting<T> setting, T value)
+    {
+        setting.Assign(value);
+        await Persist(setting);
+    }
+
+    public bool NightMode => _nightMode.Value;
+    private readonly Setting<bool> _nightMode = Setting.Bool(SettingKeys.NightMode, false);
+    public bool NightModeAuto => _nightModeAuto.Value;
+    private readonly Setting<bool> _nightModeAuto = Setting.Bool(SettingKeys.NightModeAuto, false);
     public DateTime? LastManualNightToggleUtc { get; private set; }
     public string? LastManualNightOverrideSunCluster { get; private set; }
-    public bool ChartsSeeded { get; private set; }
-    public string Theme { get; private set; } = "system";
-    public string WindHeroMode { get; private set; } = "apparent";
-    public string MapOrientation { get; private set; } = "north";
-    public string ShipOrientationSource { get; private set; } =
-        OnaPlotter.Utilities.ShipOrientationResolver.DefaultSetting;
-    public bool FollowBoat { get; private set; } = true;
-    public bool LaylinesVisible { get; private set; }
+    public bool ChartsSeeded => _chartsSeeded.Value;
+    private readonly Setting<bool> _chartsSeeded = Setting.Bool(SettingKeys.ChartsSeeded, false);
+    public string Theme => _theme.Value;
+    private readonly Setting<string> _theme = Setting.Text(
+        SettingKeys.Theme, "system", normalize: NormalizeTheme);
+    public string WindHeroMode => _windHeroMode.Value;
+    private readonly Setting<string> _windHeroMode = Setting.Text(
+        SettingKeys.WindHeroMode, "apparent", normalize: NormalizeWindHeroMode);
+    public string MapOrientation => _mapOrientation.Value;
+    private readonly Setting<string> _mapOrientation = Setting.Text(SettingKeys.MapOrientation, "north");
+    public string ShipOrientationSource => _shipOrientationSource.Value;
+    // Normalise via the resolver so an unknown string from a
+    // forged dropdown call doesn't break later round-trips.
+    private readonly Setting<string> _shipOrientationSource = Setting.Text(
+        SettingKeys.ShipOrientationSource,
+        OnaPlotter.Utilities.ShipOrientationResolver.DefaultSetting,
+        normalize: v => OnaPlotter.Utilities.ShipOrientationResolver.ToSetting(OnaPlotter.Utilities.ShipOrientationResolver.Parse(v)));
+    public bool FollowBoat => _followBoat.Value;
+    private readonly Setting<bool> _followBoat = Setting.Bool(SettingKeys.FollowBoat, true);
+    public bool LaylinesVisible => _laylinesVisible.Value;
+    private readonly Setting<bool> _laylinesVisible = Setting.Bool(SettingKeys.LaylinesVisible, false);
     /// <summary>Master gate for own-ship indicator lines on the chart
     /// (COG vector, tidal current arrow, laylines). Default true so
     /// existing installs see the lines they always saw.</summary>
-    public bool ShipLinesVisible { get; private set; } = true;
+    public bool ShipLinesVisible => _shipLinesVisible.Value;
+    private readonly Setting<bool> _shipLinesVisible = Setting.Bool(SettingKeys.ShipLinesVisible, true);
 
     /// <summary>Master ship-track visibility (gates BOTH the local
     /// in-memory SOG trail AND the SignalK history polyline; see
     /// <see cref="IMapDisplaySettings.ServerTrackVisible"/> for the
     /// unification rationale). Default true.</summary>
-    public bool ServerTrackVisible { get; private set; } = true;
+    public bool ServerTrackVisible => _serverTrackVisible.Value;
+    private readonly Setting<bool> _serverTrackVisible = Setting.Bool(SettingKeys.ServerTrackVisible, true);
     /// <summary>Helm-picked window (1h..7d / all). Default "all".</summary>
-    public string ServerTrackDuration { get; private set; } = "all";
+    public string ServerTrackDuration => _serverTrackDuration.Value;
+    private readonly Setting<string> _serverTrackDuration = Setting.Text(
+        SettingKeys.ServerTrackDuration, "all", normalize: NormalizeServerTrackDuration);
     /// <summary>Sampling resolution (1s..4h). Default "15m" so the
     /// "all time" window stays loadable on first paint.</summary>
-    public string ServerTrackResolution { get; private set; } = "15m";
+    public string ServerTrackResolution => _serverTrackResolution.Value;
+    private readonly Setting<string> _serverTrackResolution = Setting.Text(
+        SettingKeys.ServerTrackResolution, "15m", normalize: NormalizeServerTrackResolution);
     /// <summary>Clip the rendered polyline to the current viewport
     /// (re-clipped on pan/zoom without a re-fetch). Default true.</summary>
-    public bool ServerTrackWithinBounds { get; private set; } = true;
-    public bool AtonsVisible { get; private set; } = true;
+    public bool ServerTrackWithinBounds => _serverTrackWithinBounds.Value;
+    private readonly Setting<bool> _serverTrackWithinBounds = Setting.Bool(
+        SettingKeys.ServerTrackWithinBounds, true);
+    public bool AtonsVisible => _atonsVisible.Value;
+    private readonly Setting<bool> _atonsVisible = Setting.Bool(SettingKeys.AtonsVisible, true);
     /// <summary>AIS vessel name labels (per-target tooltips on the chart).
     /// Default true. Independent of <see cref="HarborMode"/>: harbor mode
     /// also suppresses labels for as long as it's on, but the helm-set
@@ -62,16 +251,42 @@ public sealed class AppSettingsService : IAppSettings
     /// rule: labels render only when <c>AisLabelsVisible AND
     /// !HarborMode</c>. Toggling harbor mode off does NOT silently
     /// resurrect labels the helm previously hid via this setting.</summary>
-    public bool AisLabelsVisible { get; private set; } = true;
-    public double WeatherOverlayOpacity { get; private set; } = OnaPlotter.Utilities.WeatherOpacity.DefaultFraction;
+    public bool AisLabelsVisible => _aisLabelsVisible.Value;
+    private readonly Setting<bool> _aisLabelsVisible = Setting.Bool(SettingKeys.AisLabelsVisible, true);
+    public double WeatherOverlayOpacity => _weatherOverlayOpacity.Value;
+    // Floor / ceiling pulled from the shared WeatherOpacity helper
+    // so the slider, the service, and the JS leaflet layer all
+    // share one source of truth. Belt-and-suspenders clamp here
+    // protects against a bad caller / future API path that
+    // bypasses the slider's min/max attributes.
+    private readonly Setting<double> _weatherOverlayOpacity = Setting.Number(
+        SettingKeys.WeatherOverlayOpacity,
+        OnaPlotter.Utilities.WeatherOpacity.DefaultFraction,
+        normalize: OnaPlotter.Utilities.WeatherOpacity.ClampFraction);
     /// <summary>Chart-display CSS filter percentages - helm boosts /
     /// dampens contrast / saturation / brightness from the Layers panel
     /// to read washed-out raster charts. Defaults are identity (100 =
     /// no filter); see <see cref="OnaPlotter.Utilities.ChartFilter"/>
     /// for clamp limits + format.</summary>
-    public int ChartContrastPercent { get; private set; } = OnaPlotter.Utilities.ChartFilter.DefaultPercent;
-    public int ChartSaturationPercent { get; private set; } = OnaPlotter.Utilities.ChartFilter.DefaultPercent;
-    public int ChartBrightnessPercent { get; private set; } = OnaPlotter.Utilities.ChartFilter.DefaultPercent;
+    public int ChartContrastPercent => _chartContrastPercent.Value;
+    // Same belt-and-suspenders pattern as the other clamp-on-set
+    // settings. The slider's min/max attributes are the helm's
+    // fence; this clamp catches a JS-bridge override or a future
+    // programmatic caller bypassing it.
+    private readonly Setting<int> _chartContrastPercent = Setting.Whole(
+        SettingKeys.ChartContrastPercent,
+        OnaPlotter.Utilities.ChartFilter.DefaultPercent,
+        normalize: OnaPlotter.Utilities.ChartFilter.ClampContrastSaturation);
+    public int ChartSaturationPercent => _chartSaturationPercent.Value;
+    private readonly Setting<int> _chartSaturationPercent = Setting.Whole(
+        SettingKeys.ChartSaturationPercent,
+        OnaPlotter.Utilities.ChartFilter.DefaultPercent,
+        normalize: OnaPlotter.Utilities.ChartFilter.ClampContrastSaturation);
+    public int ChartBrightnessPercent => _chartBrightnessPercent.Value;
+    private readonly Setting<int> _chartBrightnessPercent = Setting.Whole(
+        SettingKeys.ChartBrightnessPercent,
+        OnaPlotter.Utilities.ChartFilter.DefaultPercent,
+        normalize: OnaPlotter.Utilities.ChartFilter.ClampBrightness);
     // Defaults ON so a fresh helm gets readable tiles past a chart's
     // native max out of the box. Without this, a chart that declares
     // (or quietly downshifts to) maxzoom 16 leaves the helm staring at
@@ -82,7 +297,7 @@ public sealed class AppSettingsService : IAppSettings
     // = false so the basemap doesn't compete with a GPU-upscaled SK
     // chart on top - field-tested as visual flicker.
     //
-    // Asymmetry vs the default-on flip: LoadBool below treats any
+    // Asymmetry vs the default-on flip: Setting.Bool treats any
     // stored value other than the literal "true" as false (it doesn't
     // fall back to the default for non-"true" values). So a corrupted
     // localStorage entry (older build with a different write format,
@@ -91,8 +306,16 @@ public sealed class AppSettingsService : IAppSettings
     // default-on. Pinned by AppSettingsServiceTests.ChartUpscaleEnabled
     // _GarbageStored_LoadsAsFalse: corruption-path helms can recover
     // by toggling the master flag in Settings.
-    public bool ChartUpscaleEnabled { get; private set; } = true;
-    public int ChartUpscaleLevels { get; private set; } = OnaPlotter.Utilities.ChartUpscale.DefaultLevels;
+    public bool ChartUpscaleEnabled => _chartUpscaleEnabled.Value;
+    private readonly Setting<bool> _chartUpscaleEnabled = Setting.Bool(SettingKeys.ChartUpscaleEnabled, true);
+    public int ChartUpscaleLevels => _chartUpscaleLevels.Value;
+    // Clamp via the shared helper so a future caller / corrupted
+    // localStorage value can't drive the JS-side decorator out of
+    // its tested 0..3 range.
+    private readonly Setting<int> _chartUpscaleLevels = Setting.Whole(
+        SettingKeys.ChartUpscaleLevels,
+        OnaPlotter.Utilities.ChartUpscale.DefaultLevels,
+        normalize: OnaPlotter.Utilities.ChartUpscale.ClampLevels);
     /// <summary>In-memory only - never persisted, never restored.
     /// See IAppSettings.HarborMode for the rationale (a forgotten
     /// Harbor mode silently riding into open water is the worst-case
@@ -113,7 +336,9 @@ public sealed class AppSettingsService : IAppSettings
     //                           short-gust false positives.
     //   WIND min TWS    5 kn:   suppresses wobble in light air where
     //                           TWD is noisy.
-    public double DepthAlarmThreshold { get; private set; } = 2.0;
+    public double DepthAlarmThreshold => _depthAlarmThreshold.Value;
+    private readonly Setting<double> _depthAlarmThreshold = Setting.Number(
+        SettingKeys.DepthAlarmThreshold, 2.0, format: "F1");
     /// <summary>Inner / strict CPA-tier distance (nm). Tighter than the
     /// awareness tier so the audio klaxon only fires for genuinely
     /// close encounters. Default 0.1 nm picked by helm field test as
@@ -138,32 +363,75 @@ public sealed class AppSettingsService : IAppSettings
     /// the audible alarm fires. Default 5 s so a single-sample false
     /// positive (radar / AIS jitter at the projection boundary) doesn't
     /// ring the klaxon. 0 disables debouncing.</summary>
-    public double CpaDebounceSeconds { get; private set; } = 5.0;
-    public double WindShiftAlarmThreshold { get; private set; } = 30.0;
-    public double WindShiftLookbackMinutes { get; private set; } = 10.0;
-    public double WindShiftMinTrueWindSpeed { get; private set; } = 5.0;
+    public double CpaDebounceSeconds => _cpaDebounceSeconds.Value;
+    private readonly Setting<double> _cpaDebounceSeconds = Setting.Number(
+        SettingKeys.CpaDebounceSeconds, 5.0, normalize: v => Math.Clamp(v, 0.0, 60.0), format: "F1");
+    public double WindShiftAlarmThreshold => _windShiftAlarmThreshold.Value;
+    private readonly Setting<double> _windShiftAlarmThreshold = Setting.Number(
+        SettingKeys.WindShiftAlarmThreshold, 30.0, format: "F1");
+    public double WindShiftLookbackMinutes => _windShiftLookbackMinutes.Value;
+    private readonly Setting<double> _windShiftLookbackMinutes = Setting.Number(
+        SettingKeys.WindShiftLookbackMinutes, 10.0, format: "F1");
+    public double WindShiftMinTrueWindSpeed => _windShiftMinTrueWindSpeed.Value;
+    // Clamp at 0 (negative TWS is meaningless and would re-introduce
+    // the noise the gate was added to prevent). No upper clamp - a
+    // user who sets 50 kn has effectively disabled the alarm, which
+    // is a legitimate choice.
+    private readonly Setting<double> _windShiftMinTrueWindSpeed = Setting.Number(
+        SettingKeys.WindShiftMinTrueWindSpeed, 5.0, normalize: v => Math.Max(0, v), format: "F1");
     // Boat draft is read from SignalK (design.draft.current / .maximum)
     // via NavigationData.DraftFromSignalK; no manual override here.
-    public double AnchorTideSafetyMargin { get; private set; } = 0.5;
+    public double AnchorTideSafetyMargin => _anchorTideSafetyMargin.Value;
+    private readonly Setting<double> _anchorTideSafetyMargin = Setting.Number(
+        SettingKeys.AnchorTideSafetyMargin, 0.5, format: "F2");
     /// <summary>Pad added on top of swing + tide-drop in the
     /// auto-anchor-radius preview. 5 m is the helm-tested cushion;
     /// raise for soft-mud anchorages.</summary>
-    public double AnchorAutoRadiusSafetyMargin { get; private set; } = 5.0;
-    public double ManualAnchorRadiusMeters { get; private set; } = 30.0;
+    public double AnchorAutoRadiusSafetyMargin => _anchorAutoRadiusSafetyMargin.Value;
+    // Clamp at 0; negative would let the auto preview round
+    // BELOW the swing + tide-drop sum, which defeats the
+    // purpose of the pad. Helm input box should already cap
+    // at sensible ranges; this is the model-level guard.
+    private readonly Setting<double> _anchorAutoRadiusSafetyMargin = Setting.Number(
+        SettingKeys.AnchorAutoRadiusSafetyMargin, 5.0, normalize: v => Math.Max(0, v), format: "F1");
+    public double ManualAnchorRadiusMeters => _manualAnchorRadiusMeters.Value;
+    private readonly Setting<double> _manualAnchorRadiusMeters = Setting.Number(
+        SettingKeys.ManualAnchorRadiusMeters, 30.0, format: "F1");
     /// <summary>Helm-entered deployed rode length (metres). 0 = not
     /// entered; the Auto radius then ignores the chain term.</summary>
-    public double AnchorChainLengthMeters { get; private set; } = 0.0;
-    public double DeadmanTimeoutMinutes { get; private set; } = 0.0;
-    public double DeadmanNightMinutes { get; private set; } = 15.0;
-    public int SnoozeDurationMinutes { get; private set; } = 10;
-    public bool BigType { get; private set; } = false;
-    public bool ExpandAllHud { get; private set; } = false;
-    public string SailingMode { get; private set; } = "cruise";
+    public double AnchorChainLengthMeters => _anchorChainLengthMeters.Value;
+    // Clamp at 0: a negative rode length is meaningless and would
+    // feed a NaN into the chain projection's sqrt. The helm input
+    // is a length, so 0 ("none entered") is the floor.
+    private readonly Setting<double> _anchorChainLengthMeters = Setting.Number(
+        SettingKeys.AnchorChainLengthMeters, 0.0, normalize: v => Math.Max(0, v), format: "F1");
+    public double DeadmanTimeoutMinutes => _deadmanTimeoutMinutes.Value;
+    private readonly Setting<double> _deadmanTimeoutMinutes = Setting.Number(
+        SettingKeys.DeadmanTimeoutMinutes, 0.0, format: "F1");
+    public double DeadmanNightMinutes => _deadmanNightMinutes.Value;
+    private readonly Setting<double> _deadmanNightMinutes = Setting.Number(
+        SettingKeys.DeadmanNightMinutes, 15.0, format: "F1");
+    public int SnoozeDurationMinutes => _snoozeDurationMinutes.Value;
+    // Clamp 1 min minimum (zero would snooze forever - that's dismiss).
+    // Upper bound 120 to keep a runaway value from locking an alarm
+    // quiet for days after a power cycle.
+    private readonly Setting<int> _snoozeDurationMinutes = Setting.Whole(
+        SettingKeys.SnoozeDurationMinutes, 10, normalize: v => Math.Clamp(v, 1, 120));
+    public bool BigType => _bigType.Value;
+    private readonly Setting<bool> _bigType = Setting.Bool(SettingKeys.BigType, false);
+    public bool ExpandAllHud => _expandAllHud.Value;
+    private readonly Setting<bool> _expandAllHud = Setting.Bool(SettingKeys.ExpandAllHud, false);
+    public string SailingMode => _sailingMode.Value;
+    private readonly Setting<string> _sailingMode = Setting.Text(
+        SettingKeys.SailingMode, "cruise", normalize: NormalizeSailingMode);
     /// <summary>Own propulsion category for COLREGS Rule 18 priority.
     /// "sail" (default) or "power". Stored as a string rather than an
     /// enum so persistence + the Settings select bind directly.</summary>
-    public string OwnVesselType { get; private set; } = "sail";
-    public bool KeepScreenAwake { get; private set; } = true;
+    public string OwnVesselType => _ownVesselType.Value;
+    private readonly Setting<string> _ownVesselType = Setting.Text(
+        SettingKeys.OwnVesselType, "sail", normalize: NormalizeOwnVesselType);
+    public bool KeepScreenAwake => _keepScreenAwake.Value;
+    private readonly Setting<bool> _keepScreenAwake = Setting.Bool(SettingKeys.KeepScreenAwake, true);
     /// <summary>Default true: prefer server-side
     /// <c>notifications.navigation.*</c> from signalk-course-data
     /// over the client-side WaypointApproach alarm. Helms with a
@@ -172,23 +440,42 @@ public sealed class AppSettingsService : IAppSettings
     /// the client <c>WaypointApproachAlarmRule</c> takes over, also
     /// using the server's <c>navigation.course.arrivalCircle</c> as
     /// the threshold so client and server agree on the boundary.</summary>
-    public bool ServerSideApproachAlarms { get; private set; } = true;
-    public bool ShowKeyboardHints { get; private set; } = false;
-    public bool ShowAutopilotHud { get; private set; } = false;
-    public bool ShowRadarHud { get; private set; } = false;
+    public bool ServerSideApproachAlarms => _serverSideApproachAlarms.Value;
+    private readonly Setting<bool> _serverSideApproachAlarms = Setting.Bool(
+        SettingKeys.ServerSideApproachAlarms, true);
+    public bool ShowKeyboardHints => _showKeyboardHints.Value;
+    private readonly Setting<bool> _showKeyboardHints = Setting.Bool(SettingKeys.ShowKeyboardHints, false);
+    public bool ShowAutopilotHud => _showAutopilotHud.Value;
+    private readonly Setting<bool> _showAutopilotHud = Setting.Bool(SettingKeys.ShowAutopilotHud, false);
+    public bool ShowRadarHud => _showRadarHud.Value;
+    private readonly Setting<bool> _showRadarHud = Setting.Bool(SettingKeys.ShowRadarHud, false);
     // Defaults true so existing installs see the same four corner
     // panels they always did; toggle is for helms running external
     // instruments or wanting a clean screenshot.
-    public bool ShowDefaultHud { get; private set; } = true;
+    public bool ShowDefaultHud => _showDefaultHud.Value;
+    private readonly Setting<bool> _showDefaultHud = Setting.Bool(SettingKeys.ShowDefaultHud, true);
     /// <summary>How far ahead own-vessel COG vector projects (minutes).
     /// Default 10 covers harbour entry + coastal pilotage; helms doing
     /// long passages bump to 20-30 for forward-planning, helms in
     /// thick traffic shorten to 3-5 to declutter their own predictor.</summary>
-    public double OwnCogVectorMinutes { get; private set; } = 10.0;
+    public double OwnCogVectorMinutes => _ownCogVectorMinutes.Value;
+    // Clamp to a sensible range. 1 min is the floor where the
+    // dashed predictor reads as a vector at all; 60 min is the
+    // ceiling beyond which the line crosses the chart's pan
+    // budget and the helm loses spatial context. Storage
+    // corruption / a malformed import lands at the default.
+    private readonly Setting<double> _ownCogVectorMinutes = Setting.Number(
+        SettingKeys.OwnCogVectorMinutes,
+        10.0,
+        normalize: v => Math.Clamp(double.IsFinite(v) ? v : 10.0, 1.0, 60.0));
     /// <summary>Same look-ahead horizon for AIS targets. Independent
     /// of own-vessel so a busy-harbour helm can shorten target vectors
     /// without losing their own predictor's reach.</summary>
-    public double AisCogVectorMinutes { get; private set; } = 10.0;
+    public double AisCogVectorMinutes => _aisCogVectorMinutes.Value;
+    private readonly Setting<double> _aisCogVectorMinutes = Setting.Number(
+        SettingKeys.AisCogVectorMinutes,
+        10.0,
+        normalize: v => Math.Clamp(double.IsFinite(v) ? v : 10.0, 1.0, 60.0));
 
     /// <summary>Helm-configured "AIS inactive" threshold in minutes. When a
     /// target's last AIS-evidence delta is older than this, the chart fades
@@ -206,37 +493,59 @@ public sealed class AppSettingsService : IAppSettings
 
     /// <summary>Show the tide row + extras on the depth HUD +
     /// Dashboard. Default true.</summary>
-    public bool TideVisible { get; private set; } = true;
+    public bool TideVisible => _tideVisible.Value;
+    private readonly Setting<bool> _tideVisible = Setting.Bool(SettingKeys.TideVisible, true);
 
     /// <summary>Helm-configured distance-ring overlay enabled. Default
     /// false (opt-in from Settings -> Display). Independent of the
     /// radar-range-rings flag below and of any alarm setting.</summary>
-    public bool DistanceRingsEnabled { get; private set; } = false;
+    public bool DistanceRingsEnabled => _distanceRingsEnabled.Value;
+    private readonly Setting<bool> _distanceRingsEnabled = Setting.Bool(
+        SettingKeys.DistanceRingsEnabled, false);
     /// <summary>Base distance-ring radius in nautical miles. Default
     /// 0.5 nm; Nth ring sits at BaseNm × N. Clamped 0.05..50 on the
     /// setter.</summary>
-    public double DistanceRingsBaseNm { get; private set; } = 0.5;
+    public double DistanceRingsBaseNm => _distanceRingsBaseNm.Value;
+    // NaN / negative / zero would collapse every ring to a single
+    // point or vanish them entirely; pin into the supported range
+    // so a corrupted bind / paste lands on a usable value.
+    private readonly Setting<double> _distanceRingsBaseNm = Setting.Number(
+        SettingKeys.DistanceRingsBaseNm,
+        0.5,
+        normalize: v => Math.Clamp(double.IsFinite(v) ? v : 0.5, 0.05, 50.0),
+        format: "F2");
     /// <summary>How many concentric distance rings to draw. Default
     /// 4 (so the default config draws rings at 0.5/1.0/1.5/2.0 nm).
     /// Clamped 1..8 on the setter.</summary>
-    public int DistanceRingsCount { get; private set; } = 4;
+    public int DistanceRingsCount => _distanceRingsCount.Value;
+    private readonly Setting<int> _distanceRingsCount = Setting.Whole(
+        SettingKeys.DistanceRingsCount, 4, normalize: v => Math.Clamp(v, 1, 8));
 
     /// <summary>Radar range-ring overlay enabled. Default true.</summary>
-    public bool RadarRangeRingsEnabled { get; private set; } = true;
+    public bool RadarRangeRingsEnabled => _radarRangeRingsEnabled.Value;
+    private readonly Setting<bool> _radarRangeRingsEnabled = Setting.Bool(
+        SettingKeys.RadarRangeRingsEnabled, true);
     /// <summary>How many concentric range rings to draw. Default 4
     /// (quarter / half / three-quarter / full radar range).</summary>
-    public int RadarRangeRingsCount { get; private set; } = 4;
+    public int RadarRangeRingsCount => _radarRangeRingsCount.Value;
+    private readonly Setting<int> _radarRangeRingsCount = Setting.Whole(
+        SettingKeys.RadarRangeRingsCount, 4, normalize: v => Math.Clamp(v, 1, 8));
     /// <summary>Trust the wire spoke <c>bearing</c> field as true-north
     /// (opt-in). Default false; see <see cref="IMapDisplaySettings.RadarUseWireBearing"/>
     /// for why most installs should leave it off.</summary>
-    public bool RadarUseWireBearing { get; private set; } = false;
+    public bool RadarUseWireBearing => _radarUseWireBearing.Value;
+    private readonly Setting<bool> _radarUseWireBearing = Setting.Bool(SettingKeys.RadarUseWireBearing, false);
     /// <summary>Helm-side bearing trim in degrees, added to every spoke's
     /// canvas index on top of the radar's installation
     /// <c>bearingAlignment</c>. Default 0; clamped to -180..180. See
     /// <see cref="IMapDisplaySettings.RadarBearingCorrectionDeg"/>.</summary>
-    public double RadarBearingCorrectionDeg { get; private set; } = 0.0;
+    public double RadarBearingCorrectionDeg => _radarBearingCorrectionDeg.Value;
+    private readonly Setting<double> _radarBearingCorrectionDeg = Setting.Number(
+        SettingKeys.RadarBearingCorrection, 0.0, normalize: v => Math.Clamp(v, -180.0, 180.0));
 
-    public bool PreferMagneticHeading { get; private set; } = false;
+    public bool PreferMagneticHeading => _preferMagneticHeading.Value;
+    private readonly Setting<bool> _preferMagneticHeading = Setting.Bool(
+        SettingKeys.PreferMagneticHeading, false);
 
     /// <summary>Helm-picked source for the HUD numerical COG
     /// readout. Persisted as <c>cogReadoutSource.v1</c>. The legacy
@@ -244,22 +553,33 @@ public sealed class AppSettingsService : IAppSettings
     /// (true when the pick is a Magnetic variant) so the existing
     /// reader chain (NavigationData.CourseOverGround, alarm rules)
     /// keeps working without touching every read site.</summary>
-    public string CogReadoutSource { get; private set; } =
-        OnaPlotter.Utilities.CogSourceResolver.DefaultSetting;
+    public string CogReadoutSource => _cogReadoutSource.Value;
+    private readonly Setting<string> _cogReadoutSource = Setting.Text(
+        SettingKeys.CogReadoutSource, OnaPlotter.Utilities.CogSourceResolver.DefaultSetting,
+        normalize: CanonicalCogSource);
 
     /// <summary>Helm-picked source for the on-map own-COG vector.
     /// Independent of <see cref="CogReadoutSource"/>: a helm doing
     /// close-quarter manoeuvres can pick a realtime variant for the
     /// vector while keeping the HUD readout smoothed.</summary>
-    public string OwnCogVectorSource { get; private set; } =
-        OnaPlotter.Utilities.CogSourceResolver.DefaultSetting;
+    public string OwnCogVectorSource => _ownCogVectorSource.Value;
+    private readonly Setting<string> _ownCogVectorSource = Setting.Text(
+        SettingKeys.OwnCogVectorSource, OnaPlotter.Utilities.CogSourceResolver.DefaultSetting,
+        normalize: CanonicalCogSource);
+
+    // Round-trip through the parser so an unknown / corrupted value falls
+    // back to the safe default rather than poisoning the persisted setting.
+    private static string CanonicalCogSource(string value)
+        => OnaPlotter.Utilities.CogSourceResolver.ToSetting(
+            OnaPlotter.Utilities.CogSourceResolver.Parse(value));
 
     /// <summary>Boolean view of the True/Magnetic axis of
     /// <see cref="CogReadoutSource"/>; set by changing that source.</summary>
     public bool PreferMagneticCourse =>
         OnaPlotter.Utilities.CogSourceResolver.IsMagnetic(
             OnaPlotter.Utilities.CogSourceResolver.Parse(CogReadoutSource));
-    public bool AutoAdvanceWaypoints { get; private set; } = true;
+    public bool AutoAdvanceWaypoints => _autoAdvanceWaypoints.Value;
+    private readonly Setting<bool> _autoAdvanceWaypoints = Setting.Bool(SettingKeys.AutoAdvanceWaypoints, true);
     /// <summary>Helm-configured arrival-circle radius (metres) sent
     /// to the SignalK v2 Course API on Set-Destination /
     /// Set-Active-Route requests so the server adopts it as the
@@ -270,22 +590,35 @@ public sealed class AppSettingsService : IAppSettings
     /// advance) keep using NavigationData.CourseArrivalCircleMeters
     /// (sourced from the SK delta) so a peer plotter changing it
     /// mid-passage still propagates here.</summary>
-    public double ArrivalCircleMeters { get; private set; } = 50.0;
+    public double ArrivalCircleMeters => _arrivalCircleMeters.Value;
+    private readonly Setting<double> _arrivalCircleMeters = Setting.Number(
+        SettingKeys.ArrivalCircleMeters, 50.0, normalize: v => Math.Clamp(v, 5.0, 1000.0));
 
     // OSM marine-POI overlay categories. All default false so a fresh
     // helm doesn't trigger Overpass round-trips on first chart load;
     // each is opt-in from Layers > Marine services. The overlay is
     // implicitly visible whenever at least one category is enabled -
     // no separate master flag.
-    public bool MarinePoiFuelEnabled { get; private set; } = false;
-    public bool MarinePoiMarinaEnabled { get; private set; } = false;
-    public bool MarinePoiHarbourEnabled { get; private set; } = false;
-    public bool MarinePoiMooringEnabled { get; private set; } = false;
-    public bool MarinePoiSlipwayEnabled { get; private set; } = false;
-    public bool MarinePoiPierEnabled { get; private set; } = false;
-    public bool MarinePoiChandleryEnabled { get; private set; } = false;
-    public bool MarinePoiDrinkingWaterEnabled { get; private set; } = false;
-    public bool MarinePoiPumpOutEnabled { get; private set; } = false;
+    public bool MarinePoiFuelEnabled => _marinePoiFuelEnabled.Value;
+    private readonly Setting<bool> _marinePoiFuelEnabled = Setting.Bool(SettingKeys.MarinePoiFuel, false);
+    public bool MarinePoiMarinaEnabled => _marinePoiMarinaEnabled.Value;
+    private readonly Setting<bool> _marinePoiMarinaEnabled = Setting.Bool(SettingKeys.MarinePoiMarina, false);
+    public bool MarinePoiHarbourEnabled => _marinePoiHarbourEnabled.Value;
+    private readonly Setting<bool> _marinePoiHarbourEnabled = Setting.Bool(SettingKeys.MarinePoiHarbour, false);
+    public bool MarinePoiMooringEnabled => _marinePoiMooringEnabled.Value;
+    private readonly Setting<bool> _marinePoiMooringEnabled = Setting.Bool(SettingKeys.MarinePoiMooring, false);
+    public bool MarinePoiSlipwayEnabled => _marinePoiSlipwayEnabled.Value;
+    private readonly Setting<bool> _marinePoiSlipwayEnabled = Setting.Bool(SettingKeys.MarinePoiSlipway, false);
+    public bool MarinePoiPierEnabled => _marinePoiPierEnabled.Value;
+    private readonly Setting<bool> _marinePoiPierEnabled = Setting.Bool(SettingKeys.MarinePoiPier, false);
+    public bool MarinePoiChandleryEnabled => _marinePoiChandleryEnabled.Value;
+    private readonly Setting<bool> _marinePoiChandleryEnabled = Setting.Bool(
+        SettingKeys.MarinePoiChandlery, false);
+    public bool MarinePoiDrinkingWaterEnabled => _marinePoiDrinkingWaterEnabled.Value;
+    private readonly Setting<bool> _marinePoiDrinkingWaterEnabled = Setting.Bool(
+        SettingKeys.MarinePoiDrinkingWater, false);
+    public bool MarinePoiPumpOutEnabled => _marinePoiPumpOutEnabled.Value;
+    private readonly Setting<bool> _marinePoiPumpOutEnabled = Setting.Bool(SettingKeys.MarinePoiPumpOut, false);
 
     private readonly HashSet<string> _enabledChartIds = new(StringComparer.Ordinal);
     private readonly HashSet<string> _enabledRouteIds = new(StringComparer.Ordinal);
@@ -313,31 +646,43 @@ public sealed class AppSettingsService : IAppSettings
     /// page origin. See <see cref="IServerSettings"/>. Default off so
     /// the bundled-webapp install path (the common case) keeps its
     /// origin-matches-server behaviour without any helm action.</summary>
-    public bool StandaloneMode { get; private set; }
+    public bool StandaloneMode => _standaloneMode.Value;
+    private readonly Setting<bool> _standaloneMode = Setting.Bool(SettingKeys.StandaloneMode, false);
 
     /// <summary>Origin of the SignalK server when standalone mode is
     /// on. Empty until the helm fills the field on Settings >
     /// Advanced > Standalone mode. Validated + normalised on
     /// <see cref="SetStandaloneServerUrlAsync"/>: scheme + host + port
     /// only, path/query/fragment stripped, host lower-cased.</summary>
-    public string StandaloneServerUrl { get; private set; } = "";
+    public string StandaloneServerUrl => _standaloneServerUrl.Value;
+    // Normalise unconditionally so a trailing-slash / mixed-case
+    // host / accidental copy-pasted path round-trips cleanly. An
+    // empty / unparseable value is allowed and persists as "" -
+    // SignalKBaseUrl falls back to the auto-detected origin in
+    // that case rather than throwing.
+    private readonly Setting<string> _standaloneServerUrl = Setting.Text(
+        SettingKeys.StandaloneServerUrl, "", normalize: NormalizeStandaloneUrl);
 
     /// <summary>Persist the JWT across tab reloads. Default true: most
     /// helms expect "remember me" semantics out of the box and the JWT
     /// is rotated server-side at expiry anyway.</summary>
-    public bool RememberSession { get; private set; } = true;
+    public bool RememberSession => _rememberSession.Value;
+    private readonly Setting<bool> _rememberSession = Setting.Bool(SettingKeys.RememberSession, true);
 
     /// <summary>OPT-IN to persist the password too. Off by default.
     /// See <see cref="IServerSettings.RememberPassword"/> for the risk
     /// trade-off.</summary>
-    public bool RememberPassword { get; private set; } = false;
+    public bool RememberPassword => _rememberPassword.Value;
+    private readonly Setting<bool> _rememberPassword = Setting.Bool(SettingKeys.RememberPassword, false);
 
     /// <summary>Last-used standalone username. Persisted unconditionally.</summary>
-    public string StoredUsername { get; private set; } = "";
+    public string StoredUsername => _storedUsername.Value;
+    private readonly Setting<string> _storedUsername = Setting.Text(SettingKeys.StandaloneUsername, "");
 
     /// <summary>Helm password for auto-login. Empty when
     /// <see cref="RememberPassword"/> is off.</summary>
-    public string StoredPassword { get; private set; } = "";
+    public string StoredPassword => _storedPassword.Value;
+    private readonly Setting<string> _storedPassword = Setting.Text(SettingKeys.StandalonePassword, "");
 
     public event Action? OnSettingsChanged;
 
@@ -361,75 +706,23 @@ public sealed class AppSettingsService : IAppSettings
         {
             if (_initialized) return;
             await KeyValueStoreMigration.MigrateRenamedAsync(_store, SettingKeys.Renamed);
-            NightMode = await LoadBool(SettingKeys.NightMode, false);
-            NightModeAuto = await LoadBool(SettingKeys.NightModeAuto, false);
-            LastManualNightToggleUtc = await LoadDateTimeUtc(SettingKeys.LastManualNightToggle);
-            LastManualNightOverrideSunCluster = NormalizeSunCluster(
-                await LoadString(SettingKeys.LastManualNightOverrideSunCluster));
-            ChartsSeeded = await LoadBool(SettingKeys.ChartsSeeded, false);
+            foreach (var setting in Persisted())
+                setting.Load(await LoadString(setting.Key));
             // The nightModePreset key is intentionally not read: night
             // mode is a single soft red-shift on/off; helms wanting a
             // non-red dark intermediate use Theme = "dark" instead.
-            Theme = NormalizeTheme(await LoadString(SettingKeys.Theme));
-            WindHeroMode = NormalizeWindHeroMode(await LoadString(SettingKeys.WindHeroMode));
-            MapOrientation = await LoadString(SettingKeys.MapOrientation) ?? "north";
-            // Round-trip through the resolver so a corrupt /
-            // schema-skew localStorage value lands at the default
-            // ("headingTrue") instead of crashing the Map page.
-            ShipOrientationSource = OnaPlotter.Utilities.ShipOrientationResolver.ToSetting(
-                OnaPlotter.Utilities.ShipOrientationResolver.Parse(
-                    await LoadString(SettingKeys.ShipOrientationSource)));
-            FollowBoat = await LoadBool(SettingKeys.FollowBoat, true);
-            LaylinesVisible = await LoadBool(SettingKeys.LaylinesVisible, false);
-            ShipLinesVisible = await LoadBool(SettingKeys.ShipLinesVisible, true);
+            LastManualNightToggleUtc = await LoadDateTimeUtc(SettingKeys.LastManualNightToggle);
+            LastManualNightOverrideSunCluster = NormalizeSunCluster(
+                await LoadString(SettingKeys.LastManualNightOverrideSunCluster));
             // The unified ship-track toggle (serverTrackVisible.v1)
             // gates both track layers. Any orphaned localTrackVisible.v1
             // entry in localStorage is never read.
-            ServerTrackVisible = await LoadBool(SettingKeys.ServerTrackVisible, true);
-            ServerTrackDuration = NormalizeServerTrackDuration(
-                await LoadString(SettingKeys.ServerTrackDuration));
-            ServerTrackResolution = NormalizeServerTrackResolution(
-                await LoadString(SettingKeys.ServerTrackResolution));
-            ServerTrackWithinBounds = await LoadBool(SettingKeys.ServerTrackWithinBounds, true);
-            AtonsVisible = await LoadBool(SettingKeys.AtonsVisible, true);
-            AisLabelsVisible = await LoadBool(SettingKeys.AisLabelsVisible, true);
-            WeatherOverlayOpacity = await LoadDouble(SettingKeys.WeatherOverlayOpacity,
-                OnaPlotter.Utilities.WeatherOpacity.DefaultFraction);
-            // chartContrast/sat/bright go through LoadDouble + cast for the
-            // same reason as ChartUpscaleLevels above: one numeric helper,
-            // identity-default on parse failure, then the clamp helper
-            // pins a corrupt-but-parseable value into the supported range.
-            ChartContrastPercent = OnaPlotter.Utilities.ChartFilter.ClampContrastSaturation(
-                (int)await LoadDouble(SettingKeys.ChartContrastPercent,
-                    OnaPlotter.Utilities.ChartFilter.DefaultPercent));
-            ChartSaturationPercent = OnaPlotter.Utilities.ChartFilter.ClampContrastSaturation(
-                (int)await LoadDouble(SettingKeys.ChartSaturationPercent,
-                    OnaPlotter.Utilities.ChartFilter.DefaultPercent));
-            ChartBrightnessPercent = OnaPlotter.Utilities.ChartFilter.ClampBrightness(
-                (int)await LoadDouble(SettingKeys.ChartBrightnessPercent,
-                    OnaPlotter.Utilities.ChartFilter.DefaultPercent));
-            ChartUpscaleEnabled = await LoadBool(SettingKeys.ChartUpscaleEnabled, true);
-            // chartUpscaleLevels.v1 is stored as an integer string ("2")
-            // but read via LoadDouble + cast: this matches the same
-            // pattern SnoozeDurationMinutes uses, and keeps a single
-            // double-parsing helper for the whole service. The cast
-            // truncates toward zero (so "2.7" -> 2, "-3.9" -> -3) and
-            // then ClampLevels guards the 0..3 range, so a corrupted
-            // localStorage value of any double-shaped string still
-            // resolves into the supported range.
-            ChartUpscaleLevels = OnaPlotter.Utilities.ChartUpscale.ClampLevels(
-                (int)await LoadDouble(SettingKeys.ChartUpscaleLevels,
-                    OnaPlotter.Utilities.ChartUpscale.DefaultLevels));
             // Read raw to detect whether the key was ever stored. A
             // missing value triggers ApplyMobileFirstRunDefaultsAsync's
             // viewport-aware default; a stored "false" is respected.
             var sidebarRaw = await LoadString(SettingKeys.SidebarCollapsed);
             _sidebarCollapsedExplicit = sidebarRaw is not null;
             SidebarCollapsed = sidebarRaw == "true";
-            // See the field declarations above for the default
-            // rationale. Stored values win; these defaults only apply
-            // on first install.
-            DepthAlarmThreshold = await LoadDouble(SettingKeys.DepthAlarmThreshold, 2.0);
             // CPA / TCPA two-tier load with legacy migration. Helms
             // upgrading from the single-threshold model have their
             // tuned value preserved into the new alarm tier; awareness
@@ -456,37 +749,6 @@ public sealed class AppSettingsService : IAppSettings
             TcpaAwarenessMin = Math.Max(
                 await LoadDouble(SettingKeys.TcpaAwarenessMin, 30.0),
                 TcpaAlarmMin);
-            CpaDebounceSeconds = Math.Clamp(
-                await LoadDouble(SettingKeys.CpaDebounceSeconds, 5.0), 0.0, 60.0);
-            WindShiftAlarmThreshold = await LoadDouble(SettingKeys.WindShiftAlarmThreshold, 30.0);
-            WindShiftLookbackMinutes = await LoadDouble(SettingKeys.WindShiftLookbackMinutes, 10.0);
-            WindShiftMinTrueWindSpeed = await LoadDouble(SettingKeys.WindShiftMinTrueWindSpeed, 5.0);
-            AnchorTideSafetyMargin = await LoadDouble(SettingKeys.AnchorTideSafetyMargin, 0.5);
-            AnchorAutoRadiusSafetyMargin = await LoadDouble(SettingKeys.AnchorAutoRadiusSafetyMargin, 5.0);
-            ManualAnchorRadiusMeters = await LoadDouble(SettingKeys.ManualAnchorRadiusMeters, 30.0);
-            AnchorChainLengthMeters = await LoadDouble(SettingKeys.AnchorChainLengthMeters, 0.0);
-            DeadmanTimeoutMinutes = await LoadDouble(SettingKeys.DeadmanTimeoutMinutes, 0.0);
-            DeadmanNightMinutes = await LoadDouble(SettingKeys.DeadmanNightMinutes, 15.0);
-            SnoozeDurationMinutes = (int)await LoadDouble(SettingKeys.SnoozeDurationMinutes, 10.0);
-            BigType = await LoadBool(SettingKeys.BigType, false);
-            ExpandAllHud = await LoadBool(SettingKeys.ExpandAllHud, false);
-            SailingMode = NormalizeSailingMode(await LoadString(SettingKeys.SailingMode));
-            OwnVesselType = NormalizeOwnVesselType(await LoadString(SettingKeys.OwnVesselType));
-            KeepScreenAwake = await LoadBool(SettingKeys.KeepScreenAwake, true);
-            // arrivalCircleMeters.v1 (loaded above) is the helm-
-            // configured arrival circle SENT to the SK v2 Course API
-            // on Set-Destination / Set-Active-Route requests. Read
-            // sites for the EFFECTIVE circle (HUD ring, APPROACH
-            // alarm, auto-advance) read navigation.course.arrivalCircle
-            // from the SK delta so a peer plotter or server-side
-            // change still propagates.
-            ServerSideApproachAlarms = await LoadBool(SettingKeys.ServerSideApproachAlarms, true);
-            ShowKeyboardHints = await LoadBool(SettingKeys.ShowKeyboardHints, false);
-            ShowAutopilotHud = await LoadBool(SettingKeys.ShowAutopilotHud, false);
-            ShowRadarHud = await LoadBool(SettingKeys.ShowRadarHud, false);
-            ShowDefaultHud = await LoadBool(SettingKeys.ShowDefaultHud, true);
-            OwnCogVectorMinutes = await LoadDouble(SettingKeys.OwnCogVectorMinutes, 10.0);
-            AisCogVectorMinutes = await LoadDouble(SettingKeys.AisCogVectorMinutes, 10.0);
             // AIS inactive / remove thresholds. The remove window is then
             // clamped to >= inactive so a corrupt or hand-edited storage
             // entry can't end up with remove < inactive (which would skip
@@ -496,28 +758,6 @@ public sealed class AppSettingsService : IAppSettings
             AisRemoveMinutes = Math.Clamp(
                 await LoadDouble(SettingKeys.AisRemoveMinutes, 30.0), 1.0, 240.0);
             if (AisRemoveMinutes < AisInactiveMinutes) AisRemoveMinutes = AisInactiveMinutes;
-            TideVisible = await LoadBool(SettingKeys.TideVisible, true);
-            RadarRangeRingsEnabled = await LoadBool(SettingKeys.RadarRangeRingsEnabled, true);
-            // 4 covers quarter / half / three-quarter / full range,
-            // the standard chartplotter pattern. Clamp 1..8 to keep
-            // the chart from turning into a bullseye.
-            RadarRangeRingsCount = (int)Math.Clamp(
-                await LoadDouble(SettingKeys.RadarRangeRingsCount, 4.0), 1.0, 8.0);
-            // Distance rings: pure visual scaffolding centred on own
-            // boat, independent of the radar overlay and of any alarm.
-            // Default off; the setters re-clamp on every write so a
-            // corrupted localStorage value (zero / negative / huge)
-            // can't disable the rings via the radius-collapsed path
-            // or paint outside the chart.
-            DistanceRingsEnabled = await LoadBool(SettingKeys.DistanceRingsEnabled, false);
-            DistanceRingsBaseNm = Math.Clamp(
-                await LoadDouble(SettingKeys.DistanceRingsBaseNm, 0.5), 0.05, 50.0);
-            DistanceRingsCount = (int)Math.Clamp(
-                await LoadDouble(SettingKeys.DistanceRingsCount, 4.0), 1.0, 8.0);
-            RadarUseWireBearing = await LoadBool(SettingKeys.RadarUseWireBearing, false);
-            RadarBearingCorrectionDeg = Math.Clamp(
-                await LoadDouble(SettingKeys.RadarBearingCorrection, 0.0), -180.0, 180.0);
-            PreferMagneticHeading = await LoadBool(SettingKeys.PreferMagneticHeading, false);
             // CogReadoutSource supersedes the legacy preferMagneticCourse.v1
             // boolean. When no CogReadoutSource is stored, a stored legacy
             // bool maps to the smoothed variant of the same axis (the
@@ -529,34 +769,8 @@ public sealed class AppSettingsService : IAppSettings
             var migratedDefault = bool.TryParse(legacyMagCourse, out var lmc) && lmc
                 ? "magneticSmoothed"
                 : OnaPlotter.Utilities.CogSourceResolver.DefaultSetting;
-            CogReadoutSource = OnaPlotter.Utilities.CogSourceResolver.ToSetting(
-                OnaPlotter.Utilities.CogSourceResolver.Parse(
-                    await LoadString(SettingKeys.CogReadoutSource) ?? migratedDefault));
-            OwnCogVectorSource = OnaPlotter.Utilities.CogSourceResolver.ToSetting(
-                OnaPlotter.Utilities.CogSourceResolver.Parse(
-                    await LoadString(SettingKeys.OwnCogVectorSource) ?? migratedDefault));
-            AutoAdvanceWaypoints = await LoadBool(SettingKeys.AutoAdvanceWaypoints, true);
-            // Clamp the arrival circle to a sensible boating range:
-            // 5 m is too tight for GPS jitter to settle below; 1000 m
-            // is large enough to cover the broadest "approach a marina
-            // entry" scenario without making the chart ring useless.
-            // Out-of-range stored values (corrupted / pre-feature)
-            // fall back to the default rather than driving a server
-            // request the spec might reject.
-            ArrivalCircleMeters = Math.Clamp(
-                await LoadDouble(SettingKeys.ArrivalCircleMeters, 50.0), 5.0, 1000.0);
-            // Marine POI categories. Each defaults to false (opt-in); a
-            // bool stored as "true" / "false" via the same Save / LoadBool
-            // helpers as every other map-display toggle.
-            MarinePoiFuelEnabled = await LoadBool(SettingKeys.MarinePoiFuel, false);
-            MarinePoiMarinaEnabled = await LoadBool(SettingKeys.MarinePoiMarina, false);
-            MarinePoiHarbourEnabled = await LoadBool(SettingKeys.MarinePoiHarbour, false);
-            MarinePoiMooringEnabled = await LoadBool(SettingKeys.MarinePoiMooring, false);
-            MarinePoiSlipwayEnabled = await LoadBool(SettingKeys.MarinePoiSlipway, false);
-            MarinePoiPierEnabled = await LoadBool(SettingKeys.MarinePoiPier, false);
-            MarinePoiChandleryEnabled = await LoadBool(SettingKeys.MarinePoiChandlery, false);
-            MarinePoiDrinkingWaterEnabled = await LoadBool(SettingKeys.MarinePoiDrinkingWater, false);
-            MarinePoiPumpOutEnabled = await LoadBool(SettingKeys.MarinePoiPumpOut, false);
+            _cogReadoutSource.Assign(await LoadString(SettingKeys.CogReadoutSource) ?? migratedDefault);
+            _ownCogVectorSource.Assign(await LoadString(SettingKeys.OwnCogVectorSource) ?? migratedDefault);
             LoadIdsInto(await LoadString(SettingKeys.EnabledChartIds), _enabledChartIds);
             LoadIdsInto(await LoadString(SettingKeys.EnabledRouteIds), _enabledRouteIds);
             LoadIdsInto(await LoadString(SettingKeys.ChartOrder), _chartOrder);
@@ -578,25 +792,6 @@ public sealed class AppSettingsService : IAppSettings
             {
                 LoadIdsInto(quickBarRaw, _quickBarChartIds);
             }
-            // Standalone-mode + custom SK URL. Default off; an empty
-            // URL is allowed in storage (the helm may have toggled the
-            // mode on without filling the field yet). Both fall back
-            // to the auto-detected page-origin behaviour via the
-            // SignalKBaseUrl resolver when not configured.
-            StandaloneMode = await LoadBool(SettingKeys.StandaloneMode, false);
-            StandaloneServerUrl = NormalizeStandaloneUrl(
-                await LoadString(SettingKeys.StandaloneServerUrl));
-            // Standalone-auth credential persistence flags. Defaults
-            // mirror the IServerSettings contract: session-token
-            // remembered (true), password not (false). Username is
-            // safe to persist unconditionally - it's not a credential
-            // on its own. Password loads as the stored value or empty
-            // if RememberPassword is off (the load just reads what's
-            // there; the setters enforce the flag-gated write).
-            RememberSession = await LoadBool(SettingKeys.RememberSession, true);
-            RememberPassword = await LoadBool(SettingKeys.RememberPassword, false);
-            StoredUsername = await LoadString(SettingKeys.StandaloneUsername) ?? "";
-            StoredPassword = await LoadString(SettingKeys.StandalonePassword) ?? "";
             _initialized = true;
         }
         finally
@@ -617,12 +812,7 @@ public sealed class AppSettingsService : IAppSettings
         OnSettingsChanged?.Invoke();
     }
 
-    public async Task SetNightModeAsync(bool value)
-    {
-        NightMode = value;
-        await Save(SettingKeys.NightMode, value ? "true" : "false");
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetNightModeAsync(bool value) => SetAsync(_nightMode, value);
 
     public async Task MarkManualNightToggleAsync(string? sunCluster)
     {
@@ -662,25 +852,12 @@ public sealed class AppSettingsService : IAppSettings
         _ => null,
     };
 
-    public async Task MarkChartsSeededAsync()
-    {
-        ChartsSeeded = true;
-        await Save(SettingKeys.ChartsSeeded, "true");
-    }
+    // One-shot flag read only at startup, so there is nothing to fan out.
+    public Task MarkChartsSeededAsync() => SetQuietAsync(_chartsSeeded, true);
 
-    public async Task SetNightModeAutoAsync(bool value)
-    {
-        NightModeAuto = value;
-        await Save(SettingKeys.NightModeAuto, value ? "true" : "false");
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetNightModeAutoAsync(bool value) => SetAsync(_nightModeAuto, value);
 
-    public async Task SetThemeAsync(string value)
-    {
-        Theme = NormalizeTheme(value);
-        await Save(SettingKeys.Theme, Theme);
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetThemeAsync(string value) => SetAsync(_theme, value);
 
     private static string NormalizeTheme(string? raw) => raw switch
     {
@@ -688,12 +865,7 @@ public sealed class AppSettingsService : IAppSettings
         _ => "system",
     };
 
-    public async Task SetWindHeroModeAsync(string value)
-    {
-        WindHeroMode = NormalizeWindHeroMode(value);
-        await Save(SettingKeys.WindHeroMode, WindHeroMode);
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetWindHeroModeAsync(string value) => SetAsync(_windHeroMode, value);
 
     private static string NormalizeWindHeroMode(string? raw) => raw switch
     {
@@ -701,65 +873,27 @@ public sealed class AppSettingsService : IAppSettings
         _ => "apparent",
     };
 
-    public async Task SetMapOrientationAsync(string value)
-    {
-        MapOrientation = value;
-        await Save(SettingKeys.MapOrientation, value);
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetMapOrientationAsync(string value) => SetAsync(_mapOrientation, value);
 
-    public async Task SetShipOrientationSourceAsync(string value)
-    {
-        // Normalise via the resolver so an unknown string from a
-        // forged dropdown call doesn't break later round-trips.
-        var canonical = OnaPlotter.Utilities.ShipOrientationResolver.ToSetting(
-            OnaPlotter.Utilities.ShipOrientationResolver.Parse(value));
-        ShipOrientationSource = canonical;
-        await Save(SettingKeys.ShipOrientationSource, canonical);
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetShipOrientationSourceAsync(string value) => SetAsync(_shipOrientationSource, value);
 
-    public async Task SetFollowBoatAsync(bool value)
-    {
-        FollowBoat = value;
-        await Save(SettingKeys.FollowBoat, value ? "true" : "false");
-    }
+    // The chart layer toggles below persist without raising
+    // OnSettingsChanged: the Map page applies each change to the chart
+    // itself when the helm flips it, and no other subscriber reads them
+    // live.
+    public Task SetFollowBoatAsync(bool value) => SetQuietAsync(_followBoat, value);
 
-    public async Task SetLaylinesVisibleAsync(bool value)
-    {
-        LaylinesVisible = value;
-        await Save(SettingKeys.LaylinesVisible, value ? "true" : "false");
-    }
+    public Task SetLaylinesVisibleAsync(bool value) => SetQuietAsync(_laylinesVisible, value);
 
-    public async Task SetShipLinesVisibleAsync(bool value)
-    {
-        ShipLinesVisible = value;
-        await Save(SettingKeys.ShipLinesVisible, value ? "true" : "false");
-    }
+    public Task SetShipLinesVisibleAsync(bool value) => SetQuietAsync(_shipLinesVisible, value);
 
-    public async Task SetServerTrackVisibleAsync(bool value)
-    {
-        ServerTrackVisible = value;
-        await Save(SettingKeys.ServerTrackVisible, value ? "true" : "false");
-    }
+    public Task SetServerTrackVisibleAsync(bool value) => SetQuietAsync(_serverTrackVisible, value);
 
-    public async Task SetServerTrackDurationAsync(string value)
-    {
-        ServerTrackDuration = NormalizeServerTrackDuration(value);
-        await Save(SettingKeys.ServerTrackDuration, ServerTrackDuration);
-    }
+    public Task SetServerTrackDurationAsync(string value) => SetQuietAsync(_serverTrackDuration, value);
 
-    public async Task SetServerTrackResolutionAsync(string value)
-    {
-        ServerTrackResolution = NormalizeServerTrackResolution(value);
-        await Save(SettingKeys.ServerTrackResolution, ServerTrackResolution);
-    }
+    public Task SetServerTrackResolutionAsync(string value) => SetQuietAsync(_serverTrackResolution, value);
 
-    public async Task SetServerTrackWithinBoundsAsync(bool value)
-    {
-        ServerTrackWithinBounds = value;
-        await Save(SettingKeys.ServerTrackWithinBounds, value ? "true" : "false");
-    }
+    public Task SetServerTrackWithinBoundsAsync(bool value) => SetQuietAsync(_serverTrackWithinBounds, value);
 
     /// <summary>Whitelist guard so a corrupted localStorage value
     /// doesn't pin the helm to an invalid duration that the API
@@ -778,78 +912,21 @@ public sealed class AppSettingsService : IAppSettings
         _ => "15m",
     };
 
-    public async Task SetAtonsVisibleAsync(bool value)
-    {
-        AtonsVisible = value;
-        await Save(SettingKeys.AtonsVisible, value ? "true" : "false");
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetAtonsVisibleAsync(bool value) => SetAsync(_atonsVisible, value);
 
-    public async Task SetAisLabelsVisibleAsync(bool value)
-    {
-        AisLabelsVisible = value;
-        await Save(SettingKeys.AisLabelsVisible, value ? "true" : "false");
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetAisLabelsVisibleAsync(bool value) => SetAsync(_aisLabelsVisible, value);
 
-    public async Task SetChartUpscaleEnabledAsync(bool value)
-    {
-        ChartUpscaleEnabled = value;
-        await Save(SettingKeys.ChartUpscaleEnabled, value ? "true" : "false");
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetChartUpscaleEnabledAsync(bool value) => SetAsync(_chartUpscaleEnabled, value);
 
-    public async Task SetChartUpscaleLevelsAsync(int value)
-    {
-        // Clamp via the shared helper so a future caller / corrupted
-        // localStorage value can't drive the JS-side decorator out of
-        // its tested 0..3 range.
-        ChartUpscaleLevels = OnaPlotter.Utilities.ChartUpscale.ClampLevels(value);
-        await Save(SettingKeys.ChartUpscaleLevels,
-            ChartUpscaleLevels.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetChartUpscaleLevelsAsync(int value) => SetAsync(_chartUpscaleLevels, value);
 
-    public async Task SetWeatherOverlayOpacityAsync(double value)
-    {
-        // Floor / ceiling pulled from the shared WeatherOpacity helper
-        // so the slider, the service, and the JS leaflet layer all
-        // share one source of truth. Belt-and-suspenders clamp here
-        // protects against a bad caller / future API path that
-        // bypasses the slider's min/max attributes.
-        WeatherOverlayOpacity = OnaPlotter.Utilities.WeatherOpacity.ClampFraction(value);
-        await Save(SettingKeys.WeatherOverlayOpacity,
-            WeatherOverlayOpacity.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetWeatherOverlayOpacityAsync(double value) => SetAsync(_weatherOverlayOpacity, value);
 
-    public async Task SetChartContrastPercentAsync(int value)
-    {
-        // Same belt-and-suspenders pattern as the other clamp-on-set
-        // settings. The slider's min/max attributes are the helm's
-        // fence; this clamp catches a JS-bridge override or a future
-        // programmatic caller bypassing it.
-        ChartContrastPercent = OnaPlotter.Utilities.ChartFilter.ClampContrastSaturation(value);
-        await Save(SettingKeys.ChartContrastPercent,
-            ChartContrastPercent.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetChartContrastPercentAsync(int value) => SetAsync(_chartContrastPercent, value);
 
-    public async Task SetChartSaturationPercentAsync(int value)
-    {
-        ChartSaturationPercent = OnaPlotter.Utilities.ChartFilter.ClampContrastSaturation(value);
-        await Save(SettingKeys.ChartSaturationPercent,
-            ChartSaturationPercent.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetChartSaturationPercentAsync(int value) => SetAsync(_chartSaturationPercent, value);
 
-    public async Task SetChartBrightnessPercentAsync(int value)
-    {
-        ChartBrightnessPercent = OnaPlotter.Utilities.ChartFilter.ClampBrightness(value);
-        await Save(SettingKeys.ChartBrightnessPercent,
-            ChartBrightnessPercent.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetChartBrightnessPercentAsync(int value) => SetAsync(_chartBrightnessPercent, value);
 
     public Task SetHarborModeAsync(bool value)
     {
@@ -887,12 +964,7 @@ public sealed class AppSettingsService : IAppSettings
         OnSettingsChanged?.Invoke();
     }
 
-    public async Task SetDepthAlarmThresholdAsync(double value)
-    {
-        DepthAlarmThreshold = value;
-        await Save(SettingKeys.DepthAlarmThreshold, value.ToString("F1", CultureInfo.InvariantCulture));
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetDepthAlarmThresholdAsync(double value) => SetAsync(_depthAlarmThreshold, value);
 
     public async Task SetCpaAlarmNmAsync(double value)
     {
@@ -954,58 +1026,17 @@ public sealed class AppSettingsService : IAppSettings
         OnSettingsChanged?.Invoke();
     }
 
-    public async Task SetCpaDebounceSecondsAsync(double value)
-    {
-        CpaDebounceSeconds = Math.Clamp(value, 0.0, 60.0);
-        await Save(SettingKeys.CpaDebounceSeconds,
-            CpaDebounceSeconds.ToString("F1", CultureInfo.InvariantCulture));
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetCpaDebounceSecondsAsync(double value) => SetAsync(_cpaDebounceSeconds, value);
 
-    public async Task SetWindShiftAlarmThresholdAsync(double value)
-    {
-        WindShiftAlarmThreshold = value;
-        await Save(SettingKeys.WindShiftAlarmThreshold, value.ToString("F1", CultureInfo.InvariantCulture));
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetWindShiftAlarmThresholdAsync(double value) => SetAsync(_windShiftAlarmThreshold, value);
 
-    public async Task SetWindShiftLookbackMinutesAsync(double value)
-    {
-        WindShiftLookbackMinutes = value;
-        await Save(SettingKeys.WindShiftLookbackMinutes, value.ToString("F1", CultureInfo.InvariantCulture));
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetWindShiftLookbackMinutesAsync(double value) => SetAsync(_windShiftLookbackMinutes, value);
 
-    public async Task SetWindShiftMinTrueWindSpeedAsync(double value)
-    {
-        // Clamp at 0 (negative TWS is meaningless and would re-introduce
-        // the noise the gate was added to prevent). No upper clamp - a
-        // user who sets 50 kn has effectively disabled the alarm, which
-        // is a legitimate choice.
-        WindShiftMinTrueWindSpeed = Math.Max(0, value);
-        await Save(SettingKeys.WindShiftMinTrueWindSpeed,
-            WindShiftMinTrueWindSpeed.ToString("F1", CultureInfo.InvariantCulture));
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetWindShiftMinTrueWindSpeedAsync(double value) => SetAsync(_windShiftMinTrueWindSpeed, value);
 
-    public async Task SetAnchorTideSafetyMarginAsync(double value)
-    {
-        AnchorTideSafetyMargin = value;
-        await Save(SettingKeys.AnchorTideSafetyMargin, value.ToString("F2", CultureInfo.InvariantCulture));
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetAnchorTideSafetyMarginAsync(double value) => SetAsync(_anchorTideSafetyMargin, value);
 
-    public async Task SetAnchorAutoRadiusSafetyMarginAsync(double value)
-    {
-        // Clamp at 0; negative would let the auto preview round
-        // BELOW the swing + tide-drop sum, which defeats the
-        // purpose of the pad. Helm input box should already cap
-        // at sensible ranges; this is the model-level guard.
-        AnchorAutoRadiusSafetyMargin = Math.Max(0, value);
-        await Save(SettingKeys.AnchorAutoRadiusSafetyMargin,
-            AnchorAutoRadiusSafetyMargin.ToString("F1", CultureInfo.InvariantCulture));
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetAnchorAutoRadiusSafetyMarginAsync(double value) => SetAsync(_anchorAutoRadiusSafetyMargin, value);
 
     public async Task SetAlarmRuleDisabledAsync(string title, bool disabled)
     {
@@ -1026,77 +1057,23 @@ public sealed class AppSettingsService : IAppSettings
         OnSettingsChanged?.Invoke();
     }
 
-    public async Task SetSailingModeAsync(string value)
-    {
-        SailingMode = NormalizeSailingMode(value);
-        await Save(SettingKeys.SailingMode, SailingMode);
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetSailingModeAsync(string value) => SetAsync(_sailingMode, value);
 
-    public async Task SetKeepScreenAwakeAsync(bool value)
-    {
-        KeepScreenAwake = value;
-        await Save(SettingKeys.KeepScreenAwake, value ? "true" : "false");
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetKeepScreenAwakeAsync(bool value) => SetAsync(_keepScreenAwake, value);
 
-    public async Task SetServerSideApproachAlarmsAsync(bool value)
-    {
-        ServerSideApproachAlarms = value;
-        await Save(SettingKeys.ServerSideApproachAlarms, value ? "true" : "false");
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetServerSideApproachAlarmsAsync(bool value) => SetAsync(_serverSideApproachAlarms, value);
 
-    public async Task SetShowKeyboardHintsAsync(bool value)
-    {
-        ShowKeyboardHints = value;
-        await Save(SettingKeys.ShowKeyboardHints, value ? "true" : "false");
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetShowKeyboardHintsAsync(bool value) => SetAsync(_showKeyboardHints, value);
 
-    public async Task SetShowAutopilotHudAsync(bool value)
-    {
-        ShowAutopilotHud = value;
-        await Save(SettingKeys.ShowAutopilotHud, value ? "true" : "false");
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetShowAutopilotHudAsync(bool value) => SetAsync(_showAutopilotHud, value);
 
-    public async Task SetShowRadarHudAsync(bool value)
-    {
-        ShowRadarHud = value;
-        await Save(SettingKeys.ShowRadarHud, value ? "true" : "false");
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetShowRadarHudAsync(bool value) => SetAsync(_showRadarHud, value);
 
-    public async Task SetShowDefaultHudAsync(bool value)
-    {
-        ShowDefaultHud = value;
-        await Save(SettingKeys.ShowDefaultHud, value ? "true" : "false");
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetShowDefaultHudAsync(bool value) => SetAsync(_showDefaultHud, value);
 
-    public async Task SetOwnCogVectorMinutesAsync(double value)
-    {
-        // Clamp to a sensible range. 1 min is the floor where the
-        // dashed predictor reads as a vector at all; 60 min is the
-        // ceiling beyond which the line crosses the chart's pan
-        // budget and the helm loses spatial context. Storage
-        // corruption / a malformed import lands at the default.
-        if (!double.IsFinite(value)) value = 10.0;
-        value = Math.Clamp(value, 1.0, 60.0);
-        OwnCogVectorMinutes = value;
-        await Save(SettingKeys.OwnCogVectorMinutes, value.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetOwnCogVectorMinutesAsync(double value) => SetAsync(_ownCogVectorMinutes, value);
 
-    public async Task SetAisCogVectorMinutesAsync(double value)
-    {
-        if (!double.IsFinite(value)) value = 10.0;
-        value = Math.Clamp(value, 1.0, 60.0);
-        AisCogVectorMinutes = value;
-        await Save(SettingKeys.AisCogVectorMinutes, value.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetAisCogVectorMinutesAsync(double value) => SetAsync(_aisCogVectorMinutes, value);
 
     public async Task SetAisInactiveMinutesAsync(double value)
     {
@@ -1128,228 +1105,60 @@ public sealed class AppSettingsService : IAppSettings
         OnSettingsChanged?.Invoke();
     }
 
-    public async Task SetTideVisibleAsync(bool value)
-    {
-        TideVisible = value;
-        await Save(SettingKeys.TideVisible, value ? "true" : "false");
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetTideVisibleAsync(bool value) => SetAsync(_tideVisible, value);
 
-    public async Task SetRadarRangeRingsEnabledAsync(bool value)
-    {
-        RadarRangeRingsEnabled = value;
-        await Save(SettingKeys.RadarRangeRingsEnabled, value ? "true" : "false");
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetRadarRangeRingsEnabledAsync(bool value) => SetAsync(_radarRangeRingsEnabled, value);
 
-    public async Task SetRadarRangeRingsCountAsync(int value)
-    {
-        RadarRangeRingsCount = Math.Clamp(value, 1, 8);
-        await Save(SettingKeys.RadarRangeRingsCount,
-            RadarRangeRingsCount.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetRadarRangeRingsCountAsync(int value) => SetAsync(_radarRangeRingsCount, value);
 
-    public async Task SetDistanceRingsEnabledAsync(bool value)
-    {
-        DistanceRingsEnabled = value;
-        await Save(SettingKeys.DistanceRingsEnabled, value ? "true" : "false");
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetDistanceRingsEnabledAsync(bool value) => SetAsync(_distanceRingsEnabled, value);
 
-    public async Task SetDistanceRingsBaseNmAsync(double value)
-    {
-        // NaN / negative / zero would collapse every ring to a single
-        // point or vanish them entirely; pin into the supported range
-        // so a corrupted bind / paste lands on a usable value.
-        if (!double.IsFinite(value)) value = 0.5;
-        DistanceRingsBaseNm = Math.Clamp(value, 0.05, 50.0);
-        await Save(SettingKeys.DistanceRingsBaseNm,
-            DistanceRingsBaseNm.ToString("F2", CultureInfo.InvariantCulture));
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetDistanceRingsBaseNmAsync(double value) => SetAsync(_distanceRingsBaseNm, value);
 
-    public async Task SetDistanceRingsCountAsync(int value)
-    {
-        DistanceRingsCount = Math.Clamp(value, 1, 8);
-        await Save(SettingKeys.DistanceRingsCount,
-            DistanceRingsCount.ToString(CultureInfo.InvariantCulture));
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetDistanceRingsCountAsync(int value) => SetAsync(_distanceRingsCount, value);
 
-    public async Task SetRadarUseWireBearingAsync(bool value)
-    {
-        RadarUseWireBearing = value;
-        await Save(SettingKeys.RadarUseWireBearing, value ? "true" : "false");
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetRadarUseWireBearingAsync(bool value) => SetAsync(_radarUseWireBearing, value);
 
-    public async Task SetRadarBearingCorrectionDegAsync(double value)
-    {
-        RadarBearingCorrectionDeg = Math.Clamp(value, -180.0, 180.0);
-        await Save(SettingKeys.RadarBearingCorrection,
-            RadarBearingCorrectionDeg.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetRadarBearingCorrectionDegAsync(double value) => SetAsync(_radarBearingCorrectionDeg, value);
 
-    public async Task SetPreferMagneticHeadingAsync(bool value)
-    {
-        PreferMagneticHeading = value;
-        await Save(SettingKeys.PreferMagneticHeading, value ? "true" : "false");
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetPreferMagneticHeadingAsync(bool value) => SetAsync(_preferMagneticHeading, value);
 
-    public async Task SetCogReadoutSourceAsync(string value)
-    {
-        // Round-trip through the parser so an unknown / corrupted
-        // value falls back to the safe default rather than poisoning
-        // the persisted setting.
-        var canonical = OnaPlotter.Utilities.CogSourceResolver.ToSetting(
-            OnaPlotter.Utilities.CogSourceResolver.Parse(value));
-        CogReadoutSource = canonical;
-        await Save(SettingKeys.CogReadoutSource, canonical);
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetCogReadoutSourceAsync(string value) => SetAsync(_cogReadoutSource, value);
 
-    public async Task SetOwnCogVectorSourceAsync(string value)
-    {
-        var canonical = OnaPlotter.Utilities.CogSourceResolver.ToSetting(
-            OnaPlotter.Utilities.CogSourceResolver.Parse(value));
-        OwnCogVectorSource = canonical;
-        await Save(SettingKeys.OwnCogVectorSource, canonical);
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetOwnCogVectorSourceAsync(string value) => SetAsync(_ownCogVectorSource, value);
 
-    public async Task SetAutoAdvanceWaypointsAsync(bool value)
-    {
-        AutoAdvanceWaypoints = value;
-        await Save(SettingKeys.AutoAdvanceWaypoints, value ? "true" : "false");
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetAutoAdvanceWaypointsAsync(bool value) => SetAsync(_autoAdvanceWaypoints, value);
 
-    public async Task SetArrivalCircleMetersAsync(double value)
-    {
-        ArrivalCircleMeters = Math.Clamp(value, 5.0, 1000.0);
-        await Save(SettingKeys.ArrivalCircleMeters,
-            ArrivalCircleMeters.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetArrivalCircleMetersAsync(double value) => SetAsync(_arrivalCircleMeters, value);
 
     // Marine POI category toggles. Same shape across all categories:
     // write the bool, persist under the canonical "marinePoi.<cat>.v1"
     // key, fan out OnSettingsChanged so MarinePoiController can
     // re-render. The overlay visibility is implicit: enabled iff at
     // least one category is on.
-    public async Task SetMarinePoiFuelEnabledAsync(bool value)
-    {
-        MarinePoiFuelEnabled = value;
-        await Save(SettingKeys.MarinePoiFuel, value ? "true" : "false");
-        OnSettingsChanged?.Invoke();
-    }
-    public async Task SetMarinePoiMarinaEnabledAsync(bool value)
-    {
-        MarinePoiMarinaEnabled = value;
-        await Save(SettingKeys.MarinePoiMarina, value ? "true" : "false");
-        OnSettingsChanged?.Invoke();
-    }
-    public async Task SetMarinePoiHarbourEnabledAsync(bool value)
-    {
-        MarinePoiHarbourEnabled = value;
-        await Save(SettingKeys.MarinePoiHarbour, value ? "true" : "false");
-        OnSettingsChanged?.Invoke();
-    }
-    public async Task SetMarinePoiMooringEnabledAsync(bool value)
-    {
-        MarinePoiMooringEnabled = value;
-        await Save(SettingKeys.MarinePoiMooring, value ? "true" : "false");
-        OnSettingsChanged?.Invoke();
-    }
-    public async Task SetMarinePoiSlipwayEnabledAsync(bool value)
-    {
-        MarinePoiSlipwayEnabled = value;
-        await Save(SettingKeys.MarinePoiSlipway, value ? "true" : "false");
-        OnSettingsChanged?.Invoke();
-    }
-    public async Task SetMarinePoiPierEnabledAsync(bool value)
-    {
-        MarinePoiPierEnabled = value;
-        await Save(SettingKeys.MarinePoiPier, value ? "true" : "false");
-        OnSettingsChanged?.Invoke();
-    }
-    public async Task SetMarinePoiChandleryEnabledAsync(bool value)
-    {
-        MarinePoiChandleryEnabled = value;
-        await Save(SettingKeys.MarinePoiChandlery, value ? "true" : "false");
-        OnSettingsChanged?.Invoke();
-    }
-    public async Task SetMarinePoiDrinkingWaterEnabledAsync(bool value)
-    {
-        MarinePoiDrinkingWaterEnabled = value;
-        await Save(SettingKeys.MarinePoiDrinkingWater, value ? "true" : "false");
-        OnSettingsChanged?.Invoke();
-    }
-    public async Task SetMarinePoiPumpOutEnabledAsync(bool value)
-    {
-        MarinePoiPumpOutEnabled = value;
-        await Save(SettingKeys.MarinePoiPumpOut, value ? "true" : "false");
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetMarinePoiFuelEnabledAsync(bool value) => SetAsync(_marinePoiFuelEnabled, value);
+    public Task SetMarinePoiMarinaEnabledAsync(bool value) => SetAsync(_marinePoiMarinaEnabled, value);
+    public Task SetMarinePoiHarbourEnabledAsync(bool value) => SetAsync(_marinePoiHarbourEnabled, value);
+    public Task SetMarinePoiMooringEnabledAsync(bool value) => SetAsync(_marinePoiMooringEnabled, value);
+    public Task SetMarinePoiSlipwayEnabledAsync(bool value) => SetAsync(_marinePoiSlipwayEnabled, value);
+    public Task SetMarinePoiPierEnabledAsync(bool value) => SetAsync(_marinePoiPierEnabled, value);
+    public Task SetMarinePoiChandleryEnabledAsync(bool value) => SetAsync(_marinePoiChandleryEnabled, value);
+    public Task SetMarinePoiDrinkingWaterEnabledAsync(bool value) => SetAsync(_marinePoiDrinkingWaterEnabled, value);
+    public Task SetMarinePoiPumpOutEnabledAsync(bool value) => SetAsync(_marinePoiPumpOutEnabled, value);
 
-    public async Task SetManualAnchorRadiusMetersAsync(double value)
-    {
-        ManualAnchorRadiusMeters = value;
-        await Save(SettingKeys.ManualAnchorRadiusMeters, value.ToString("F1", CultureInfo.InvariantCulture));
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetManualAnchorRadiusMetersAsync(double value) => SetAsync(_manualAnchorRadiusMeters, value);
 
-    public async Task SetAnchorChainLengthMetersAsync(double value)
-    {
-        // Clamp at 0: a negative rode length is meaningless and would
-        // feed a NaN into the chain projection's sqrt. The helm input
-        // is a length, so 0 ("none entered") is the floor.
-        AnchorChainLengthMeters = Math.Max(0, value);
-        await Save(SettingKeys.AnchorChainLengthMeters,
-            AnchorChainLengthMeters.ToString("F1", CultureInfo.InvariantCulture));
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetAnchorChainLengthMetersAsync(double value) => SetAsync(_anchorChainLengthMeters, value);
 
-    public async Task SetDeadmanTimeoutMinutesAsync(double value)
-    {
-        DeadmanTimeoutMinutes = value;
-        await Save(SettingKeys.DeadmanTimeoutMinutes, value.ToString("F1", CultureInfo.InvariantCulture));
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetDeadmanTimeoutMinutesAsync(double value) => SetAsync(_deadmanTimeoutMinutes, value);
 
-    public async Task SetDeadmanNightMinutesAsync(double value)
-    {
-        DeadmanNightMinutes = value;
-        await Save(SettingKeys.DeadmanNightMinutes, value.ToString("F1", CultureInfo.InvariantCulture));
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetDeadmanNightMinutesAsync(double value) => SetAsync(_deadmanNightMinutes, value);
 
-    public async Task SetSnoozeDurationMinutesAsync(int value)
-    {
-        // Clamp 1 min minimum (zero would snooze forever - that's dismiss).
-        // Upper bound 120 to keep a runaway value from locking an alarm
-        // quiet for days after a power cycle.
-        SnoozeDurationMinutes = System.Math.Clamp(value, 1, 120);
-        await Save(SettingKeys.SnoozeDurationMinutes, SnoozeDurationMinutes.ToString(CultureInfo.InvariantCulture));
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetSnoozeDurationMinutesAsync(int value) => SetAsync(_snoozeDurationMinutes, value);
 
-    public async Task SetBigTypeAsync(bool value)
-    {
-        BigType = value;
-        await Save(SettingKeys.BigType, value ? "true" : "false");
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetBigTypeAsync(bool value) => SetAsync(_bigType, value);
 
-    public async Task SetExpandAllHudAsync(bool value)
-    {
-        ExpandAllHud = value;
-        await Save(SettingKeys.ExpandAllHud, value ? "true" : "false");
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetExpandAllHudAsync(bool value) => SetAsync(_expandAllHud, value);
 
     private static string NormalizeSailingMode(string? raw) => raw switch
     {
@@ -1363,13 +1172,11 @@ public sealed class AppSettingsService : IAppSettings
         _ => "sail",
     };
 
-    public async Task SetOwnVesselTypeAsync(string value)
-    {
-        OwnVesselType = NormalizeOwnVesselType(value);
-        await Save(SettingKeys.OwnVesselType, OwnVesselType);
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetOwnVesselTypeAsync(string value) => SetAsync(_ownVesselType, value);
 
+    // SetEnabledCharts / SetEnabledRoutes persist without raising
+    // OnSettingsChanged: the chart and route controllers own the live sets
+    // and read these back only when the Map page mounts.
     public async Task SetEnabledChartsAsync(IEnumerable<string> ids)
     {
         // Materialise first - see SetChartOrderAsync for the aliasing
@@ -1430,12 +1237,6 @@ public sealed class AppSettingsService : IAppSettings
         try { return await _store.GetAsync(key); }
         catch (Microsoft.JSInterop.JSException) { return null; }
         catch (Microsoft.JSInterop.JSDisconnectedException) { return null; }
-    }
-
-    private async Task<bool> LoadBool(string key, bool fallback)
-    {
-        var v = await LoadString(key);
-        return v is not null ? v == "true" : fallback;
     }
 
     private async Task<double> LoadDouble(string key, double fallback)
@@ -1574,38 +1375,22 @@ public sealed class AppSettingsService : IAppSettings
         // every settings subscriber for no gain.
     }
 
-    public async Task SetStandaloneModeAsync(bool value)
-    {
-        StandaloneMode = value;
-        await Save(SettingKeys.StandaloneMode, value ? "true" : "false");
-        // Fan-out: SignalKBaseUrl re-resolves its origin off the new
-        // flag; SignalkClient drops + reopens its WebSocket.
-        OnSettingsChanged?.Invoke();
-    }
+    // Fan-out: SignalKBaseUrl re-resolves its origin off the new flag;
+    // SignalkClient drops + reopens its WebSocket.
+    public Task SetStandaloneModeAsync(bool value) => SetAsync(_standaloneMode, value);
 
-    public async Task SetStandaloneServerUrlAsync(string value)
-    {
-        // Normalise unconditionally so a trailing-slash / mixed-case
-        // host / accidental copy-pasted path round-trips cleanly. An
-        // empty / unparseable value is allowed and persists as "" -
-        // SignalKBaseUrl falls back to the auto-detected origin in
-        // that case rather than throwing.
-        StandaloneServerUrl = NormalizeStandaloneUrl(value);
-        await Save(SettingKeys.StandaloneServerUrl, StandaloneServerUrl);
-        OnSettingsChanged?.Invoke();
-    }
+    // The normaliser strips path / query and lower-cases the host, so a
+    // trailing slash or copy-pasted path round-trips cleanly. An empty or
+    // unparseable value persists as "" and SignalKBaseUrl falls back to the
+    // auto-detected origin.
+    public Task SetStandaloneServerUrlAsync(string value) => SetAsync(_standaloneServerUrl, value);
 
-    public async Task SetRememberSessionAsync(bool value)
-    {
-        RememberSession = value;
-        await Save(SettingKeys.RememberSession, value ? "true" : "false");
-        OnSettingsChanged?.Invoke();
-    }
+    public Task SetRememberSessionAsync(bool value) => SetAsync(_rememberSession, value);
 
     public async Task SetRememberPasswordAsync(bool value)
     {
-        RememberPassword = value;
-        await Save(SettingKeys.RememberPassword, value ? "true" : "false");
+        _rememberPassword.Assign(value);
+        await Persist(_rememberPassword);
         // When the helm flips the flag OFF, also wipe any previously
         // persisted password. Without this, an opt-out leaves the
         // value sitting in localStorage where the next opt-in (or a
@@ -1613,30 +1398,19 @@ public sealed class AppSettingsService : IAppSettings
         // wiped too so the UI text field clears on the same render.
         if (!value && !string.IsNullOrEmpty(StoredPassword))
         {
-            StoredPassword = "";
-            await Save(SettingKeys.StandalonePassword, "");
+            _storedPassword.Assign("");
+            await Persist(_storedPassword);
         }
         OnSettingsChanged?.Invoke();
     }
 
-    public async Task SetStoredUsernameAsync(string value)
-    {
-        StoredUsername = value ?? "";
-        await Save(SettingKeys.StandaloneUsername, StoredUsername);
-        // Username is informational, not a credential - no event fan-
-        // out (avoid the WS reconnect cascade that OnSettingsChanged
-        // triggers for URL-touching changes; SignalKBaseUrl's diff
-        // filter would skip this anyway, but no point firing).
-    }
+    // The username is informational, not a credential, and storing the
+    // password isn't a server-state change (the auto-login flow re-issues
+    // a JWT on its own schedule), so neither fans out OnSettingsChanged;
+    // that would cascade into the WS reconnect path for no reason.
+    public Task SetStoredUsernameAsync(string value) => SetQuietAsync(_storedUsername, value ?? "");
 
-    public async Task SetStoredPasswordAsync(string value)
-    {
-        StoredPassword = value ?? "";
-        await Save(SettingKeys.StandalonePassword, StoredPassword);
-        // Same rationale as SetStoredUsernameAsync: storing the
-        // password isn't a server-state change. The auto-login flow
-        // re-issues a JWT on its own schedule.
-    }
+    public Task SetStoredPasswordAsync(string value) => SetQuietAsync(_storedPassword, value ?? "");
 
     /// <summary>Normalise a helm-supplied SignalK server URL into
     /// scheme + host + port (no path, no query, no fragment, host
