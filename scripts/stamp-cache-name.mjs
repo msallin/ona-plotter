@@ -5,12 +5,10 @@
 // source itself. A deploy that only touches C# code (no CSS, no
 // icons, no JS module additions, no Leaflet upgrade, no SW logic
 // change) produces the IDENTICAL stamp and therefore does NOT
-// invalidate the helm's cached app-shell. Without that,
-// b126a86's commit-hash stamp bumped the cache on every Release
-// publish - and on the next page load the SW's network-first
-// handler had to re-fetch every /js/* and /css/* module from the
-// upstream, which on a Pi-class SK Node host can stall long enough
-// to freeze the WASM bootstrap.
+// invalidate the helm's cached app-shell. A per-publish stamp (e.g.
+// the commit hash) would make every page load after a deploy
+// re-fetch every /js/* and /css/* module, which on a Pi-class SK
+// Node host can stall long enough to freeze the WASM bootstrap.
 //
 // Invoked from OnaPlotter.csproj's StampPublishedServiceWorker
 // target on Release publish:

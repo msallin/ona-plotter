@@ -387,10 +387,9 @@ public sealed class NavigationData
 
         lock (_lock)
         {
-            // When adding a new path:
-            // 1. Add a property above
-            // 2. Add the case here
-            // 3. Add a display card in Dashboard.razor
+            // A new number / bool / string path needs a property above, a case
+            // here and a subscription in SignalkClient.Tiers; see
+            // SelfDeltaHandler for the other shapes.
             switch (path)
             {
                 case OnaPlotter.Utilities.SkPaths.Navigation.SpeedOverGround:

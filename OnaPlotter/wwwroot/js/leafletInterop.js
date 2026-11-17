@@ -897,6 +897,43 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient, opt
     }, 0);
 }
 
+// Zoom control exports. Blazor draws its own +/- buttons (MapZoomButtons)
+// and calls these so the native Leaflet zoom control can stay off. Uses
+// map.zoomIn / zoomOut which already respect minZoom / maxZoom, so we
+// don't need to clamp here. No-ops before initMap so Blazor can race-
+// call without blowing up.
+// The default step is map.zoomDelta (0.5), so topbar tap, keyboard +/-
+// and wheel all snap to the same half-integer levels. Blazor passes a
+// step explicitly for 1.0; null / undefined falls through to the delta.
+export function zoomIn(step) {
+    if (!map) return;
+    map.zoomIn(typeof step === 'number' ? step : map.options.zoomDelta);
+}
+export function zoomOut(step) {
+    if (!map) return;
+    map.zoomOut(typeof step === 'number' ? step : map.options.zoomDelta);
+}
+
+// Re-read the --map-* palette from the stylesheet and re-render any
+// layer whose colour is locked at construction time. Called from
+// MainLayout's HandleSettingsChanged after themeApply.setNightMode /
+// setTheme have flipped the <html> class - those class changes update
+// var() consumers automatically but L.polyline({color: '#06b6d4'})
+// holds the literal until the polyline is rebuilt.
+export function refreshPalette() {
+    if (!map) return;
+    readMapColors();
+    // Force the course-line bearing dash to rebuild on the next
+    // applyFrame tick by tearing it down here - the diff cache in
+    // courseLineLayer.setCourseLine compares lat/lon only, not
+    // colour, so we have to drop the layer object itself.
+    courseLineLayerMod.clearCourseLine();
+    // Re-issue the cached active-route call so the polyline + WP
+    // dots pick up the new bearing hue. Idempotent + no-op when no
+    // route is active.
+    activeRouteLayerMod.refreshActiveRoute();
+}
+
 /**
  * Batched per-tick frame update. Combines up to six individual
  * interop calls (updatePosition, addColoredTrackPoint, setCourseLine /
@@ -919,45 +956,6 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient, opt
  * export functions (updatePosition etc.) stay exported so anything
  * outside the per-tick hot path can still call them directly.
  */
-// Zoom control exports. Blazor draws its own +/- buttons (MapZoomButtons)
-// and calls these so the native Leaflet zoom control can stay off. Uses
-// map.zoomIn / zoomOut which already respect minZoom / maxZoom, so we
-// don't need to clamp here. No-ops before initMap so Blazor can race-
-// call without blowing up.
-// Default step matches map.zoomDelta (0.5, half-step zoom). Topbar tap, keyboard +/- and wheel all snap to the same
-// half-integer levels. Blazor passes a step explicitly when it wants
-// 1.0; null / undefined falls through to the map's own delta.
-export function zoomIn(step) {
-    if (!map) return;
-    map.zoomIn(typeof step === 'number' ? step : map.options.zoomDelta);
-}
-export function zoomOut(step) {
-    if (!map) return;
-    map.zoomOut(typeof step === 'number' ? step : map.options.zoomDelta);
-}
-
-// Re-read the --map-* palette from the stylesheet and re-render any
-// layer whose colour is locked at construction time. Called from
-// MainLayout's HandleSettingsChanged after themeApply.setNightMode /
-// setTheme have flipped the <html> class - those class changes update
-// var() consumers automatically but L.polyline({color: '#06b6d4'})
-// holds the literal until the polyline is rebuilt. Without this hook
-// the active route stayed cyan after switching into night mode and
-// stayed warm-red after switching back out.
-export function refreshPalette() {
-    if (!map) return;
-    readMapColors();
-    // Force the course-line bearing dash to rebuild on the next
-    // applyFrame tick by tearing it down here - the diff cache in
-    // courseLineLayer.setCourseLine compares lat/lon only, not
-    // colour, so we have to drop the layer object itself.
-    courseLineLayerMod.clearCourseLine();
-    // Re-issue the cached active-route call so the polyline + WP
-    // dots pick up the new bearing hue. Idempotent + no-op when no
-    // route is active.
-    activeRouteLayerMod.refreshActiveRoute();
-}
-
 export function applyFrame(frame) {
     if (!map || !frame) return;
     if (frame.pos) {

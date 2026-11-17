@@ -379,13 +379,6 @@
                  @ref="_alarmLogPanelRef"
                  @onclick:stopPropagation
                  @onkeydown="OnAlarmLogKeyDown">
-                @* Earlier mobile variant carried a grab-handle pill at
-                   the top of the bottom-sheet; with the overlay now
-                   starting below the topbar AND the explicit X on the
-                   right, the handle was redundant + helm-flagged as
-                   confusing (it looked like a separate widget and
-                   visually balanced the X poorly). Removed - the X is
-                   the single close affordance. *@
                 <div class="alarm-log-header">
                     <strong id="alarm-log-title">Notifications</strong>
                     <button class="alarm-log-close" @onclick="ToggleAlarmLog" aria-label="Close notifications">x</button>
@@ -760,9 +753,7 @@
         catch (ObjectDisposedException) { }
     }
 
-    /// <summary>Toggle night mode on/off. Helm-feedback: the previous
-    /// four-step cycle (dusk -> soft -> amber -> red) was confusing;
-    /// one click on, one click off matches the binary mental model.
+    /// <summary>Toggle night mode on/off (binary, one click each way).
     /// Records the env.sun cluster at toggle time so auto-night
     /// suppresses until the next day/night transition.</summary>
     private async Task ToggleNightMode()
@@ -782,12 +773,10 @@
         _ => null,
     };
 
-// ToggleFullscreen() was here; the button now dispatches through
-    // a native click listener wired from fullscreen.js::attachTrigger
-    // (synchronous with the user gesture, which Safari requires).
-    // Removing the C# method prevents a second caller from re-
-    // introducing the gesture-chain bug by routing through Blazor
-    // dispatch.
+    // The fullscreen button dispatches through a native click listener
+    // wired from fullscreen.js::attachTrigger (synchronous with the user
+    // gesture, which Safari requires); routing it through Blazor
+    // dispatch would break that gesture chain.
 
     /// <summary>Fires every time the tab becomes visible, wired from
     /// wwwroot/js/visibility.js. We use it to re-probe
@@ -805,16 +794,9 @@
     public async Task OnFullscreenChanged(bool fs)
     {
         isFullscreen = fs;
-        // Auto-flip the sidebar to match the fullscreen state. Helms
-        // who entered fullscreen historically expected the rail to
-        // collapse to icons-only ("more chart for the same screen");
-        // historically that was wired via a CSS-only `:fullscreen
-        // .sidebar` rule, but that rule overrode the user's chevron-
-        // toggle in the rail (the sidebar couldn't be re-expanded
-        // while fullscreen was on). Now we mirror the state into
-        // Settings.SidebarCollapsed so the manual toggle stays
-        // authoritative - enter fullscreen collapses, exit expands,
-        // and a tap on the rail chevron after either direction wins.
+        // Mirror the fullscreen state into Settings.SidebarCollapsed (enter
+        // collapses the rail to icons-only for more chart, exit expands) so
+        // the manual chevron toggle stays authoritative in either direction.
         // Skip the write if the setting already matches to avoid
         // firing OnSettingsChanged on every fullscreenchange.
         if (Settings.SidebarCollapsed != fs)
