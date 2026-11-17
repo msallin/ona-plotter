@@ -9,6 +9,7 @@
 import { defineConfig, devices } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
+import { STORAGE_STATE_PATH, HAS_CREDENTIALS } from './storage-state.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -28,8 +29,11 @@ export default defineConfig({
     forbidOnly: !!process.env.CI,
     retries: 0,
     reporter: [['list']],
+    // Logs in once when SK_USER / SK_PASSWORD are set; see global-setup.js.
+    globalSetup: './global-setup.js',
     use: {
         baseURL: BASE_URL,
+        storageState: HAS_CREDENTIALS ? STORAGE_STATE_PATH : undefined,
         trace: 'retain-on-failure',
         screenshot: 'only-on-failure',
         video: 'retain-on-failure',

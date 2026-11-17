@@ -140,7 +140,7 @@ jobs:
         working-directory: OnaPlotter.UiTests
         run: |
           npm ci
-          npx playwright install --with-deps chromium
+          npx playwright install --with-deps chromium webkit
 
       # Smoke is required. Fuzz uses a 200-click budget which fills
       # the test's 3-min cap (avg ~0.4 s per click on a healthy CI
@@ -152,6 +152,11 @@ jobs:
         working-directory: OnaPlotter.UiTests
         env:
           BASE_URL: http://localhost:5282/
+          # Dev stack credentials (docker/signalk-config/security.json):
+          # writes the tests trigger need a session.
+          SK_URL: http://localhost:3000
+          SK_USER: admin
+          SK_PASSWORD: admin
           FUZZ_CLICKS: "200"
           FUZZ_SEED: "20260419"
         # Explicit spec list keeps the diagnose-*.spec.js files (manual
